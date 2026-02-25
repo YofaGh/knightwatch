@@ -1,0 +1,404 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Screen View</title>
+    <style>
+      :root {
+        --bg-body: #09090b;
+        --bg-panel: #121214;
+        --bg-card: #18181b;
+        --border: #27272a;
+        --text-base: #fafafa;
+        --text-muted: #a1a1aa;
+        --accent: #3b82f6;
+        --accent-glow: rgba(59, 130, 246, 0.1);
+        --success: #10b981;
+        --warning: #f59e0b;
+        --error: #ef4444;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: var(--bg-body);
+        color: var(--text-base);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ── Top bar ─────────────────────────────────────────── */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1.25rem;
+        background: var(--bg-panel);
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      header h1 { font-size: 1rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+      header h1::before { content: ""; display: block; width: 10px; height: 10px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 8px var(--accent); }
+      #status { color: var(--text-muted); font-size: 0.75rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+      /* ── Main layout ─────────────────────────────────────── */
+      main {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+        flex-direction: column;
+      }
+
+      @media (min-width: 1024px) {
+        main { flex-direction: row; }
+      }
+
+      /* ── Screenshots pane ────────────────────────────────── */
+      #screens-pane {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+        background: var(--bg-body);
+      }
+      #screens {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+      }
+      @media (min-width: 768px) {
+        #screens { grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+      }
+
+      .screen-container { 
+        display: flex; 
+        flex-direction: column; 
+        gap: 0.75rem; 
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 0.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s ease;
+      }
+      .screen-container:hover { transform: translateY(-2px); border-color: var(--accent); }
+      .screen-label { 
+        font-size: 0.7rem; 
+        color: var(--text-muted); 
+        text-transform: uppercase; 
+        letter-spacing: 0.05em; 
+        font-weight: 600;
+        padding: 0 0.5rem;
+      }
+      .screen-container img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 0.5rem;
+        background: #000;
+        object-fit: contain;
+      }
+
+      /* ── Process pane ────────────────────────────────────── */
+      #process-pane {
+        width: 100%;
+        background: var(--bg-panel);
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        max-height: 50vh;
+      }
+
+      @media (min-width: 1024px) {
+        #process-pane {
+          width: 340px;
+          border-top: none;
+          border-left: 1px solid var(--border);
+          max-height: none;
+        }
+      }
+
+      #process-pane h2 {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255,255,255,0.02);
+      }
+      #process-content {
+        overflow-y: auto;
+        flex: 1;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      /* ── Work-done banner ────────────────────────────────── */
+      #work-banner {
+        display: none;
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        border-radius: 0.5rem;
+        color: var(--success);
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 0.75rem;
+        text-align: center;
+        margin-bottom: 0.5rem;
+      }
+      #work-banner.visible { display: block; }
+
+      /* ── Process cards ───────────────────────────────────── */
+      .proc-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 0.75rem;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        transition: all 0.2s ease;
+      }
+      .proc-card:hover { border-color: rgba(255,255,255,0.1); background: #1c1c20; }
+      .proc-card.root-card { 
+        border: 1px solid var(--accent); 
+        background: var(--accent-glow);
+      }
+      
+      .proc-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        overflow: hidden;
+      }
+
+      .proc-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .proc-card.root-card .proc-name { color: var(--accent); }
+
+      .proc-meta {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+      }
+      .proc-meta-item { display: flex; flex-direction: column; gap: 0.125rem; }
+      .proc-meta-item .label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+      .proc-meta-item .value { font-size: 0.85rem; color: #e4e4e7; font-family: ui-monospace, SFMono-Regular, monospace; }
+
+      /* State pill */
+      .state-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.625rem;
+        border-radius: 9999px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+      }
+      .state-running  { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+      .state-sleeping { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+      .state-gone     { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+      .state-other    { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+      /* ── Children section ────────────────────────────────── */
+      .section-header {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 0.5rem;
+      }
+      .section-header .count-badge {
+        background: var(--border);
+        color: var(--text-base);
+        border-radius: 6px;
+        padding: 0.125rem 0.5rem;
+        font-size: 0.7rem;
+      }
+      #children-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+      /* ── No tracker placeholder ──────────────────────────── */
+      .muted { color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 2rem 0; font-style: italic; }
+      
+      /* Scrollbar */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Screen View</h1>
+      <span id="status">Loading…</span>
+    </header>
+
+    <main>
+      <div id="screens-pane">
+        <div id="screens"></div>
+      </div>
+
+      <aside id="process-pane">
+        <h2>Process Monitor</h2>
+        <div id="process-content">
+          <div id="work-banner">✔ Work complete — all children exited</div>
+
+          <div id="root-section">
+            <div class="muted">No process tracker running.</div>
+          </div>
+
+          <div id="children-section" style="display:none">
+            <div class="section-header">
+              Children <span class="count-badge" id="children-count">0</span>
+            </div>
+            <div id="children-list"></div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <script>
+      const statusEl     = document.getElementById("status");
+      const screensDiv   = document.getElementById("screens");
+      const rootSection  = document.getElementById("root-section");
+      const childSection = document.getElementById("children-section");
+      const childrenList = document.getElementById("children-list");
+      const childCount   = document.getElementById("children-count");
+      const workBanner   = document.getElementById("work-banner");
+
+      // ── Helpers ────────────────────────────────────────────────────────
+
+      function statePill(state) {
+        const cls = state === "running"  ? "state-running"
+                  : state === "sleeping" ? "state-sleeping"
+                  : state === "gone"     ? "state-gone"
+                  :                        "state-other";
+        return `<span class="state-pill ${cls}">${state}</span>`;
+      }
+
+      function metaItem(label, value) {
+        return `<div class="proc-meta-item">
+          <span class="label">${label}</span>
+          <span class="value">${value}</span>
+        </div>`;
+      }
+
+      function buildCard(proc, isRoot = false) {
+        return `
+          <div class="proc-card ${isRoot ? "root-card" : ""}">
+            <div class="proc-header">
+              <div class="proc-name" title="${proc.name} (PID ${proc.pid})">
+                ${isRoot ? "⬢ " : ""}${proc.name}
+              </div>
+              ${statePill(proc.state)}
+            </div>
+            <div class="proc-meta">
+              ${metaItem("PID", proc.pid)}
+              ${metaItem("CPU", proc.cpu_usage.toFixed(1) + "%")}
+              ${metaItem("MEM", proc.memory_human)}
+            </div>
+          </div>`;
+      }
+
+      // ── Screenshot refresh ─────────────────────────────────────────────
+
+      function refreshScreenshots() {
+        const start = Date.now();
+        fetch("/screenshot")
+          .then(r => {
+            if (!r.ok) throw new Error("HTTP error");
+            return r.json();
+          })
+          .then(data => {
+            data.screens.forEach((screen, i) => {
+              let container = document.getElementById(`screen-${i}`);
+              if (!container) {
+                container = document.createElement("div");
+                container.id = `screen-${i}`;
+                container.className = "screen-container";
+                container.innerHTML = `<div class="screen-label">Display ${i + 1}</div><img alt="Display ${i + 1}" />`;
+                screensDiv.appendChild(container);
+              }
+              const img = container.querySelector("img");
+              // Only update if data changed to avoid flash (simple heuristic)
+              const newSrc = `data:${screen.mime};base64,${screen.data}`;
+              if (img.src !== newSrc) img.src = newSrc;
+            });
+            screensDiv.querySelectorAll(".screen-container").forEach((el, i) => {
+              if (i >= data.screens.length) el.remove();
+            });
+            const elapsed = Date.now() - start;
+            statusEl.textContent = `● LIVE · ${data.screens.length} SCREEN${data.screens.length > 1 ? "S" : ""} · ${elapsed}MS`;
+          })
+          .catch(err => {
+            statusEl.innerHTML = `<span style="color:var(--error)">● OFFLINE · ${new Date().toLocaleTimeString()}</span>`;
+          });
+      }
+
+      // ── Process refresh ────────────────────────────────────────────────
+
+      function refreshProcess() {
+        fetch("/process")
+          .then(r => {
+            if (!r.ok) throw new Error("HTTP error");
+            return r.json();
+          })
+          .then(data => {
+            // Work-done banner
+            workBanner.classList.toggle("visible", data.work_done);
+
+            // Root card
+            if (data.root) {
+              rootSection.innerHTML = buildCard(data.root, true);
+            } else {
+              rootSection.innerHTML = `<div class="muted">Root process exited</div>`;
+            }
+
+            // Children
+            if (data.child_count > 0) {
+              childSection.style.display = "flex";
+              childSection.style.flexDirection = "column";
+              childSection.style.gap = "0.75rem";
+              childCount.textContent = data.child_count;
+              childrenList.innerHTML = data.children.map(c => buildCard(c)).join("");
+            } else {
+              childSection.style.display = "none";
+            }
+          })
+          .catch(() => {
+            rootSection.innerHTML = `<div class="muted">Monitor disabled</div>`;
+            childSection.style.display = "none";
+          });
+      }
+
+      // ── Boot ───────────────────────────────────────────────────────────
+
+      refreshScreenshots();
+      refreshProcess();
+      setInterval(refreshScreenshots, 2000);
+      setInterval(refreshProcess,     2000);
+    </script>
+  </body>
+</html>
