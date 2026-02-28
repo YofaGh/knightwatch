@@ -150,6 +150,7 @@ pub struct ProcessTracker {
     sys: System,
     first_tick: bool,
     poll_interval: Duration,
+    poll_interval_timer: Option<tokio::time::Interval>,
 }
 
 impl ProcessTracker {
@@ -160,6 +161,7 @@ impl ProcessTracker {
             sys: System::new(),
             first_tick: true,
             poll_interval: Duration::from_secs(2),
+            poll_interval_timer: None,
         }
     }
 
@@ -181,7 +183,7 @@ impl ProcessTracker {
             .channels
             .take_receivers()
             .expect("Failed to take receivers");
-        let mut poll_interval = tokio::time::interval(self.poll_interval);
+        self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         loop {
             tokio::select! {
                 Some(query) = query_rx.recv() => {
@@ -191,7 +193,7 @@ impl ProcessTracker {
                     if let Err(err) = self.handle_event(event).await {
                     }
                 }
-                _ = poll_interval.tick() => {
+                _ = async { self.poll_interval_timer.as_mut().unwrap().tick().await }, if self.poll_interval_timer.is_some() => {
                     self.emit_event(ProcessTrackerEvent::RefreshTick).await;
                 }
             }
@@ -222,7 +224,6 @@ impl ProcessTracker {
         Ok(())
     }
 
-    /// Returns `false` when the tracker should stop.
     async fn handle_tick(&mut self) {
         // ----------------------------------------------------------------
         // Refresh all processes (need parent links to walk subtree).
@@ -258,9 +259,8 @@ impl ProcessTracker {
                     pid: self.state.root_pid,
                 })
                 .await;
+                self.poll_interval_timer = None;
             }
-            // ✅ Remove the self.state.last_root = None line here;
-            //    the unconditional assignment below handles it correctly.
         }
 
         self.state.last_root = root_snap.clone();
@@ -331,32 +331,6 @@ impl ProcessTracker {
             }
         }
 
-        // Root heartbeat debug log
-        if let Some(root) = &root_snap {
-            debug!(
-                pid      = root.pid,
-                state    = %root.state,
-                cpu      = root.cpu_usage,
-                mem      = root.memory_bytes,
-                children = child_snaps.len(),
-                "root heartbeat"
-            );
-        }
-
-        // Per-child debug heartbeat
-        if !self.first_tick {
-            for child in &child_snaps {
-                debug!(
-                    pid   = child.pid,
-                    name  = %child.name,
-                    state = %child.state,
-                    cpu   = child.cpu_usage,
-                    mem   = child.memory_bytes,
-                    "child heartbeat"
-                );
-            }
-        }
-
         // ----------------------------------------------------------------
         // All children gone?
         // ----------------------------------------------------------------
@@ -368,7 +342,6 @@ impl ProcessTracker {
             );
             self.state.work_done = true;
             self.emit_event(ProcessTrackerEvent::AllChildrenGone).await;
-            self.state.last_children = Vec::new();
         }
 
         self.state.last_children = child_snaps;
