@@ -1,31 +1,33 @@
-use screenshots::{
-    Screen,
-    image::{ImageBuffer, Rgba},
-};
+use xcap::Monitor;
 
 use crate::prelude::*;
 
-pub fn get_all_screens() -> Result<Vec<Screen>> {
-    Screen::all().map_err(|err| Error::Screen(format!("Failed to get screens: {err}")))
-}
-
-#[allow(dead_code)]
-pub fn get_first_screen() -> Result<Screen> {
-    get_all_screens()?
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::Screen("No screens found".to_string()))
-}
-
-pub fn screenshot_all_screens() -> Result<Vec<ImageBuffer<Rgba<u8>, Vec<u8>>>> {
+pub fn screenshot_all_screens() -> Result<Vec<Vec<u8>>> {
     get_all_screens()?
         .into_iter()
         .map(|screen| take_screenshot(&screen))
         .collect()
 }
 
-pub fn take_screenshot(screen: &Screen) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-    screen
-        .capture()
-        .map_err(|err| Error::Screen(format!("Failed to capture screen: {err}")))
+pub fn get_all_screens() -> Result<Vec<Monitor>> {
+    Monitor::all().map_err(|e| Error::Screen(format!("Failed to get monitors: {e}")))
+}
+
+#[allow(dead_code)]
+pub fn get_first_screen() -> Result<Monitor> {
+    get_all_screens()?
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Screen("No screens found".to_string()))
+}
+
+pub fn take_screenshot(monitor: &Monitor) -> Result<Vec<u8>> {
+    let rgba_img = monitor
+        .capture_image()
+        .map_err(|e| Error::Screen(format!("Failed to capture: {e}")))?;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    rgba_img
+        .write_to(&mut buf, image::ImageFormat::Png)
+        .map_err(|e| Error::Screen(format!("Failed to encode PNG: {e}")))?;
+    Ok(buf.into_inner())
 }

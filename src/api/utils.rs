@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+use super::models::IOStatsResponse;
+
 use super::models::ProcessSnapshotResponse;
 
 pub fn now_rfc3339() -> String {
@@ -26,5 +29,18 @@ pub fn snapshot_to_response(
         state: s.state.to_string(),
         cpu_usage: s.cpu_usage,
         memory_bytes: s.memory_bytes,
+        #[cfg(target_os = "linux")]
+        cwd: s.cwd,
+        #[cfg(target_os = "linux")]
+        cmdline: s.cmdline,
+        #[cfg(target_os = "linux")]
+        open_fds: s.open_files.len(),
+        #[cfg(target_os = "linux")]
+        io_stats: s.io_stats.map(|io| IOStatsResponse {
+            read_bytes: io.read_bytes,
+            write_bytes: io.write_bytes,
+            read_chars: io.read_chars,
+            write_chars: io.write_chars,
+        }),
     }
 }

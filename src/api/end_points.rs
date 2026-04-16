@@ -3,7 +3,7 @@ use axum::{
     response::{Html, Json},
 };
 use base64::{Engine as _, engine::general_purpose};
-use screenshots::image::ImageFormat;
+// use screenshots::image::ImageFormat;
 use std::time::SystemTime;
 
 use super::{constants::*, models::*, utils::*};
@@ -31,35 +31,20 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<
     let images = crate::core::screenshot_all_screens().map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                success: false,
-                message: format!("Failed to take screenshot: {err}"),
-            }),
+            Json(ErrorResponse { success: false, message: format!("Failed to take screenshot: {err}") }),
         )
     })?;
     if images.is_empty() {
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                success: false,
-                message: "No screens found".to_string(),
-            }),
-        ));
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
+            success: false,
+            message: "No screens found".to_string(),
+        })));
     }
     let screens: Vec<ScreenshotImage> = images
         .into_iter()
-        .map(|image| {
-            let mut buf = std::io::Cursor::new(Vec::new());
-            match image.write_to(&mut buf, ImageFormat::Png) {
-                Ok(_) => ScreenshotImage {
-                    data: general_purpose::STANDARD.encode(buf.into_inner()),
-                    mime: "image/png".to_string(),
-                },
-                Err(_) => ScreenshotImage {
-                    data: general_purpose::STANDARD.encode(FALLBACK_SVG.as_bytes()),
-                    mime: "image/svg+xml".to_string(),
-                },
-            }
+        .map(|png_bytes| ScreenshotImage {
+            data: general_purpose::STANDARD.encode(&png_bytes),
+            mime: "image/png".to_string(),
         })
         .collect();
     let count = screens.len();

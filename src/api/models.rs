@@ -34,6 +34,16 @@ pub struct ErrorResponse {
 // Process tracking
 // ---------------------------------------------------------------------------
 
+/// I/O counters sourced from `/proc/<pid>/io` (Linux only).
+#[cfg(target_os = "linux")]
+#[derive(Debug, Serialize, Clone)]
+pub struct IOStatsResponse {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+    pub read_chars: u64,
+    pub write_chars: u64,
+}
+
 /// Serialisable mirror of `ProcessSnapshot`.
 #[derive(Debug, Serialize, Clone)]
 pub struct ProcessSnapshotResponse {
@@ -44,6 +54,17 @@ pub struct ProcessSnapshotResponse {
     pub memory_bytes: u64,
     /// Human-readable memory string, e.g. "42.3 MB".
     pub memory_human: String,
+
+    // Linux-only fields — omitted entirely on other platforms.
+    #[cfg(target_os = "linux")]
+    pub cwd: Option<String>,
+    #[cfg(target_os = "linux")]
+    pub cmdline: Vec<String>,
+    /// Number of open file descriptors.
+    #[cfg(target_os = "linux")]
+    pub open_fds: usize,
+    #[cfg(target_os = "linux")]
+    pub io_stats: Option<IOStatsResponse>,
 }
 
 /// Response for `GET /process` — full tree.

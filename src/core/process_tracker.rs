@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+use procfs::process::{FDTarget, Process};
+
 use std::{collections::HashSet, sync::OnceLock};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
 use tokio::{
@@ -77,6 +80,100 @@ impl std::fmt::Display for ProcessState {
     }
 }
 
+// Linux-only structures
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+pub struct FileDescriptorInfo {
+    pub fd: i32,
+    pub target: String,
+    pub fd_type: FDType,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+pub enum FDType {
+    File,
+    Socket,
+    Pipe,
+    Other,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+pub struct IOStats {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+    pub read_chars: u64,
+    pub write_chars: u64,
+}
+
+// Linux-only helper functions
+#[cfg(target_os = "linux")]
+fn collect_file_descriptors(pid: u32) -> Vec<FileDescriptorInfo> {
+    let mut fds = Vec::new();
+    if let Ok(process) = Process::new(pid as i32) {
+        if let Ok(fd_iter) = process.fd() {
+            for fd_info in fd_iter.flatten() {
+                let fd_type = match &fd_info.target {
+                    FDTarget::Path(_) => FDType::File,
+                    FDTarget::Socket(_) => FDType::Socket,
+                    FDTarget::Pipe(_) => FDType::Pipe,
+                    _ => FDType::Other,
+                };
+                fds.push(FileDescriptorInfo {
+                    fd: fd_info.fd,
+                    target: format!("{:?}", fd_info.target),
+                    fd_type,
+                });
+            }
+        }
+    }
+    fds
+}
+
+#[cfg(target_os = "linux")]
+fn collect_io_stats(pid: u32) -> Option<IOStats> {
+    Process::new(pid as i32)
+        .ok()
+        .and_then(|p| p.io().ok())
+        .map(|io| IOStats {
+            read_bytes: io.read_bytes,
+            write_bytes: io.write_bytes,
+            read_chars: io.rchar,
+            write_chars: io.wchar,
+        })
+}
+
+#[cfg(target_os = "linux")]
+fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
+    let process = Process::new(pid as i32).ok();
+    let cwd = process
+        .as_ref()
+        .and_then(|p| p.cwd().ok())
+        .map(|path| path.to_string_lossy().into_owned());
+    let cmdline = process
+        .as_ref()
+        .and_then(|p| p.cmdline().ok())
+        .unwrap_or_default();
+    (cwd, cmdline)
+}
+
+// Stub functions for non-Linux platforms
+#[cfg(not(target_os = "linux"))]
+fn collect_file_descriptors(_pid: u32) -> Vec<()> {
+    Vec::new()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_io_stats(_pid: u32) -> Option<()> {
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_extended_info(_pid: u32) -> (Option<String>, Vec<String>) {
+    (None, Vec::new())
+}
+
 /// Lightweight per-process data captured each tick.
 #[derive(Debug, Clone)]
 pub struct ProcessSnapshot {
@@ -85,6 +182,16 @@ pub struct ProcessSnapshot {
     pub state: ProcessState,
     pub cpu_usage: f32,
     pub memory_bytes: u64,
+
+    // Optional fields only available on Linux
+    #[cfg(target_os = "linux")]
+    pub cwd: Option<String>,
+    #[cfg(target_os = "linux")]
+    pub cmdline: Vec<String>,
+    #[cfg(target_os = "linux")]
+    pub open_files: Vec<FileDescriptorInfo>,
+    #[cfg(target_os = "linux")]
+    pub io_stats: Option<IOStats>,
 }
 
 pub struct ProcessTrackerChannels {
@@ -238,12 +345,21 @@ impl ProcessTracker {
         // Check root.
         // ----------------------------------------------------------------
         let root_pid_sysinfo = Pid::from_u32(self.state.root_pid);
+        let (cwd, cmdline) = collect_extended_info(self.state.root_pid);
         let root_snap = self.sys.process(root_pid_sysinfo).map(|p| ProcessSnapshot {
             pid: self.state.root_pid,
             name: p.name().to_string_lossy().into_owned(),
             state: ProcessState::from(p.status()),
             cpu_usage: p.cpu_usage(),
             memory_bytes: p.memory(),
+            #[cfg(target_os = "linux")]
+            cwd,
+            #[cfg(target_os = "linux")]
+            cmdline,
+            #[cfg(target_os = "linux")]
+            open_files: collect_file_descriptors(self.state.root_pid),
+            #[cfg(target_os = "linux")]
+            io_stats: collect_io_stats(self.state.root_pid),
         });
 
         if root_snap.is_none() {
@@ -356,13 +472,38 @@ impl ProcessTracker {
         while let Some(parent) = queue.pop() {
             for (pid, proc) in self.sys.processes() {
                 if proc.parent() == Some(parent) && *pid != root {
-                    result.push(ProcessSnapshot {
-                        pid: pid.as_u32(),
-                        name: proc.name().to_string_lossy().into_owned(),
-                        state: ProcessState::from(proc.status()),
-                        cpu_usage: proc.cpu_usage(),
-                        memory_bytes: proc.memory(),
-                    });
+                    let pid_u32 = pid.as_u32();
+
+                    // Basic snapshot that works on all platforms
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        result.push(ProcessSnapshot {
+                            pid: pid_u32,
+                            name: proc.name().to_string_lossy().into_owned(),
+                            state: ProcessState::from(proc.status()),
+                            cpu_usage: proc.cpu_usage(),
+                            memory_bytes: proc.memory(),
+                        });
+                    }
+
+                    // Extended snapshot for Linux
+                    #[cfg(target_os = "linux")]
+                    {
+                        let (cwd, cmdline) = collect_extended_info(pid_u32);
+
+                        result.push(ProcessSnapshot {
+                            pid: pid_u32,
+                            name: proc.name().to_string_lossy().into_owned(),
+                            state: ProcessState::from(proc.status()),
+                            cpu_usage: proc.cpu_usage(),
+                            memory_bytes: proc.memory(),
+                            cwd,
+                            cmdline,
+                            open_files: collect_file_descriptors(pid_u32),
+                            io_stats: collect_io_stats(pid_u32),
+                        });
+                    }
+
                     queue.push(*pid);
                 }
             }

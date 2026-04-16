@@ -218,6 +218,32 @@
       .state-gone     { background: rgba(239, 68, 68, 0.15); color: #f87171; }
       .state-other    { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 
+      /* ── Linux-only extras ───────────────────────────────── */
+      .proc-cmdline {
+        font-size: 0.72rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        color: var(--text-muted);
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--border);
+        border-radius: 0.375rem;
+        padding: 0.375rem 0.5rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .proc-meta-linux {
+        border-top: 1px solid var(--border);
+        padding-top: 0.75rem;
+        margin-top: 0;
+      }
+      .proc-meta-linux .value {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+        display: block;
+      }
+
       /* ── Children section ────────────────────────────────── */
       .section-header {
         font-size: 0.7rem;
@@ -305,7 +331,38 @@
         </div>`;
       }
 
+      function fmtBytes(n) {
+        if (n == null) return "—";
+        if (n >= 1073741824) return (n / 1073741824).toFixed(1) + " GB";
+        if (n >= 1048576)    return (n / 1048576).toFixed(1) + " MB";
+        if (n >= 1024)       return (n / 1024).toFixed(1) + " KB";
+        return n + " B";
+      }
+
       function buildCard(proc, isRoot = false) {
+        // ── Linux-only extras ──────────────────────────────────────────────
+        let linuxExtras = "";
+
+        if (proc.cmdline && proc.cmdline.length > 0) {
+          const cmd = proc.cmdline.join(" ");
+          linuxExtras += `<div class="proc-cmdline" title="${cmd}">${cmd}</div>`;
+        }
+
+        const hasIO  = proc.io_stats  != null;
+        const hasCwd = proc.cwd       != null;
+        const hasFds = proc.open_fds  != null;
+
+        if (hasCwd || hasFds || hasIO) {
+          linuxExtras += `<div class="proc-meta proc-meta-linux">`;
+          if (hasCwd) linuxExtras += metaItem("CWD", `<span title="${proc.cwd}">${proc.cwd}</span>`);
+          if (hasFds) linuxExtras += metaItem("FDs", proc.open_fds);
+          if (hasIO) {
+            linuxExtras += metaItem("READ",  fmtBytes(proc.io_stats.read_bytes));
+            linuxExtras += metaItem("WRITE", fmtBytes(proc.io_stats.write_bytes));
+          }
+          linuxExtras += `</div>`;
+        }
+
         return `
           <div class="proc-card ${isRoot ? "root-card" : ""}">
             <div class="proc-header">
@@ -319,6 +376,7 @@
               ${metaItem("CPU", proc.cpu_usage.toFixed(1) + "%")}
               ${metaItem("MEM", proc.memory_human)}
             </div>
+            ${linuxExtras}
           </div>`;
       }
 
