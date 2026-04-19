@@ -1,4 +1,4 @@
-# 🖥️ Screen View
+# 🖥️ Knightwatch
 
 A lightweight, real-time browser-based dashboard for monitoring live screenshots and process activity on a remote or local machine.
 
@@ -6,7 +6,7 @@ A lightweight, real-time browser-based dashboard for monitoring live screenshots
 
 ## Overview
 
-Screen View provides a sleek dark-mode web interface that streams live screen captures and process telemetry directly in your browser. The backend is a Rust server built on [Tokio](https://tokio.rs/) and [Axum](https://github.com/tokio-rs/axum), keeping the footprint small and performance high — no heavy agents or desktop apps required. It's designed for quick visual oversight of a running system, whether you're monitoring a headless server, a build machine, or a long-running automation task.
+knightwatch provides a sleek dark-mode web interface that streams live screen captures and process telemetry directly in your browser. The backend is a Rust server built on [Tokio](https://tokio.rs/) and [Axum](https://github.com/tokio-rs/axum), keeping the footprint small and performance high — no heavy agents or desktop apps required. It's designed for quick visual oversight of a running system, whether you're monitoring a headless server, a build machine, or a long-running automation task.
 
 ---
 

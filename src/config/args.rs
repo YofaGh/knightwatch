@@ -1,6 +1,6 @@
 #[derive(clap::Parser, Debug)]
 #[command(
-    name = "screenwatch",
+    name = "knightwatch",
     about = "Screen monitoring and notification tool"
 )]
 pub struct CliArgs {
