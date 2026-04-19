@@ -1,3 +1,3 @@
-pub mod errors;
+pub mod error;
 
-pub use errors::*;
+pub use error::*;

@@ -1,5 +1,5 @@
 #[cfg(target_os = "linux")]
-use super::models::IOStatsResponse;
+use super::models::{FileDescriptorResponse, IOStatsResponse};
 
 use super::models::ProcessSnapshotResponse;
 
@@ -35,6 +35,25 @@ pub fn snapshot_to_response(
         cmdline: s.cmdline,
         #[cfg(target_os = "linux")]
         open_fds: s.open_files.len(),
+        #[cfg(target_os = "linux")]
+        open_files: s
+            .open_files
+            .into_iter()
+            .map(|f| {
+                use crate::core::process_tracker::FDType;
+                FileDescriptorResponse {
+                    fd: f.fd,
+                    target: f.target,
+                    fd_type: match f.fd_type {
+                        FDType::File => "file",
+                        FDType::Socket => "socket",
+                        FDType::Pipe => "pipe",
+                        FDType::Other => "other",
+                    }
+                    .to_string(),
+                }
+            })
+            .collect(),
         #[cfg(target_os = "linux")]
         io_stats: s.io_stats.map(|io| IOStatsResponse {
             read_bytes: io.read_bytes,

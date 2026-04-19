@@ -4,7 +4,7 @@ use procfs::process::{FDTarget, Process};
 use std::{collections::HashSet, sync::OnceLock};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
 use tokio::{
-    sync::{mpsc, oneshot},
+    sync::{broadcast, mpsc, oneshot},
     time::Duration,
 };
 
@@ -26,10 +26,7 @@ pub enum ProcessTrackerEvent {
     /// All descendants have exited (root may still be alive).
     AllChildrenGone,
     /// The root process itself has exited.
-    RootExited {
-        pid: u32,
-    },
-    RefreshTick,
+    RootExited { pid: u32 },
 }
 
 /// One-shot queries callers can send to read tracker state synchronously.
@@ -158,22 +155,6 @@ fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
     (cwd, cmdline)
 }
 
-// Stub functions for non-Linux platforms
-#[cfg(not(target_os = "linux"))]
-fn collect_file_descriptors(_pid: u32) -> Vec<()> {
-    Vec::new()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn collect_io_stats(_pid: u32) -> Option<()> {
-    None
-}
-
-#[cfg(not(target_os = "linux"))]
-fn collect_extended_info(_pid: u32) -> (Option<String>, Vec<String>) {
-    (None, Vec::new())
-}
-
 /// Lightweight per-process data captured each tick.
 #[derive(Debug, Clone)]
 pub struct ProcessSnapshot {
@@ -197,37 +178,31 @@ pub struct ProcessSnapshot {
 pub struct ProcessTrackerChannels {
     pub query_tx: mpsc::Sender<ProcessTrackerQuery>,
     pub query_rx: Option<mpsc::Receiver<ProcessTrackerQuery>>,
-    pub event_tx: mpsc::Sender<ProcessTrackerEvent>,
-    pub event_rx: Option<mpsc::Receiver<ProcessTrackerEvent>>,
+    /// Broadcast channel — clone the sender to subscribe from outside the tracker.
+    pub event_tx: broadcast::Sender<ProcessTrackerEvent>,
 }
 
 impl ProcessTrackerChannels {
     pub fn new() -> Self {
         let (query_tx, query_rx) = mpsc::channel(1024);
-        let (event_tx, event_rx) = mpsc::channel(1024);
+        // capacity 64: events are cheap and subscribers should keep up
+        let (event_tx, _) = broadcast::channel(64);
         Self {
             query_tx,
             query_rx: Some(query_rx),
             event_tx,
-            event_rx: Some(event_rx),
         }
     }
 
-    pub fn take_receivers(
-        &mut self,
-    ) -> Result<(
-        mpsc::Receiver<ProcessTrackerQuery>,
-        mpsc::Receiver<ProcessTrackerEvent>,
-    )> {
-        let query_rx = self
-            .query_rx
+    pub fn take_query_rx(&mut self) -> Result<mpsc::Receiver<ProcessTrackerQuery>> {
+        self.query_rx
             .take()
-            .ok_or_else(|| Error::ProcessTracker("Query receiver already taken".into()))?;
-        let event_rx = self
-            .event_rx
-            .take()
-            .ok_or_else(|| Error::ProcessTracker("Event receiver already taken".into()))?;
-        Ok((query_rx, event_rx))
+            .ok_or_else(|| Error::ProcessTracker("Query receiver already taken".into()))
+    }
+
+    /// Subscribe to tracker events from outside (e.g. Telegram bot, WebSocket handler).
+    pub fn subscribe(&self) -> broadcast::Receiver<ProcessTrackerEvent> {
+        self.event_tx.subscribe()
     }
 }
 
@@ -272,36 +247,30 @@ impl ProcessTracker {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_poll_interval(mut self, d: Duration) -> Self {
         self.poll_interval = d;
         self
     }
 
-    async fn emit_event(&self, event: ProcessTrackerEvent) {
-        self.channels
-            .event_tx
-            .send(event)
-            .await
-            .expect("event receiver dropped unexpectedly");
+    fn emit_event(&self, event: ProcessTrackerEvent) {
+        // Err means no subscribers are listening right now — that's fine.
+        let _ = self.channels.event_tx.send(event);
     }
 
     async fn start_tracking_loop(mut self) -> Result<()> {
-        let (mut query_rx, mut event_rx) = self
+        let mut query_rx = self
             .channels
-            .take_receivers()
-            .expect("Failed to take receivers");
+            .take_query_rx()
+            .expect("Failed to take query receiver");
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         loop {
             tokio::select! {
                 Some(query) = query_rx.recv() => {
                     self.handle_query(query);
                 }
-                Some(event) = event_rx.recv() => {
-                    if let Err(err) = self.handle_event(event).await {
-                    }
-                }
                 _ = async { self.poll_interval_timer.as_mut().unwrap().tick().await }, if self.poll_interval_timer.is_some() => {
-                    self.emit_event(ProcessTrackerEvent::RefreshTick).await;
+                    self.handle_tick().await;
                 }
             }
         }
@@ -321,16 +290,6 @@ impl ProcessTracker {
         }
     }
 
-    async fn handle_event(&mut self, event: ProcessTrackerEvent) -> Result<()> {
-        match event {
-            ProcessTrackerEvent::RefreshTick => {
-                self.handle_tick().await;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
     async fn handle_tick(&mut self) {
         // ----------------------------------------------------------------
         // Refresh all processes (need parent links to walk subtree).
@@ -345,6 +304,7 @@ impl ProcessTracker {
         // Check root.
         // ----------------------------------------------------------------
         let root_pid_sysinfo = Pid::from_u32(self.state.root_pid);
+        #[cfg(target_os = "linux")]
         let (cwd, cmdline) = collect_extended_info(self.state.root_pid);
         let root_snap = self.sys.process(root_pid_sysinfo).map(|p| ProcessSnapshot {
             pid: self.state.root_pid,
@@ -371,10 +331,13 @@ impl ProcessTracker {
                 // Don't emit RootExited on first tick — the PID might not exist yet
             } else {
                 warn!(root_pid = self.state.root_pid, "root process exited");
+                // Mark the last known root snapshot as Gone before clearing it.
+                if let Some(ref mut snap) = self.state.last_root {
+                    snap.state = ProcessState::Gone;
+                }
                 self.emit_event(ProcessTrackerEvent::RootExited {
                     pid: self.state.root_pid,
-                })
-                .await;
+                });
                 self.poll_interval_timer = None;
             }
         }
@@ -408,8 +371,7 @@ impl ProcessTracker {
             self.emit_event(ProcessTrackerEvent::InitialSnapshot {
                 root: root_snap.clone().unwrap(),
                 children: child_snaps.clone(),
-            })
-            .await;
+            });
             if child_snaps.is_empty() {
                 info!("no child processes found yet — waiting for them to spawn");
             } else {
@@ -431,8 +393,7 @@ impl ProcessTracker {
                 for s in &appeared_snaps {
                     info!(pid = s.pid, name = %s.name, "child process appeared");
                 }
-                self.emit_event(ProcessTrackerEvent::ChildrenAppeared(appeared_snaps))
-                    .await;
+                self.emit_event(ProcessTrackerEvent::ChildrenAppeared(appeared_snaps));
             }
 
             // Disappeared
@@ -442,8 +403,7 @@ impl ProcessTracker {
                 }
                 self.emit_event(ProcessTrackerEvent::ChildrenExited(
                     disappeared_pids.clone(),
-                ))
-                .await;
+                ));
             }
         }
 
@@ -457,7 +417,7 @@ impl ProcessTracker {
                 "all child processes have exited — work is done"
             );
             self.state.work_done = true;
-            self.emit_event(ProcessTrackerEvent::AllChildrenGone).await;
+            self.emit_event(ProcessTrackerEvent::AllChildrenGone);
         }
 
         self.state.last_children = child_snaps;
@@ -513,6 +473,8 @@ impl ProcessTracker {
 }
 
 static PROCESS_TRACKER_QUERY_SENDER: OnceLock<mpsc::Sender<ProcessTrackerQuery>> = OnceLock::new();
+static PROCESS_TRACKER_EVENT_SENDER: OnceLock<broadcast::Sender<ProcessTrackerEvent>> =
+    OnceLock::new();
 
 pub fn init_process_tracker() {
     let config = get_config();
@@ -521,10 +483,21 @@ pub fn init_process_tracker() {
         PROCESS_TRACKER_QUERY_SENDER
             .set(process_tracker.channels.query_tx.clone())
             .unwrap();
-        tokio::spawn(
-            async move { if let Err(err) = process_tracker.start_tracking_loop().await {} },
-        );
+        PROCESS_TRACKER_EVENT_SENDER
+            .set(process_tracker.channels.event_tx.clone())
+            .unwrap();
+        tokio::spawn(async move {
+            if let Err(e) = process_tracker.start_tracking_loop().await {
+                tracing::error!(?e, "process tracker loop exited with error");
+            }
+        });
     }
+}
+
+/// Subscribe to tracker events (e.g. from a Telegram bot or WebSocket handler).
+/// Returns `None` if the tracker was not started (no `--pid` given).
+pub fn subscribe_events() -> Option<broadcast::Receiver<ProcessTrackerEvent>> {
+    PROCESS_TRACKER_EVENT_SENDER.get().map(|tx| tx.subscribe())
 }
 
 fn get_process_tracker_query_sender() -> &'static mpsc::Sender<ProcessTrackerQuery> {

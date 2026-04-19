@@ -44,6 +44,18 @@ pub struct IOStatsResponse {
     pub write_chars: u64,
 }
 
+/// A single open file descriptor (Linux only).
+#[cfg(target_os = "linux")]
+#[derive(Debug, Serialize, Clone)]
+pub struct FileDescriptorResponse {
+    /// The raw fd number.
+    pub fd: i32,
+    /// Human-readable target, e.g. `"/dev/null"`, `"socket:[12345]"`.
+    pub target: String,
+    /// Broad category of the fd.
+    pub fd_type: String,
+}
+
 /// Serialisable mirror of `ProcessSnapshot`.
 #[derive(Debug, Serialize, Clone)]
 pub struct ProcessSnapshotResponse {
@@ -63,6 +75,9 @@ pub struct ProcessSnapshotResponse {
     /// Number of open file descriptors.
     #[cfg(target_os = "linux")]
     pub open_fds: usize,
+    /// Details for each open file descriptor.
+    #[cfg(target_os = "linux")]
+    pub open_files: Vec<FileDescriptorResponse>,
     #[cfg(target_os = "linux")]
     pub io_stats: Option<IOStatsResponse>,
 }
