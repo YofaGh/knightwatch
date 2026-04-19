@@ -1,9 +1,9 @@
 use axum::{
-    http::StatusCode,
-    response::{Html, Json},
+    body::Body,
+    http::{StatusCode, header},
+    response::{Html, Json, Response},
 };
 use base64::{Engine as _, engine::general_purpose};
-// use screenshots::image::ImageFormat;
 use std::time::SystemTime;
 
 use super::{constants::*, models::*, utils::*};
@@ -31,14 +31,20 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<
     let images = crate::core::screenshot_all_screens().map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse { success: false, message: format!("Failed to take screenshot: {err}") }),
+            Json(ErrorResponse {
+                success: false,
+                message: format!("Failed to take screenshot: {err}"),
+            }),
         )
     })?;
     if images.is_empty() {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-            success: false,
-            message: "No screens found".to_string(),
-        })));
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                success: false,
+                message: "No screens found".to_string(),
+            }),
+        ));
     }
     let screens: Vec<ScreenshotImage> = images
         .into_iter()
@@ -51,8 +57,24 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<
     Ok(Json(ScreenshotResponse { screens, count }))
 }
 
-pub async fn screenshot_view() -> Html<&'static str> {
+pub async fn view() -> Html<&'static str> {
     Html(VIEW_HTML)
+}
+
+pub async fn view_css() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/css")
+        .body(Body::from(VIEW_CSS))
+        .unwrap()
+}
+
+pub async fn view_js() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/javascript")
+        .body(Body::from(VIEW_JS))
+        .unwrap()
 }
 
 // ---------------------------------------------------------------------------

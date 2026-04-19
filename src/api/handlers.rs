@@ -8,7 +8,9 @@ fn create_router() -> Router {
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/health",     get(health))
         .route("/screenshot", get(screenshot))
-        .route("/view",       get(screenshot_view))
+        .route("/view",       get(view))
+        .route("/view.css", get(view_css))
+        .route("/view.js", get(view_js))
         // ── Process tracking ──────────────────────────────────────────────
         .route("/process",          get(process_tree))     // full tree
         .route("/process/root",     get(process_root))     // root only
