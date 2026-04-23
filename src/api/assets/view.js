@@ -35,6 +35,19 @@ function fmtBytes(n) {
   return n + " B";
 }
 
+function fmtTimestamp(ts) {
+  if (!ts) return "—";
+  try {
+    return new Date(ts).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
+
 function buildCard(proc, isRoot = false) {
   // ── Linux-only extras ──────────────────────────────────────────────
   let linuxExtras = "";
@@ -118,25 +131,50 @@ function refreshScreenshots() {
     })
     .then((data) => {
       data.screens.forEach((screen, i) => {
-        let container = document.getElementById(`screen-${i}`);
+        const containerId = `screen-${screen.monitor_id ?? i}`;
+        let container = document.getElementById(containerId);
+
         if (!container) {
           container = document.createElement("div");
-          container.id = `screen-${i}`;
+          container.id = containerId;
           container.className = "screen-container";
-          container.innerHTML = `<div class="screen-label">Display ${i + 1}</div><img alt="Display ${i + 1}" />`;
+          container.innerHTML = `
+            <div class="screen-label-row">
+              <span class="screen-label screen-name"></span>
+              <span class="screen-meta screen-dims"></span>
+              <span class="screen-meta screen-ts"></span>
+            </div>
+            <img alt="" />`;
           screensDiv.appendChild(container);
         }
+
+        // Update label fields
+        const nameEl = container.querySelector(".screen-name");
+        const dimsEl = container.querySelector(".screen-dims");
+        const tsEl = container.querySelector(".screen-ts");
+
+        if (nameEl) nameEl.textContent = screen.monitor_name || `Display ${i + 1}`;
+        if (dimsEl && screen.width && screen.height)
+          dimsEl.textContent = `${screen.width}×${screen.height}`;
+        if (tsEl) tsEl.textContent = fmtTimestamp(screen.timestamp);
+
+        // Only swap src if the image actually changed
         const img = container.querySelector("img");
+        img.alt = screen.monitor_name || `Display ${i + 1}`;
         const newSrc = `data:${screen.mime};base64,${screen.data}`;
         if (img.src !== newSrc) img.src = newSrc;
       });
-      screensDiv.querySelectorAll(".screen-container").forEach((el, i) => {
-        if (i >= data.screens.length) el.remove();
+
+      // Remove stale containers
+      screensDiv.querySelectorAll(".screen-container").forEach((el) => {
+        const idx = [...screensDiv.querySelectorAll(".screen-container")].indexOf(el);
+        if (idx >= data.screens.length) el.remove();
       });
+
       const elapsed = Date.now() - start;
       statusEl.textContent = `● LIVE · ${data.screens.length} SCREEN${data.screens.length > 1 ? "S" : ""} · ${elapsed}MS`;
     })
-    .catch((err) => {
+    .catch(() => {
       statusEl.innerHTML = `<span style="color:var(--error)">● OFFLINE · ${new Date().toLocaleTimeString()}</span>`;
     });
 }

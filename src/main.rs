@@ -4,6 +4,7 @@ mod core;
 mod errors;
 mod prelude;
 mod process_tracker;
+mod screen_capture;
 mod telegram_bot;
 
 #[tokio::main]

@@ -141,6 +141,18 @@ main {
   object-fit: contain;
 }
 
+.screen-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+}
+.screen-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 /* ── Process pane ────────────────────────────────────── */
 #process-pane {
   width: 100%;

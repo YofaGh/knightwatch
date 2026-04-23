@@ -35,7 +35,7 @@ pub async fn health() -> Json<HealthResponse> {
 }
 
 pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let images = crate::core::screenshot_all_screens().map_err(|err| {
+    let images = crate::screen_capture::screenshot_all_screens().map_err(|err| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -55,9 +55,14 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<
     }
     let screens: Vec<ScreenshotImage> = images
         .into_iter()
-        .map(|png_bytes| ScreenshotImage {
-            data: general_purpose::STANDARD.encode(&png_bytes),
+        .map(|s| ScreenshotImage {
+            data: general_purpose::STANDARD.encode(&s.image),
             mime: "image/png".to_string(),
+            monitor_name: s.monitor_name,
+            monitor_id: s.monitor_id,
+            width: s.width,
+            height: s.height,
+            timestamp: s.timestamp,
         })
         .collect();
     let count = screens.len();
