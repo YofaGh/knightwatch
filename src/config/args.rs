@@ -1,5 +1,8 @@
 #[derive(clap::Parser, Debug)]
-#[command(name = "knightwatch", about = "Screen monitoring and notification tool")]
+#[command(
+    name = "knightwatch",
+    about = "Screen monitoring and notification tool"
+)]
 pub struct CliArgs {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -23,6 +26,10 @@ pub struct CliArgs {
     /// Enable Telegram bot
     #[arg(long, default_value_t = false)]
     pub telegram: bool,
+
+    /// Webhook URLs to notify on process events (repeatable)
+    #[arg(long = "webhook")]
+    pub webhook_urls: Vec<String>,
 }
 
 #[derive(clap::Subcommand, Debug)]
