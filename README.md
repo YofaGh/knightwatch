@@ -6,7 +6,7 @@ A lightweight, real-time browser-based dashboard for monitoring live screenshots
 
 ## Overview
 
-knightwatch provides a sleek dark-mode web interface that streams live screen captures and process telemetry directly in your browser. The backend is a Rust server built on [Tokio](https://tokio.rs/) and [Axum](https://github.com/tokio-rs/axum), keeping the footprint small and performance high — no heavy agents or desktop apps required. It's designed for quick visual oversight of a running system, whether you're monitoring a headless server, a build machine, or a long-running automation task.
+Knightwatch provides a sleek dark-mode web interface that streams live screen captures and process telemetry directly in your browser. The backend is a Rust server built on [Tokio](https://tokio.rs/) and [Axum](https://github.com/tokio-rs/axum), keeping the footprint small and performance high — no heavy agents or desktop apps required. It's designed for quick visual oversight of a running system, whether you're monitoring a headless server, a build machine, or a long-running automation task.
 
 ---
 
@@ -17,6 +17,8 @@ knightwatch provides a sleek dark-mode web interface that streams live screen ca
 - **Work-Done Detection** — Automatically shows a completion banner when all child processes have exited
 - **Responsive Layout** — Side-by-side panels on desktop, stacked on mobile
 - **Linux Extended Telemetry** — On Linux, child process snapshots include working directory, command line, open file descriptors, and I/O stats
+- **Telegram Bot** — Optional bot for remote monitoring and push notifications on process events
+- **Webhook Dispatcher** — POST process events to one or more URLs with automatic retry
 - **Structured Logging** — Tracing via `tracing-subscriber` with configurable log levels via `RUST_LOG`
 
 ---
@@ -25,12 +27,16 @@ knightwatch provides a sleek dark-mode web interface that streams live screen ca
 
 The Rust backend exposes a small HTTP API (served by Axum) that the frontend polls every 2 seconds:
 
-| Endpoint | Description |
-| --- | --- |
-| `GET /` | Serves the self-contained `view.html` dashboard |
-| `GET /health` | Returns server status, version, and uptime |
-| `GET /screenshot` | Returns a JSON array of base64-encoded PNG screen captures |
-| `GET /process` | Returns root process info, child processes, CPU/memory stats, and `work_done` flag |
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `GET /` | GET | Serves the self-contained `view.html` dashboard |
+| `GET /health` | GET | Returns server status, version, and uptime |
+| `GET /screenshot` | GET | Returns a JSON array of base64-encoded PNG screen captures |
+| `GET /process` | GET | Returns root process info, child processes, CPU/memory stats, and `work_done` flag |
+| `GET /process/root` | GET | Returns only the root process snapshot, or 404 if it has exited |
+| `GET /process/children` | GET | Returns snapshots of all currently live child processes |
+| `GET /process/status` | GET | Lightweight summary — root alive/dead, child count, and `work_done` flag |
+| `POST /shutdown` | POST | Gracefully shuts down the server |
 
 ### Expected Response Shapes
 
@@ -39,8 +45,17 @@ The Rust backend exposes a small HTTP API (served by Axum) that the frontend pol
 ```json
 {
   "screens": [
-    { "mime": "image/png", "data": "<base64>" }
-  ]
+    {
+      "mime": "image/png",
+      "data": "<base64>",
+      "monitor_name": "Built-in Display",
+      "monitor_id": 0,
+      "width": 1920,
+      "height": 1080,
+      "timestamp": "2025-01-01T00:00:00Z"
+    }
+  ],
+  "count": 1
 }
 ```
 
@@ -57,7 +72,25 @@ The Rust backend exposes a small HTTP API (served by Axum) that the frontend pol
     "memory_human": "128 MB"
   },
   "child_count": 2,
-  "children": [...]
+  "children": [...],
+  "timestamp": "2025-01-01T00:00:00Z"
+}
+```
+
+**`/process/root`**
+
+Returns a single `ProcessInfo` object, or `404` if the root process has exited.
+
+**`/process/status`**
+
+```json
+{
+  "root_alive": true,
+  "root_pid": 1234,
+  "root_name": "my-app",
+  "child_count": 2,
+  "work_done": false,
+  "timestamp": "2025-01-01T00:00:00Z"
 }
 ```
 
@@ -89,15 +122,24 @@ Process `state` can be `running`, `sleeping`, `gone`, or any other string (rende
 cargo run -- --pid <PID>
 ```
 
-Pass the PID of the root process you want to monitor. The server will start and begin tracking that process and all its children.
+Pass the PID of the root process you want to monitor. The server will start on `0.0.0.0:8083` by default.
 
-By default the API server starts automatically. To run without it:
+### CLI Arguments
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--pid <PID>` | — | PID of the root process to track |
+| `--host <HOST>` | `0.0.0.0` | Host address for the API server |
+| `--port <PORT>` / `-p` | `8083` | Port for the API server |
+| `--no-server` | `false` | Disable the API server entirely |
+| `--telegram` | `false` | Enable the Telegram bot |
+| `--webhook <URL>` | — | Webhook URL to POST process events to (repeatable) |
+
+To run without the API server:
 
 ```bash
 cargo run -- --pid <PID> --no-server
 ```
-
-Then open the dashboard in your browser at the configured address.
 
 ### Log Level
 
@@ -109,18 +151,100 @@ RUST_LOG=debug cargo run -- --pid <PID>
 
 ---
 
+## Telegram Bot
+
+Knightwatch includes a Telegram bot for remote monitoring and alerting without opening the web dashboard.
+
+### Setup
+
+Store your bot token in persistent config:
+
+```bash
+cargo run -- config set telegram-token <YOUR_BOT_TOKEN>
+```
+
+Verify it was saved:
+
+```bash
+cargo run -- config get telegram-token
+```
+
+### Enabling
+
+Pass the `--telegram` flag at runtime:
+
+```bash
+cargo run -- --pid <PID> --telegram
+```
+
+### Capabilities
+
+The bot sends push notifications for all process events:
+
+- 🟢 **Initial snapshot** — root and children when tracking begins
+- 🆕 **Children appeared** — new child processes detected
+- 🔴 **Children exited** — specific child PIDs exited
+- ✅ **All children gone** — all child processes have exited
+- 💀 **Root process exited** — the root process itself has stopped
+
+---
+
+## Webhooks
+
+Knightwatch can POST process events to one or more HTTP endpoints. Useful for integrating with external orchestration, alerting, or logging pipelines.
+
+### Usage
+
+Pass one or more `--webhook` flags:
+
+```bash
+cargo run -- --pid <PID> --webhook https://example.com/hook --webhook https://other.com/hook
+```
+
+Webhook URLs can also be stored in persistent config (merged with any provided via `--webhook` at runtime, deduplicated).
+
+### Payload Format
+
+```json
+{
+  "version": "1.0.0",
+  "event": "process.children_exited",
+  "timestamp": "2025-01-01T00:00:00Z",
+  "data": {
+    "pids": [5678, 5679]
+  }
+}
+```
+
+**Event names:**
+
+| Event | Description |
+| --- | --- |
+| `process.initial_snapshot` | First capture after startup |
+| `process.children_appeared` | New child processes detected |
+| `process.children_exited` | One or more children exited |
+| `process.all_children_gone` | All children have exited |
+| `process.root_exited` | Root process exited |
+
+Failed deliveries are retried up to 3 times with exponential backoff.
+
+---
+
+## Persistent Configuration
+
+Knightwatch stores some settings (e.g. Telegram token, webhook URLs) in a persistent config file managed via the `config` subcommand.
+
+```bash
+# Set a value
+cargo run -- config set telegram-token <TOKEN>
+
+# Get a value
+cargo run -- config get telegram-token
+```
+
 ---
 
 ## Roadmap
-
-### 🤖 Telegram Bot Integration *(planned)*
-
-A Telegram bot to allow remote monitoring and alerting without opening the web dashboard. Planned capabilities:
-
-- On-demand screenshot delivery via chat command
-- Process status summaries on request
-- Alerts when the root process exits or crashes
-- Work-done notifications pushed to a configured chat or channel
 
 ### 📊 Top Processes Endpoint *(planned)*
 
