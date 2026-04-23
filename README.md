@@ -132,13 +132,27 @@ Pass the PID of the root process you want to monitor. The server will start on `
 | `--host <HOST>` | `0.0.0.0` | Host address for the API server |
 | `--port <PORT>` / `-p` | `8083` | Port for the API server |
 | `--no-server` | `false` | Disable the API server entirely |
+| `--blind` | `false` | Disable the Screen Capture API (useful on platforms where it requires elevated permissions) |
 | `--telegram` | `false` | Enable the Telegram bot |
+| `--with-webhook` | `false` | Enable webhook dispatching |
 | `--webhook <URL>` | — | Webhook URL to POST process events to (repeatable) |
 
 To run without the API server:
 
 ```bash
 cargo run -- --pid <PID> --no-server
+```
+
+To run without screen capture (e.g. on a headless server or where permissions are restricted):
+
+```bash
+cargo run -- --pid <PID> --blind
+```
+
+To enable webhook dispatching with one or more targets:
+
+```bash
+cargo run -- --pid <PID> --with-webhook --webhook https://example.com/hook
 ```
 
 ### Log Level
@@ -161,6 +175,12 @@ Store your bot token in persistent config:
 
 ```bash
 cargo run -- config set telegram-token <YOUR_BOT_TOKEN>
+```
+
+Clear it if needed:
+
+```bash
+cargo run -- config set telegram-token --clear
 ```
 
 Verify it was saved:
@@ -195,13 +215,13 @@ Knightwatch can POST process events to one or more HTTP endpoints. Useful for in
 
 ### Usage
 
-Pass one or more `--webhook` flags:
+Enable webhooks with `--with-webhook` and provide one or more targets via `--webhook`:
 
 ```bash
-cargo run -- --pid <PID> --webhook https://example.com/hook --webhook https://other.com/hook
+cargo run -- --pid <PID> --with-webhook --webhook https://example.com/hook --webhook https://other.com/hook
 ```
 
-Webhook URLs can also be stored in persistent config (merged with any provided via `--webhook` at runtime, deduplicated).
+Webhook URLs can also be stored in persistent config (merged with any provided via `--webhook` at runtime, deduplicated). See [Persistent Configuration](#persistent-configuration) below.
 
 ### Payload Format
 
@@ -232,14 +252,37 @@ Failed deliveries are retried up to 3 times with exponential backoff.
 
 ## Persistent Configuration
 
-Knightwatch stores some settings (e.g. Telegram token, webhook URLs) in a persistent config file managed via the `config` subcommand.
+Knightwatch stores settings such as the Telegram token and webhook URLs in a persistent config file, managed via the `config` subcommand. Persisted webhook URLs are merged with any `--webhook` flags provided at runtime and deduplicated.
+
+The `config` subcommand uses `get` and `set` actions with the following fields:
+
+### `telegram-token`
 
 ```bash
-# Set a value
+# Set the token
 cargo run -- config set telegram-token <TOKEN>
 
-# Get a value
+# Clear the token
+cargo run -- config set telegram-token --clear
+
+# Read the current value
 cargo run -- config get telegram-token
+```
+
+### `webhook-urls`
+
+```bash
+# Add one or more URLs
+cargo run -- config set webhook-urls --add https://example.com/hook --add https://other.com/hook
+
+# Remove a specific URL
+cargo run -- config set webhook-urls --remove https://example.com/hook
+
+# Clear all stored URLs
+cargo run -- config set webhook-urls --clear
+
+# List all stored URLs
+cargo run -- config get webhook-urls
 ```
 
 ---
