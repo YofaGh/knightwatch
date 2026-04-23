@@ -58,4 +58,12 @@ pub enum ConfigAction {
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum ConfigField {
     TelegramToken { value: Option<String> },
+    WebhookUrls {
+        #[arg(long)]
+        add: Vec<String>,
+        #[arg(long)]
+        remove: Vec<String>,
+        #[arg(long, default_value_t = false)]
+        clear: bool,
+    },
 }

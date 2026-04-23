@@ -42,8 +42,17 @@ pub fn handle_config_command(command: &Command) -> Result<()> {
             ConfigAction::Get { field } => match field {
                 ConfigField::TelegramToken { .. } => match &config.persistent.telegram_token {
                     Some(t) => info!("telegram_token = {t}"),
-                    None => error!("telegram_token is not set"),
+                    None => info!("telegram_token is not set"),
                 },
+                ConfigField::WebhookUrls { .. } => {
+                    if config.persistent.webhook_urls.is_empty() {
+                        info!("no webhook_urls configured");
+                    } else {
+                        for url in &config.persistent.webhook_urls {
+                            info!("webhook_url = {url}");
+                        }
+                    }
+                }
             },
             ConfigAction::Set { field } => {
                 let mut persistent = PersistentConfig::load()?;
@@ -52,6 +61,31 @@ pub fn handle_config_command(command: &Command) -> Result<()> {
                         persistent.telegram_token = value.clone();
                         persistent.save()?;
                         info!("telegram_token updated.");
+                    }
+                    ConfigField::WebhookUrls { add, remove, clear } => {
+                        let mut persistent = PersistentConfig::load()?;
+                        if *clear {
+                            persistent.webhook_urls.clear();
+                            info!("webhook_urls cleared.");
+                        } else {
+                            for url in remove {
+                                if persistent.webhook_urls.contains(url) {
+                                    persistent.webhook_urls.retain(|u| u != url);
+                                    info!("webhook_url removed: {url}");
+                                } else {
+                                    info!("webhook_url not found: {url}");
+                                }
+                            }
+                            for url in add {
+                                if !persistent.webhook_urls.contains(url) {
+                                    persistent.webhook_urls.push(url.clone());
+                                    info!("webhook_url added: {url}");
+                                } else {
+                                    info!("webhook_url already exists: {url}");
+                                }
+                            }
+                        }
+                        persistent.save()?;
                     }
                 }
             }
