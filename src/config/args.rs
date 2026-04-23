@@ -3,7 +3,8 @@ use clap::Subcommand;
 #[derive(clap::Parser, Debug)]
 #[command(
     name = "knightwatch",
-    about = "Screen monitoring and notification tool"
+    about = "Screen monitoring and notification tool",
+    version
 )]
 pub struct CliArgs {
     #[command(subcommand)]
