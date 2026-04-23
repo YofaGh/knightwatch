@@ -1,4 +1,7 @@
-use axum::{Router, routing::{get, post}};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use tokio_util::sync::CancellationToken;
 
 use super::end_points::*;
@@ -26,7 +29,7 @@ pub fn init_api_server(cancel_token: CancellationToken) -> Result<()> {
     if config.args.no_server {
         return Ok(());
     }
-    let api_listener = crate::core::utils::get_listener(&get_config().server_address())?;
+    let api_listener = crate::utils::get_listener(&get_config().server_address())?;
     let app = create_router(cancel_token.clone());
     tokio::spawn(async move {
         axum::serve(api_listener, app)

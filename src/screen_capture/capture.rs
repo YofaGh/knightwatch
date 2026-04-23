@@ -31,7 +31,7 @@ pub fn take_screenshot(monitor: &Monitor) -> Result<Screenshot> {
     let rgba_img = monitor
         .capture_image()
         .map_err(|e| Error::Screen(format!("Failed to capture: {e}")))?;
-    let timestamp = crate::core::utils::now_rfc3339();
+    let timestamp = crate::utils::now_rfc3339();
     let width = rgba_img.width();
     let height = rgba_img.height();
     let mut buf = std::io::Cursor::new(Vec::new());

@@ -9,12 +9,12 @@ use std::time::SystemTime;
 
 use super::{constants::*, models::*};
 use crate::{
-    core::utils::now_rfc3339,
     process_tracker::{
         self,
         structs::{ProcessInfo, ProcessStatus, ProcessTree},
         utils::snapshot_to_response,
     },
+    utils::now_rfc3339,
 };
 
 pub async fn shutdown(

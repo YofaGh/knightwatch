@@ -1,4 +1,4 @@
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_tracing() -> Result<(), crate::errors::Error> {
     let env_filter: EnvFilter = EnvFilter::try_from_default_env()

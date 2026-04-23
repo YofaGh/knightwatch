@@ -1,16 +1,18 @@
 mod api;
 mod config;
-mod core;
 mod errors;
 mod prelude;
 mod process_tracker;
 mod screen_capture;
 mod telegram_bot;
+mod telemetry;
+mod types;
+mod utils;
 mod webhook;
 
 #[tokio::main]
 async fn main() -> Result<(), errors::Error> {
-    core::telemetry::init_tracing()?;
+    telemetry::init_tracing()?;
     let config = config::init_config()?;
     if let Some(action) = config.args.command.as_ref() {
         return config::handle_config_command(action);

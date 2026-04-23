@@ -196,7 +196,7 @@ async fn handle_process(bot: Bot, msg: Message) -> Result<()> {
                 .collect(),
             child_count,
             work_done,
-            timestamp: crate::core::utils::now_rfc3339(),
+            timestamp: crate::utils::now_rfc3339(),
         });
     bot.send_message(msg.chat.id, process_tree_snapshot.to_string())
         .await?;

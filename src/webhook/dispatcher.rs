@@ -95,7 +95,7 @@ fn event_to_payload(event: &ProcessTrackerEvent) -> WebhookPayload {
     WebhookPayload {
         version: env!("CARGO_PKG_VERSION"),
         event: name,
-        timestamp: crate::core::utils::now_rfc3339(),
+        timestamp: crate::utils::now_rfc3339(),
         data,
     }
 }
