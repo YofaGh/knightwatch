@@ -1,5 +1,6 @@
 use axum::{
     body::Body,
+    extract::State,
     http::{StatusCode, header},
     response::{Html, Json, Response},
 };
@@ -16,9 +17,10 @@ use crate::{
     },
 };
 
-// ---------------------------------------------------------------------------
-// Screenshot endpoints
-// ---------------------------------------------------------------------------
+pub async fn shutdown(State(cancel_token): State<tokio_util::sync::CancellationToken>) -> &'static str {
+    cancel_token.cancel();
+    "Shutting down…"
+}
 
 pub async fn health() -> Json<HealthResponse> {
     let start_time = SystemTime::UNIX_EPOCH;
@@ -33,6 +35,10 @@ pub async fn health() -> Json<HealthResponse> {
         uptime: format!("{uptime}s"),
     })
 }
+
+// ---------------------------------------------------------------------------
+// Screenshot endpoints
+// ---------------------------------------------------------------------------
 
 pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<ErrorResponse>)> {
     let images = crate::screen_capture::screenshot_all_screens().map_err(|err| {

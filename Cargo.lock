@@ -2328,6 +2328,7 @@ dependencies = [
  "sysinfo",
  "teloxide",
  "tokio",
+ "tokio-util",
  "toml 1.0.1+spec-1.1.0",
  "tower-http",
  "tracing",
@@ -5087,6 +5088,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

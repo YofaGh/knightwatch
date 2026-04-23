@@ -6,6 +6,7 @@ use teloxide::{
         ReplyMarkup,
     },
 };
+use tokio_util::sync::CancellationToken;
 
 use super::models::Command;
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
     process_tracker::{self, utils::snapshot_to_response},
 };
 
-pub fn init_bot() -> Option<dispatching::ShutdownToken> {
+pub fn init_bot(cancel_token: CancellationToken) -> Option<dispatching::ShutdownToken> {
     let config = get_config();
     if !config.args.telegram {
         return None;
@@ -23,7 +24,9 @@ pub fn init_bot() -> Option<dispatching::ShutdownToken> {
         return None;
     };
     let bot = Bot::new(token);
-    let mut dispatcher = Dispatcher::builder(bot, schema()).build();
+    let mut dispatcher = Dispatcher::builder(bot, schema())
+        .dependencies(dptree::deps![cancel_token])
+        .build();
     let shutdown_token = dispatcher.shutdown_token();
     tokio::spawn(async move { dispatcher.dispatch().await });
     Some(shutdown_token)
@@ -146,19 +149,18 @@ async fn handle_process(bot: Bot, msg: Message) -> Result<()> {
     Ok(())
 }
 
-async fn handle_stop(bot: Bot, msg: Message) -> Result<()> {
-    bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…")
-        .await?;
-    // TODO: send event to main for app shutdown instead of exiting directly
-    std::process::exit(0);
+async fn handle_stop(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
+    bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…").await?;
+    cancel_token.cancel();
+    Ok(())
 }
 
-async fn handle_plain_message(bot: Bot, msg: Message) -> Result<()> {
+async fn handle_plain_message(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
     match msg.text() {
         Some("📋 Help") => handle_help(bot, msg).await?,
         Some("🖼️ Screenshot") => handle_screenshot(bot, msg).await?,
         Some("📊 Process") => handle_process(bot, msg).await?,
-        Some("🔴 Stop") => handle_stop(bot, msg).await?,
+        Some("🔴 Stop") => handle_stop(bot, msg, cancel_token).await?,
         Some(text) => {
             bot.send_message(
                 msg.chat.id,

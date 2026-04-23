@@ -15,13 +15,14 @@ async fn main() -> Result<(), errors::Error> {
         return config::handle_config_command(action);
     }
     process_tracker::init_process_tracker();
-    let _telegram_bot_handle = telegram_bot::init_bot(); // handle.shutdown().unwrap().await;
-    let api_server_handle = api::init_api_server()?;
-    if let Some(handle) = api_server_handle {
-        match handle.await {
-            Ok(_) => tracing::info!("API server stopped gracefully"),
-            Err(e) => tracing::error!(?e, "API server error"),
-        }
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    api::init_api_server(cancel_token.clone())?;
+    let telegram_bot_handle = telegram_bot::init_bot(cancel_token.clone());
+    while !cancel_token.is_cancelled() {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    if let Some(handle) = telegram_bot_handle {
+        handle.shutdown().unwrap().await;
     }
     Ok(())
 }

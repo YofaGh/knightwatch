@@ -153,7 +153,8 @@ function refreshScreenshots() {
         const dimsEl = container.querySelector(".screen-dims");
         const tsEl = container.querySelector(".screen-ts");
 
-        if (nameEl) nameEl.textContent = screen.monitor_name || `Display ${i + 1}`;
+        if (nameEl)
+          nameEl.textContent = screen.monitor_name || `Display ${i + 1}`;
         if (dimsEl && screen.width && screen.height)
           dimsEl.textContent = `${screen.width}×${screen.height}`;
         if (tsEl) tsEl.textContent = fmtTimestamp(screen.timestamp);
@@ -167,7 +168,9 @@ function refreshScreenshots() {
 
       // Remove stale containers
       screensDiv.querySelectorAll(".screen-container").forEach((el) => {
-        const idx = [...screensDiv.querySelectorAll(".screen-container")].indexOf(el);
+        const idx = [
+          ...screensDiv.querySelectorAll(".screen-container"),
+        ].indexOf(el);
         if (idx >= data.screens.length) el.remove();
       });
 
@@ -213,6 +216,23 @@ function refreshProcess() {
       childSection.style.display = "none";
     });
 }
+
+// ── Shutdown ───────────────────────────────────────────────────────
+
+document.getElementById("shutdown-btn").addEventListener("click", () => {
+  if (!confirm("Shut down the server?")) return;
+  const btn = document.getElementById("shutdown-btn");
+  btn.disabled = true;
+  btn.textContent = "Shutting down…";
+  fetch("/shutdown", { method: "POST" })
+    .then(() => {
+      statusEl.innerHTML = `<span style="color:var(--error)">● OFFLINE · Server shut down</span>`;
+    })
+    .catch(() => {
+      // Server likely closed the connection immediately — that's expected
+      statusEl.innerHTML = `<span style="color:var(--error)">● OFFLINE · Server shut down</span>`;
+    });
+});
 
 // ── Boot ───────────────────────────────────────────────────────────
 

@@ -75,6 +75,28 @@ header h1::before {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+#shutdown-btn {
+  background: transparent;
+  border: 1px solid var(--error);
+  color: var(--error);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#shutdown-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+}
+#shutdown-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Main layout ─────────────────────────────────────── */
 main {
   display: flex;
