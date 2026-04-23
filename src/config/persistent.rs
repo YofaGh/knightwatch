@@ -4,6 +4,7 @@ use crate::prelude::*;
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 pub struct PersistentConfig {
     pub telegram_token: Option<String>,
+    #[serde(default)]
     pub webhook_urls: Vec<String>,
 }
 

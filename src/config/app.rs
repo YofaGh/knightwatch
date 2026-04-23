@@ -57,10 +57,18 @@ pub fn handle_config_command(command: &Command) -> Result<()> {
             ConfigAction::Set { field } => {
                 let mut persistent = PersistentConfig::load()?;
                 match field {
-                    ConfigField::TelegramToken { value } => {
-                        persistent.telegram_token = value.clone();
-                        persistent.save()?;
-                        info!("telegram_token updated.");
+                    ConfigField::TelegramToken { value, clear } => {
+                        if *clear {
+                            persistent.telegram_token = None;
+                            persistent.save()?;
+                            info!("telegram_token cleared.");
+                        } else if value.is_some() {
+                            persistent.telegram_token = value.clone();
+                            persistent.save()?;
+                            info!("telegram_token updated.");
+                        } else {
+                            info!("No action: provide a value or --clear.");
+                        }
                     }
                     ConfigField::WebhookUrls { add, remove, clear } => {
                         let mut persistent = PersistentConfig::load()?;

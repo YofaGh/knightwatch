@@ -1,3 +1,5 @@
+use clap::Subcommand;
+
 #[derive(clap::Parser, Debug)]
 #[command(
     name = "knightwatch",
@@ -32,7 +34,7 @@ pub struct CliArgs {
     pub webhook_urls: Vec<String>,
 }
 
-#[derive(clap::Subcommand, Debug)]
+#[derive(Subcommand, Debug)]
 pub enum Command {
     /// Manage persistent configuration
     Config {
@@ -41,7 +43,7 @@ pub enum Command {
     },
 }
 
-#[derive(clap::Subcommand, Debug)]
+#[derive(Subcommand, Debug)]
 pub enum ConfigAction {
     /// Set a config value
     Set {
@@ -55,9 +57,13 @@ pub enum ConfigAction {
     },
 }
 
-#[derive(clap::Subcommand, Debug, Clone)]
+#[derive(Subcommand, Debug)]
 pub enum ConfigField {
-    TelegramToken { value: Option<String> },
+    TelegramToken {
+        value: Option<String>,
+        #[arg(long, default_value_t = false, conflicts_with = "value")]
+        clear: bool,
+    },
     WebhookUrls {
         #[arg(long)]
         add: Vec<String>,
