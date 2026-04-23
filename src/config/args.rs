@@ -21,6 +21,10 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub no_server: bool,
 
+    /// Disable the Screen Capture API, which may require elevated permissions on some platforms
+    #[arg(long, default_value_t = false)]
+    pub blind: bool,
+
     /// Process ID to track
     #[arg(long)]
     pub pid: Option<u32>,
@@ -32,6 +36,10 @@ pub struct CliArgs {
     /// Webhook URLs to notify on process events (repeatable)
     #[arg(long = "webhook")]
     pub webhook_urls: Vec<String>,
+
+    /// Enable Webhooks
+    #[arg(long, default_value_t = false)]
+    pub with_webhook: bool,
 }
 
 #[derive(Subcommand, Debug)]

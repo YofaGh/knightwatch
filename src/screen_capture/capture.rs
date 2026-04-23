@@ -4,6 +4,9 @@ use super::structs::Screenshot;
 use crate::prelude::*;
 
 pub fn screenshot_all_screens() -> Result<Vec<Screenshot>> {
+    if get_config().args.blind {
+        return Ok(vec![]);
+    }
     get_all_screens()?
         .into_iter()
         .map(|screen| take_screenshot(&screen))
