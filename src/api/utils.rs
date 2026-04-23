@@ -20,7 +20,7 @@ pub fn format_memory(bytes: u64) -> String {
 }
 
 pub fn snapshot_to_response(
-    s: crate::core::process_tracker::ProcessSnapshot,
+    s: crate::process_tracker::ProcessSnapshot,
 ) -> ProcessSnapshotResponse {
     ProcessSnapshotResponse {
         memory_human: format_memory(s.memory_bytes),

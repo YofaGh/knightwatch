@@ -6,8 +6,15 @@ use axum::{
 use base64::{Engine as _, engine::general_purpose};
 use std::time::SystemTime;
 
-use super::{constants::*, models::*, utils::*};
-use crate::core::process_tracker;
+use super::{constants::*, models::*};
+use crate::{
+    core::utils::now_rfc3339,
+    process_tracker::{
+        self,
+        structs::{ProcessInfo, ProcessStatus, ProcessTree},
+        utils::snapshot_to_response,
+    },
+};
 
 // ---------------------------------------------------------------------------
 // Screenshot endpoints
@@ -85,7 +92,7 @@ pub async fn view_js() -> Response<Body> {
 ///
 /// Returns the full process tree: root + all live descendants, plus a
 /// `work_done` flag. Useful for dashboards or external orchestration.
-pub async fn process_tree() -> Json<ProcessTreeResponse> {
+pub async fn process_tree() -> Json<ProcessTree> {
     let (root_snap, children_snaps, work_done) = tokio::join!(
         process_tracker::get_root(),
         process_tracker::get_children(),
@@ -93,7 +100,7 @@ pub async fn process_tree() -> Json<ProcessTreeResponse> {
     );
 
     let child_count = children_snaps.len();
-    Json(ProcessTreeResponse {
+    Json(ProcessTree {
         root: root_snap.map(snapshot_to_response),
         children: children_snaps
             .into_iter()
@@ -108,8 +115,7 @@ pub async fn process_tree() -> Json<ProcessTreeResponse> {
 /// `GET /process/root`
 ///
 /// Returns only the root process snapshot, or 404 if it has exited.
-pub async fn process_root()
--> Result<Json<ProcessSnapshotResponse>, (StatusCode, Json<ErrorResponse>)> {
+pub async fn process_root() -> Result<Json<ProcessInfo>, (StatusCode, Json<ErrorResponse>)> {
     match process_tracker::get_root().await {
         Some(snap) => Ok(Json(snapshot_to_response(snap))),
         None => Err((
@@ -125,7 +131,7 @@ pub async fn process_root()
 /// `GET /process/children`
 ///
 /// Returns snapshots of all currently live child processes.
-pub async fn process_children() -> Json<Vec<ProcessSnapshotResponse>> {
+pub async fn process_children() -> Json<Vec<ProcessInfo>> {
     let children = process_tracker::get_children().await;
     Json(children.into_iter().map(snapshot_to_response).collect())
 }
@@ -134,14 +140,14 @@ pub async fn process_children() -> Json<Vec<ProcessSnapshotResponse>> {
 ///
 /// Lightweight summary — cheap to poll frequently.
 /// Returns root alive/dead, child count, and the `work_done` flag.
-pub async fn process_status() -> Json<ProcessStatusResponse> {
+pub async fn process_status() -> Json<ProcessStatus> {
     let (root_snap, child_count, work_done) = tokio::join!(
         process_tracker::get_root(),
         async { process_tracker::get_children().await.len() },
         process_tracker::is_work_done(),
     );
 
-    Json(ProcessStatusResponse {
+    Json(ProcessStatus {
         root_alive: root_snap.is_some(),
         root_pid: root_snap.as_ref().map(|s| s.pid),
         root_name: root_snap.map(|s| s.name),

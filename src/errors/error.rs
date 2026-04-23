@@ -1,4 +1,5 @@
 use std::io::Error as IoError;
+use teloxide::errors::RequestError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -7,6 +8,7 @@ pub enum Error {
     Config(String),
     ProcessTracker(String),
     Other(String),
+    TelegramBot(String),
 }
 
 impl Error {
@@ -22,9 +24,16 @@ impl std::fmt::Display for Error {
             | Error::Screen(msg)
             | Error::Config(msg)
             | Error::Network(msg)
+            | Error::TelegramBot(msg)
             | Error::ProcessTracker(msg) => {
                 write!(f, "{msg}")
             }
         }
+    }
+}
+
+impl From<RequestError> for Error {
+    fn from(err: RequestError) -> Self {
+        Error::TelegramBot(err.to_string())
     }
 }

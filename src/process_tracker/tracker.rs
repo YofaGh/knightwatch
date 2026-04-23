@@ -2,107 +2,14 @@
 use procfs::process::{FDTarget, Process};
 
 use std::{collections::HashSet, sync::OnceLock};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
     time::Duration,
 };
 
+use super::{enums::*, structs::*};
 use crate::prelude::*;
-
-/// Events emitted by the tracker on its broadcast bus.
-/// Subscribers receive these without polling.
-#[derive(Debug, Clone)]
-pub enum ProcessTrackerEvent {
-    /// Emitted on the very first tick; contains everything we found.
-    InitialSnapshot {
-        root: ProcessSnapshot,
-        children: Vec<ProcessSnapshot>,
-    },
-    /// One or more new child processes appeared.
-    ChildrenAppeared(Vec<ProcessSnapshot>),
-    /// One or more child PIDs exited.
-    ChildrenExited(Vec<u32>),
-    /// All descendants have exited (root may still be alive).
-    AllChildrenGone,
-    /// The root process itself has exited.
-    RootExited { pid: u32 },
-}
-
-/// One-shot queries callers can send to read tracker state synchronously.
-#[derive(Debug)]
-pub enum ProcessTrackerQuery {
-    /// Returns a snapshot of the root process (None if already gone).
-    GetRoot {
-        response: oneshot::Sender<Option<ProcessSnapshot>>,
-    },
-    /// Returns snapshots of all currently live descendants.
-    GetChildren {
-        response: oneshot::Sender<Vec<ProcessSnapshot>>,
-    },
-    /// Returns true when no live descendants remain.
-    IsWorkDone { response: oneshot::Sender<bool> },
-}
-
-// ---------------------------------------------------------------------------
-// Public data types
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProcessState {
-    Running,
-    Sleeping,
-    Other(String),
-    Gone,
-}
-
-impl From<ProcessStatus> for ProcessState {
-    fn from(status: ProcessStatus) -> Self {
-        match status {
-            ProcessStatus::Run => ProcessState::Running,
-            ProcessStatus::Sleep | ProcessStatus::Idle => ProcessState::Sleeping,
-            other => ProcessState::Other(format!("{other:?}")),
-        }
-    }
-}
-
-impl std::fmt::Display for ProcessState {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ProcessState::Running => write!(f, "running"),
-            ProcessState::Sleeping => write!(f, "sleeping"),
-            ProcessState::Other(s) => write!(f, "other({s})"),
-            ProcessState::Gone => write!(f, "gone"),
-        }
-    }
-}
-
-// Linux-only structures
-#[cfg(target_os = "linux")]
-#[derive(Debug, Clone)]
-pub struct FileDescriptorInfo {
-    pub fd: i32,
-    pub target: String,
-    pub fd_type: FDType,
-}
-
-#[cfg(target_os = "linux")]
-#[derive(Debug, Clone)]
-pub enum FDType {
-    File,
-    Socket,
-    Pipe,
-    Other,
-}
-
-#[cfg(target_os = "linux")]
-#[derive(Debug, Clone)]
-pub struct IOStats {
-    pub read_bytes: u64,
-    pub write_bytes: u64,
-    pub read_chars: u64,
-    pub write_chars: u64,
-}
 
 // Linux-only helper functions
 #[cfg(target_os = "linux")]
@@ -153,33 +60,6 @@ fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
         .and_then(|p| p.cmdline().ok())
         .unwrap_or_default();
     (cwd, cmdline)
-}
-
-/// Lightweight per-process data captured each tick.
-#[derive(Debug, Clone)]
-pub struct ProcessSnapshot {
-    pub pid: u32,
-    pub name: String,
-    pub state: ProcessState,
-    pub cpu_usage: f32,
-    pub memory_bytes: u64,
-
-    // Optional fields only available on Linux
-    #[cfg(target_os = "linux")]
-    pub cwd: Option<String>,
-    #[cfg(target_os = "linux")]
-    pub cmdline: Vec<String>,
-    #[cfg(target_os = "linux")]
-    pub open_files: Vec<FileDescriptorInfo>,
-    #[cfg(target_os = "linux")]
-    pub io_stats: Option<IOStats>,
-}
-
-pub struct ProcessTrackerChannels {
-    pub query_tx: mpsc::Sender<ProcessTrackerQuery>,
-    pub query_rx: Option<mpsc::Receiver<ProcessTrackerQuery>>,
-    /// Broadcast channel — clone the sender to subscribe from outside the tracker.
-    pub event_tx: broadcast::Sender<ProcessTrackerEvent>,
 }
 
 impl ProcessTrackerChannels {
@@ -477,21 +357,21 @@ static PROCESS_TRACKER_EVENT_SENDER: OnceLock<broadcast::Sender<ProcessTrackerEv
     OnceLock::new();
 
 pub fn init_process_tracker() {
-    let config = get_config();
-    if let Some(pid) = config.args.pid {
-        let process_tracker = ProcessTracker::new(pid);
-        PROCESS_TRACKER_QUERY_SENDER
-            .set(process_tracker.channels.query_tx.clone())
-            .unwrap();
-        PROCESS_TRACKER_EVENT_SENDER
-            .set(process_tracker.channels.event_tx.clone())
-            .unwrap();
-        tokio::spawn(async move {
-            if let Err(e) = process_tracker.start_tracking_loop().await {
-                tracing::error!(?e, "process tracker loop exited with error");
-            }
-        });
-    }
+    let Some(pid) = get_config().args.pid else {
+        return;
+    };
+    let process_tracker = ProcessTracker::new(pid);
+    PROCESS_TRACKER_QUERY_SENDER
+        .set(process_tracker.channels.query_tx.clone())
+        .unwrap();
+    PROCESS_TRACKER_EVENT_SENDER
+        .set(process_tracker.channels.event_tx.clone())
+        .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = process_tracker.start_tracking_loop().await {
+            tracing::error!(?e, "process tracker loop exited with error");
+        }
+    });
 }
 
 /// Subscribe to tracker events (e.g. from a Telegram bot or WebSocket handler).
@@ -500,16 +380,15 @@ pub fn subscribe_events() -> Option<broadcast::Receiver<ProcessTrackerEvent>> {
     PROCESS_TRACKER_EVENT_SENDER.get().map(|tx| tx.subscribe())
 }
 
-fn get_process_tracker_query_sender() -> &'static mpsc::Sender<ProcessTrackerQuery> {
-    PROCESS_TRACKER_QUERY_SENDER
-        .get()
-        .expect("Process tracker query sender not initialized")
+fn get_process_tracker_query_sender() -> Option<&'static mpsc::Sender<ProcessTrackerQuery>> {
+    PROCESS_TRACKER_QUERY_SENDER.get()
 }
 
 /// Get the current root process snapshot.
 pub async fn get_root() -> Option<ProcessSnapshot> {
+    let tx_ref = get_process_tracker_query_sender()?;
     let (tx, rx) = oneshot::channel();
-    let _ = get_process_tracker_query_sender()
+    let _ = tx_ref
         .send(ProcessTrackerQuery::GetRoot { response: tx })
         .await;
     rx.await.unwrap_or(None)
@@ -517,8 +396,11 @@ pub async fn get_root() -> Option<ProcessSnapshot> {
 
 /// Get snapshots of all currently live child processes.
 pub async fn get_children() -> Vec<ProcessSnapshot> {
+    let Some(tx_ref) = get_process_tracker_query_sender() else {
+        return Vec::new();
+    };
     let (tx, rx) = oneshot::channel();
-    let _ = get_process_tracker_query_sender()
+    let _ = tx_ref
         .send(ProcessTrackerQuery::GetChildren { response: tx })
         .await;
     rx.await.unwrap_or_default()
@@ -526,8 +408,11 @@ pub async fn get_children() -> Vec<ProcessSnapshot> {
 
 /// Returns true when all children have exited (work is considered done).
 pub async fn is_work_done() -> bool {
+    let Some(tx_ref) = get_process_tracker_query_sender() else {
+        return true; // no tracker = no work to wait for
+    };
     let (tx, rx) = oneshot::channel();
-    let _ = get_process_tracker_query_sender()
+    let _ = tx_ref
         .send(ProcessTrackerQuery::IsWorkDone { response: tx })
         .await;
     rx.await.unwrap_or(true)

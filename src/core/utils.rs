@@ -10,3 +10,7 @@ pub fn get_listener(address: &str) -> Result<TcpListener> {
         .map_err(|err| Error::bind_address(address, err))?;
     TcpListener::from_std(std_listener).map_err(|err| Error::bind_address(address, err))
 }
+
+pub fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
