@@ -13,7 +13,7 @@ pub struct FileDescriptorInfo {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Copy)]
 pub struct IOStats {
     pub read_bytes: u64,
     pub write_bytes: u64,

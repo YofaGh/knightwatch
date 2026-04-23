@@ -79,17 +79,13 @@ impl ProcessTrackerChannels {
             .take()
             .ok_or_else(|| Error::ProcessTracker("Query receiver already taken".into()))
     }
-
-    /// Subscribe to tracker events from outside (e.g. Telegram bot, WebSocket handler).
-    pub fn subscribe(&self) -> broadcast::Receiver<ProcessTrackerEvent> {
-        self.event_tx.subscribe()
-    }
 }
 
 pub struct ProcessTrackerState {
     root_pid: u32,
     prev_child_pids: HashSet<u32>,
     work_done: bool,
+    children_ever_seen: bool,
     last_root: Option<ProcessSnapshot>,
     last_children: Vec<ProcessSnapshot>,
 }
@@ -100,6 +96,7 @@ impl ProcessTrackerState {
             root_pid,
             prev_child_pids: HashSet::new(),
             work_done: false,
+            children_ever_seen: false,
             last_root: None,
             last_children: Vec::new(),
         }
@@ -288,10 +285,20 @@ impl ProcessTracker {
         }
 
         // ----------------------------------------------------------------
-        // All children gone?
+        // Track whether we've ever seen children.
         // ----------------------------------------------------------------
-        let all_children_gone = current_child_pids.is_empty();
-        if all_children_gone && !self.first_tick {
+        if !current_child_pids.is_empty() {
+            self.state.children_ever_seen = true;
+        }
+
+        // ----------------------------------------------------------------
+        // All children gone? Only fire on the transition, and only after
+        // we've seen at least one child.
+        // ----------------------------------------------------------------
+        let was_non_empty = !self.state.prev_child_pids.is_empty();
+        let now_empty = current_child_pids.is_empty();
+
+        if self.state.children_ever_seen && was_non_empty && now_empty {
             info!(
                 root_pid = self.state.root_pid,
                 "all child processes have exited — work is done"

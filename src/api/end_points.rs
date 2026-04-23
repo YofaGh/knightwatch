@@ -17,7 +17,9 @@ use crate::{
     },
 };
 
-pub async fn shutdown(State(cancel_token): State<tokio_util::sync::CancellationToken>) -> &'static str {
+pub async fn shutdown(
+    State(cancel_token): State<tokio_util::sync::CancellationToken>,
+) -> &'static str {
     cancel_token.cancel();
     "Shutting down…"
 }
@@ -112,10 +114,10 @@ pub async fn process_tree() -> Json<ProcessTree> {
 
     let child_count = children_snaps.len();
     Json(ProcessTree {
-        root: root_snap.map(snapshot_to_response),
+        root: root_snap.map(|s| snapshot_to_response(&s)),
         children: children_snaps
             .into_iter()
-            .map(snapshot_to_response)
+            .map(|s| snapshot_to_response(&s))
             .collect(),
         child_count,
         work_done,
@@ -128,7 +130,7 @@ pub async fn process_tree() -> Json<ProcessTree> {
 /// Returns only the root process snapshot, or 404 if it has exited.
 pub async fn process_root() -> Result<Json<ProcessInfo>, (StatusCode, Json<ErrorResponse>)> {
     match process_tracker::get_root().await {
-        Some(snap) => Ok(Json(snapshot_to_response(snap))),
+        Some(snap) => Ok(Json(snapshot_to_response(&snap))),
         None => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -144,7 +146,12 @@ pub async fn process_root() -> Result<Json<ProcessInfo>, (StatusCode, Json<Error
 /// Returns snapshots of all currently live child processes.
 pub async fn process_children() -> Json<Vec<ProcessInfo>> {
     let children = process_tracker::get_children().await;
-    Json(children.into_iter().map(snapshot_to_response).collect())
+    Json(
+        children
+            .into_iter()
+            .map(|s| snapshot_to_response(&s))
+            .collect(),
+    )
 }
 
 /// `GET /process/status`

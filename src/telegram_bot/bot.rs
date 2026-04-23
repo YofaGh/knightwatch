@@ -1,11 +1,13 @@
+use std::sync::Arc;
 use teloxide::{
     dispatching,
     prelude::*,
     types::{
-        InputFile, InputMedia, InputMediaPhoto, KeyboardButton, KeyboardMarkup, ParseMode,
+        ChatId, InputFile, InputMedia, InputMediaPhoto, KeyboardButton, KeyboardMarkup, ParseMode,
         ReplyMarkup,
     },
 };
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::models::Command;
@@ -20,16 +22,61 @@ pub fn init_bot(cancel_token: CancellationToken) -> Option<dispatching::Shutdown
         return None;
     }
     let Some(token) = &config.persistent.telegram_token else {
-        tracing::error!("No telegram token is provided");
+        error!("No telegram token is provided");
         return None;
     };
     let bot = Bot::new(token);
-    let mut dispatcher = Dispatcher::builder(bot, schema())
-        .dependencies(dptree::deps![cancel_token])
+    let (sender, receiver) = mpsc::channel(64);
+    let sender = Arc::new(sender); // wrap in Arc
+    let mut dispatcher = Dispatcher::builder(bot.clone(), schema())
+        .dependencies(dptree::deps![cancel_token, sender])
         .build();
     let shutdown_token = dispatcher.shutdown_token();
     tokio::spawn(async move { dispatcher.dispatch().await });
+    tokio::spawn(async move { process_tracker_event_notifier(bot, receiver).await });
     Some(shutdown_token)
+}
+
+pub async fn process_tracker_event_notifier(
+    bot: Bot,
+    mut new_chat_id_receiver: mpsc::Receiver<ChatId>,
+) {
+    let Some(mut receiver) = crate::process_tracker::subscribe_events() else {
+        return;
+    };
+    let mut chat_ids = vec![];
+    loop {
+        tokio::select! {
+            Some(chat_id) = new_chat_id_receiver.recv() => {
+                chat_ids.push(chat_id);
+                info!("New chat id registered: {chat_id}");
+            }
+            event = receiver.recv() => {
+                let event = match event {
+                    Ok(event) => event,
+                    Err(err) => {
+                        error!("Failed to receive process tracker event: {err}");
+                        continue;
+                    }
+                };
+                let message = super::utils::format_event(&event);
+                let mut dead = vec![];
+                for (i, &chat_id) in chat_ids.iter().enumerate() {
+                    if let Err(err) = bot
+                        .send_message(chat_id, &message)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .await
+                    {
+                        warn!("Failed to send event to chat {chat_id}: {err}");
+                        dead.push(i);
+                    }
+                }
+                for i in dead.into_iter().rev() {
+                    chat_ids.swap_remove(i);
+                }
+            }
+        }
+    }
 }
 
 fn main_keyboard() -> KeyboardMarkup {
@@ -60,7 +107,14 @@ fn schema() -> dispatching::UpdateHandler<Error> {
         .branch(dptree::endpoint(handle_plain_message))
 }
 
-async fn handle_start(bot: Bot, msg: Message) -> Result<()> {
+async fn handle_start(
+    bot: Bot,
+    msg: Message,
+    new_chat_id_sender: Arc<mpsc::Sender<ChatId>>,
+) -> Result<()> {
+    if let Err(err) = new_chat_id_sender.send(msg.chat.id).await {
+        error!("Failed to send new chat id to notifier: {err}");
+    }
     bot.send_message(
         msg.chat.id,
         "🤖 *Knight Watch BOT*\n\nChoose an action below:",
@@ -135,10 +189,10 @@ async fn handle_process(bot: Bot, msg: Message) -> Result<()> {
     let child_count = children_snaps.len();
     let process_tree_snapshot =
         super::models::TelegramDisplay(&process_tracker::structs::ProcessTree {
-            root: root_snap.map(snapshot_to_response),
+            root: root_snap.map(|s| snapshot_to_response(&s)),
             children: children_snaps
                 .into_iter()
-                .map(snapshot_to_response)
+                .map(|s| snapshot_to_response(&s))
                 .collect(),
             child_count,
             work_done,
@@ -150,12 +204,17 @@ async fn handle_process(bot: Bot, msg: Message) -> Result<()> {
 }
 
 async fn handle_stop(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
-    bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…").await?;
+    bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…")
+        .await?;
     cancel_token.cancel();
     Ok(())
 }
 
-async fn handle_plain_message(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
+async fn handle_plain_message(
+    bot: Bot,
+    msg: Message,
+    cancel_token: CancellationToken,
+) -> Result<()> {
     match msg.text() {
         Some("📋 Help") => handle_help(bot, msg).await?,
         Some("🖼️ Screenshot") => handle_screenshot(bot, msg).await?,

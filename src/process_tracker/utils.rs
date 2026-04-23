@@ -12,22 +12,22 @@ pub fn format_memory(bytes: u64) -> String {
     }
 }
 
-pub fn snapshot_to_response(s: super::structs::ProcessSnapshot) -> ProcessInfo {
+pub fn snapshot_to_response(s: &super::structs::ProcessSnapshot) -> ProcessInfo {
     ProcessInfo {
         memory_human: format_memory(s.memory_bytes),
         pid: s.pid,
-        name: s.name,
+        name: s.name.clone(),
         state: s.state.to_string(),
         cpu_usage: s.cpu_usage,
         memory_bytes: s.memory_bytes,
         #[cfg(target_os = "linux")]
-        cwd: s.cwd,
+        cwd: s.cwd.clone(),
         #[cfg(target_os = "linux")]
-        cmdline: s.cmdline,
+        cmdline: s.cmdline.clone(),
         #[cfg(target_os = "linux")]
         open_fds: s.open_files.len(),
         #[cfg(target_os = "linux")]
-        open_files: s.open_files,
+        open_files: s.open_files.clone(),
         #[cfg(target_os = "linux")]
         io_stats: s.io_stats.map(|io| super::structs::IOStats {
             read_bytes: io.read_bytes,
