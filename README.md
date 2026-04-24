@@ -119,7 +119,7 @@ Process `state` can be `running`, `sleeping`, `gone`, or any other string (rende
 ### Running
 
 ```bash
-cargo run -- --pid <PID>
+knightwatch --pid <PID>
 ```
 
 Pass the PID of the root process you want to monitor. The server will start on `0.0.0.0:8083` by default.
@@ -140,19 +140,19 @@ Pass the PID of the root process you want to monitor. The server will start on `
 To run without the API server:
 
 ```bash
-cargo run -- --pid <PID> --no-server
+knightwatch --pid <PID> --no-server
 ```
 
 To run without screen capture (e.g. on a headless server or where permissions are restricted):
 
 ```bash
-cargo run -- --pid <PID> --blind
+knightwatch --pid <PID> --blind
 ```
 
 To enable webhook dispatching with one or more targets:
 
 ```bash
-cargo run -- --pid <PID> --with-webhook --webhook https://example.com/hook
+knightwatch --pid <PID> --with-webhook --webhook https://example.com/hook
 ```
 
 ### Log Level
@@ -160,7 +160,7 @@ cargo run -- --pid <PID> --with-webhook --webhook https://example.com/hook
 Set the `RUST_LOG` environment variable to control verbosity:
 
 ```bash
-RUST_LOG=debug cargo run -- --pid <PID>
+RUST_LOG=debug knightwatch --pid <PID>
 ```
 
 ---
@@ -174,19 +174,19 @@ Knightwatch includes a Telegram bot for remote monitoring and alerting without o
 Store your bot token in persistent config:
 
 ```bash
-cargo run -- config set telegram-token <YOUR_BOT_TOKEN>
+knightwatch config set telegram-token <YOUR_BOT_TOKEN>
 ```
 
 Clear it if needed:
 
 ```bash
-cargo run -- config set telegram-token --clear
+knightwatch config set telegram-token --clear
 ```
 
 Verify it was saved:
 
 ```bash
-cargo run -- config get telegram-token
+knightwatch config get telegram-token
 ```
 
 ### Enabling
@@ -194,7 +194,7 @@ cargo run -- config get telegram-token
 Pass the `--telegram` flag at runtime:
 
 ```bash
-cargo run -- --pid <PID> --telegram
+knightwatch --pid <PID> --telegram
 ```
 
 ### Capabilities
@@ -218,7 +218,7 @@ Knightwatch can POST process events to one or more HTTP endpoints. Useful for in
 Enable webhooks with `--with-webhook` and provide one or more targets via `--webhook`:
 
 ```bash
-cargo run -- --pid <PID> --with-webhook --webhook https://example.com/hook --webhook https://other.com/hook
+knightwatch --pid <PID> --with-webhook --webhook https://example.com/hook --webhook https://other.com/hook
 ```
 
 Webhook URLs can also be stored in persistent config (merged with any provided via `--webhook` at runtime, deduplicated). See [Persistent Configuration](#persistent-configuration) below.
@@ -260,29 +260,29 @@ The `config` subcommand uses `get` and `set` actions with the following fields:
 
 ```bash
 # Set the token
-cargo run -- config set telegram-token <TOKEN>
+knightwatch config set telegram-token <TOKEN>
 
 # Clear the token
-cargo run -- config set telegram-token --clear
+knightwatch config set telegram-token --clear
 
 # Read the current value
-cargo run -- config get telegram-token
+knightwatch config get telegram-token
 ```
 
 ### `webhook-urls`
 
 ```bash
 # Add one or more URLs
-cargo run -- config set webhook-urls --add https://example.com/hook --add https://other.com/hook
+knightwatch config set webhook-urls --add https://example.com/hook --add https://other.com/hook
 
 # Remove a specific URL
-cargo run -- config set webhook-urls --remove https://example.com/hook
+knightwatch config set webhook-urls --remove https://example.com/hook
 
 # Clear all stored URLs
-cargo run -- config set webhook-urls --clear
+knightwatch config set webhook-urls --clear
 
 # List all stored URLs
-cargo run -- config get webhook-urls
+knightwatch config get webhook-urls
 ```
 
 ---
