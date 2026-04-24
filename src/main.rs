@@ -25,6 +25,7 @@ async fn main() -> Result<(), errors::Error> {
     while !cancel_token.is_cancelled() {
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
+    tracing::warn!("Shutting down...");
     if let Some(handle) = telegram_bot_handle {
         handle.shutdown().unwrap().await;
     }

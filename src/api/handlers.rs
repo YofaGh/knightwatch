@@ -9,9 +9,11 @@ use crate::prelude::*;
 
 fn create_router(cancel_token: CancellationToken) -> Router {
     Router::new()
-        // ── Screenshot ────────────────────────────────────────────────────
         .route("/health", get(health))
+        .route("/shutdown", post(shutdown))
+        // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
+        // ── Web dashboard ────────────────────────────────────────────────────
         .route("/view", get(view))
         .route("/view.css", get(view_css))
         .route("/view.js", get(view_js))
@@ -20,7 +22,6 @@ fn create_router(cancel_token: CancellationToken) -> Router {
         .route("/process/root", get(process_root)) // root only
         .route("/process/children", get(process_children)) // children only
         .route("/process/status", get(process_status)) // lightweight summary
-        .route("/shutdown", post(shutdown))
         .with_state(cancel_token)
 }
 
@@ -32,13 +33,18 @@ pub fn init_api_server(cancel_token: CancellationToken) -> Result<()> {
     let api_listener = crate::utils::get_listener(&get_config().server_address())?;
     let app = create_router(cancel_token.clone());
     tokio::spawn(async move {
-        axum::serve(api_listener, app)
+        if let Err(err) = axum::serve(api_listener, app)
             .with_graceful_shutdown(async move {
                 cancel_token.cancelled().await;
             })
             .await
-            .expect("API server failed");
-        tracing::info!("API server stopped gracefully");
+        {
+            error!(?err, "API server error");
+        } else {
+            info!("API server stopped gracefully");
+        }
     });
+    info!("API server started");
+    crate::utils::print_local_ips();
     Ok(())
 }

@@ -14,3 +14,19 @@ pub fn get_listener(address: &str) -> Result<TcpListener> {
 pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
 }
+
+fn get_local_ip() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
+}
+
+pub fn print_local_ips() {
+    let port = get_config().args.port;
+    println!("API Server running at:");
+    println!("  → http://localhost:{}", port);
+    println!("  → http://127.0.0.1:{}", port);
+    if let Some(ip) = get_local_ip() {
+        println!("  → http://{}:{}", ip, port);
+    }
+}

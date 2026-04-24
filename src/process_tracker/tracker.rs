@@ -376,9 +376,10 @@ pub fn init_process_tracker() {
         .unwrap();
     tokio::spawn(async move {
         if let Err(e) = process_tracker.start_tracking_loop().await {
-            tracing::error!(?e, "process tracker loop exited with error");
+            error!(?e, "process tracker loop exited with error");
         }
     });
+    info!("Process Tracker started with PID: {pid}");
 }
 
 /// Subscribe to tracker events (e.g. from a Telegram bot or WebSocket handler).

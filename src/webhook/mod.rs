@@ -14,6 +14,6 @@ pub fn init_webhook_dispatcher(cancel_token: tokio_util::sync::CancellationToken
     if urls.is_empty() {
         return;
     }
-    info!(count = urls.len(), "starting webhook dispatcher");
+    info!(count = urls.len(), urls = urls.join(", "), "starting webhook dispatcher");
     tokio::spawn(dispatcher::run_dispatcher(urls, cancel_token));
 }

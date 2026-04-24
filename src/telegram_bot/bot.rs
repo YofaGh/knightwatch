@@ -34,6 +34,7 @@ pub fn init_bot(cancel_token: CancellationToken) -> Option<dispatching::Shutdown
     let shutdown_token = dispatcher.shutdown_token();
     tokio::spawn(async move { dispatcher.dispatch().await });
     tokio::spawn(async move { process_tracker_event_notifier(bot, receiver).await });
+    info!("Telegram Bot started");
     Some(shutdown_token)
 }
 
