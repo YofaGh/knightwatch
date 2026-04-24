@@ -111,11 +111,6 @@ Process `state` can be `running`, `sleeping`, `gone`, or any other string (rende
 
 ## Getting Started
 
-### Prerequisites
-
-- Rust toolchain (stable)
-- A display server (X11/Wayland on Linux, or macOS/Windows)
-
 ### Running
 
 ```bash
