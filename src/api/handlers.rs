@@ -22,6 +22,7 @@ fn create_router(cancel_token: CancellationToken) -> Router {
         .route("/process/root", get(process_root)) // root only
         .route("/process/children", get(process_children)) // children only
         .route("/process/status", get(process_status)) // lightweight summary
+        .route("/top-processes", get(top_processes)) // top processes
         .with_state(cancel_token)
 }
 

@@ -10,10 +10,11 @@ use teloxide::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::models::Command;
+use super::models::{Command, TelegramDisplay};
 use crate::{
     prelude::*,
     process_tracker::{self, utils::snapshot_to_response},
+    telegram_bot::utils::escape_mdv2,
 };
 
 pub fn init_bot(cancel_token: CancellationToken) -> Option<dispatching::ShutdownToken> {
@@ -83,13 +84,25 @@ pub async fn process_tracker_event_notifier(
 fn main_keyboard() -> KeyboardMarkup {
     KeyboardMarkup::new([
         vec![
-            KeyboardButton::new("🖼️ Screenshot"),
             KeyboardButton::new("📊 Process"),
+            KeyboardButton::new("📊 Top Processes"),
         ],
+        vec![KeyboardButton::new("🖼️ Screenshot")],
         vec![
             KeyboardButton::new("📋 Help"),
             KeyboardButton::new("🔴 Stop"),
         ],
+    ])
+    .resize_keyboard()
+}
+
+fn top_processes_keyboard() -> KeyboardMarkup {
+    KeyboardMarkup::new([
+        vec![
+            KeyboardButton::new("🔥 By CPU"),
+            KeyboardButton::new("🧠 By Memory"),
+        ],
+        vec![KeyboardButton::new("❌ Cancel")],
     ])
     .resize_keyboard()
 }
@@ -101,6 +114,7 @@ fn schema() -> dispatching::UpdateHandler<Error> {
         .branch(dptree::case![Command::Help].endpoint(handle_help))
         .branch(dptree::case![Command::Screenshot].endpoint(handle_screenshot))
         .branch(dptree::case![Command::Process].endpoint(handle_process))
+        .branch(dptree::case![Command::TopProcesses].endpoint(handle_top_processes_menu))
         .branch(dptree::case![Command::StopKnightWatch].endpoint(handle_stop));
 
     Update::filter_message()
@@ -204,6 +218,45 @@ async fn handle_process(bot: Bot, msg: Message) -> Result<()> {
     Ok(())
 }
 
+async fn handle_top_processes_menu(bot: Bot, msg: Message) -> Result<()> {
+    bot.send_message(msg.chat.id, "📊 *Top Processes* — sort by:")
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(ReplyMarkup::Keyboard(top_processes_keyboard()))
+        .await?;
+    Ok(())
+}
+
+async fn handle_top_processes_by(
+    bot: Bot,
+    msg: Message,
+    by: process_tracker::enums::SortKey,
+) -> Result<()> {
+    let label = by.to_string();
+    bot.send_message(
+        msg.chat.id,
+        format!("⏳ Fetching top processes by {label}…"),
+    )
+    .await?;
+    let snapshots = process_tracker::get_top_processes(by, 0).await;
+    if snapshots.is_empty() {
+        bot.send_message(msg.chat.id, "No processes found.")
+            .reply_markup(ReplyMarkup::Keyboard(main_keyboard()))
+            .await?;
+        return Ok(());
+    }
+    let body = snapshots
+        .iter()
+        .map(|s| TelegramDisplay(&process_tracker::utils::snapshot_to_response(s)).to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let header = format!("📊 Top Processes by {label}\n\n");
+    bot.send_message(msg.chat.id, format!("{header}{body}"))
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(ReplyMarkup::Keyboard(main_keyboard()))
+        .await?;
+    Ok(())
+}
+
 async fn handle_stop(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
     bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…")
         .await?;
@@ -220,11 +273,25 @@ async fn handle_plain_message(
         Some("📋 Help") => handle_help(bot, msg).await?,
         Some("🖼️ Screenshot") => handle_screenshot(bot, msg).await?,
         Some("📊 Process") => handle_process(bot, msg).await?,
+        Some("📊 Top Processes") => handle_top_processes_menu(bot, msg).await?,
+        Some("🔥 By CPU") => {
+            handle_top_processes_by(bot, msg, process_tracker::enums::SortKey::Cpu).await?
+        }
+        Some("🧠 By Memory") => {
+            handle_top_processes_by(bot, msg, process_tracker::enums::SortKey::Memory).await?
+        }
+        Some("❌ Cancel") => {
+            bot.send_message(msg.chat.id, "Cancelled")
+                .reply_markup(ReplyMarkup::Keyboard(main_keyboard()))
+                .await?;
+        }
         Some("🔴 Stop") => handle_stop(bot, msg, cancel_token).await?,
         Some(text) => {
             bot.send_message(
                 msg.chat.id,
-                format!("You said: \"{text}\"\n\nUse the buttons below or type /start\\."),
+                escape_mdv2(&format!(
+                    "You said: \"{text}\"\n\nUse the buttons below or type /start\\."
+                )),
             )
             .await?;
         }

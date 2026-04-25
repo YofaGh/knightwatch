@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 // ---------------------------------------------------------------------------
 // Screenshot
@@ -33,4 +33,10 @@ pub struct ScreenshotResponse {
 pub struct ErrorResponse {
     pub success: bool,
     pub message: String,
+}
+
+#[derive(Deserialize)]
+pub struct TopProcessesParams {
+    pub limit: Option<usize>,
+    pub sort: String,
 }

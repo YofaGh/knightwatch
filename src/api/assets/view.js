@@ -5,6 +5,9 @@ const childSection = document.getElementById("children-section");
 const childrenList = document.getElementById("children-list");
 const childCount = document.getElementById("children-count");
 const workBanner = document.getElementById("work-banner");
+const topList = document.getElementById("top-processes-list");
+const topSortSelect = document.getElementById("top-sort-select");
+const topLimitInput = document.getElementById("top-limit-input");
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -217,6 +220,29 @@ function refreshProcess() {
     });
 }
 
+// ── Top Processes refresh ──────────────────────────────────────────
+
+function refreshTopProcesses() {
+  const sort = topSortSelect?.value || "cpu";
+  const limit = topLimitInput?.value || 5;
+
+  fetch(`/top-processes?sort=${sort}&limit=${limit}`)
+    .then((r) => {
+      if (!r.ok) throw new Error("HTTP error");
+      return r.json();
+    })
+    .then((data) => {
+      if (data && data.length > 0) {
+        topList.innerHTML = data.map((c) => buildCard(c)).join("");
+      } else {
+        topList.innerHTML = `<div class="muted">No processes found</div>`;
+      }
+    })
+    .catch(() => {
+      topList.innerHTML = `<div class="muted">Failed to load top processes</div>`;
+    });
+}
+
 // ── Shutdown ───────────────────────────────────────────────────────
 
 document.getElementById("shutdown-btn").addEventListener("click", () => {
@@ -238,5 +264,11 @@ document.getElementById("shutdown-btn").addEventListener("click", () => {
 
 refreshScreenshots();
 refreshProcess();
+refreshTopProcesses();
+
+topSortSelect?.addEventListener("change", refreshTopProcesses);
+topLimitInput?.addEventListener("change", refreshTopProcesses);
+
 setInterval(refreshScreenshots, 2000);
 setInterval(refreshProcess, 2000);
+setInterval(refreshTopProcesses, 2000);

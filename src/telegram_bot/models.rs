@@ -1,3 +1,5 @@
+use super::utils::escape_mdv2;
+
 #[derive(teloxide::utils::command::BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Available commands:")]
 pub enum Command {
@@ -11,6 +13,8 @@ pub enum Command {
     Screenshot,
     #[command(description = "Get Process Info")]
     Process,
+    #[command(description = "Get Top Processes Info")]
+    TopProcesses,
     #[command(description = "Stop Knight Watch")]
     StopKnightWatch,
 }
@@ -24,27 +28,28 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::process_tracker::struc
             f,
             "🔹 *{name}* `(PID {pid})`\n   ├ State: `{state}`\n   ├ CPU: `{cpu:.1}%`\n   └ Mem: `{mem}`",
             pid = s.pid,
-            name = s.name,
-            state = s.state,
+            name = escape_mdv2(&s.name),
+            state = escape_mdv2(&s.state),
             cpu = s.cpu_usage,
-            mem = s.memory_human,
+            mem = escape_mdv2(&s.memory_human),
         )?;
-
         #[cfg(target_os = "linux")]
         {
             if let Some(cwd) = &s.cwd {
-                write!(f, "\n   ├ CWD: `{cwd}`")?;
+                write!(f, "\n   ├ CWD: `{}`", escape_mdv2(cwd))?;
             }
             write!(f, "\n   ├ FDs: `{}`", s.open_fds)?;
             if let Some(io) = &s.io_stats {
                 write!(
                     f,
                     "\n   ├ I/O Read: `{}` / Write: `{}`",
-                    io.read_bytes, io.write_bytes
+                    escape_mdv2(&io.read_bytes.to_string()),
+                    escape_mdv2(&io.write_bytes.to_string()),
                 )?;
             }
             if !s.cmdline.is_empty() {
-                write!(f, "\n   └ CMD: `{}`", s.cmdline.join(" "))?;
+                let cmd = s.cmdline.join(" ");
+                write!(f, "\n   └ CMD: `{}`", escape_mdv2(&cmd))?;
             }
         }
         Ok(())

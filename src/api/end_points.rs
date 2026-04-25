@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::State,
+    extract::{Query, State},
     http::{StatusCode, header},
     response::{Html, Json, Response},
 };
@@ -173,4 +173,35 @@ pub async fn process_status() -> Json<ProcessStatus> {
         work_done,
         timestamp: now_rfc3339(),
     })
+}
+
+/// `GET /top-processes?limit=10&sort=cpu`
+///
+/// Returns the top N processes sorted by the given key.
+///
+/// # Query Parameters
+/// - `limit`: Number of processes to return (default: 0 = all)
+/// - `sort`: Sort key, either `cpu` or `mem` (default: `cpu`)
+///
+/// # Errors
+/// - `400 Bad Request` if `sort` is not a valid sort key
+pub async fn top_processes(
+    Query(params): Query<TopProcessesParams>,
+) -> Result<Json<Vec<ProcessInfo>>, (StatusCode, Json<ErrorResponse>)> {
+    let limit = params.limit.unwrap_or(0);
+    let sort_key = process_tracker::enums::SortKey::try_from(params.sort).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                success: false,
+                message: e,
+            }),
+        )
+    })?;
+    let top_processes: Vec<ProcessInfo> = process_tracker::get_top_processes(sort_key, limit)
+        .await
+        .into_iter()
+        .map(|p| snapshot_to_response(&p))
+        .collect();
+    Ok(Json(top_processes))
 }

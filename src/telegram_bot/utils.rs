@@ -1,6 +1,10 @@
 use super::models::TelegramDisplay;
 use crate::process_tracker::{enums::ProcessTrackerEvent, utils::snapshot_to_response};
 
+const SPECIAL: &[char] = &[
+    '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '\\',
+];
+
 pub fn format_event(event: &ProcessTrackerEvent) -> String {
     match event {
         ProcessTrackerEvent::InitialSnapshot { root, children } => {
@@ -40,4 +44,15 @@ pub fn format_event(event: &ProcessTrackerEvent) -> String {
             format!("💀 *Root Process Exited*\nPID: `{pid}`")
         }
     }
+}
+
+pub fn escape_mdv2(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if SPECIAL.contains(&c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }

@@ -1,7 +1,10 @@
 #[cfg(target_os = "linux")]
 use procfs::process::{FDTarget, Process};
 
-use std::{collections::HashSet, sync::OnceLock};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
@@ -88,6 +91,8 @@ pub struct ProcessTrackerState {
     children_ever_seen: bool,
     last_root: Option<ProcessSnapshot>,
     last_children: Vec<ProcessSnapshot>,
+    last_top_by_memory: Vec<ProcessSnapshot>,
+    last_top_by_cpu: Vec<ProcessSnapshot>,
 }
 
 impl ProcessTrackerState {
@@ -99,6 +104,8 @@ impl ProcessTrackerState {
             children_ever_seen: false,
             last_root: None,
             last_children: Vec::new(),
+            last_top_by_memory: Vec::new(),
+            last_top_by_cpu: Vec::new(),
         }
     }
 }
@@ -110,10 +117,13 @@ pub struct ProcessTracker {
     first_tick: bool,
     poll_interval: Duration,
     poll_interval_timer: Option<tokio::time::Interval>,
+    track_top_processes: bool,
+    limit_processes: usize,
 }
 
 impl ProcessTracker {
     pub fn new(pid: u32) -> Self {
+        let config = get_config();
         Self {
             state: ProcessTrackerState::new(pid),
             channels: ProcessTrackerChannels::new(),
@@ -121,6 +131,8 @@ impl ProcessTracker {
             first_tick: true,
             poll_interval: Duration::from_secs(2),
             poll_interval_timer: None,
+            track_top_processes: config.args.top_processes,
+            limit_processes: config.args.limit_processes,
         }
     }
 
@@ -163,6 +175,34 @@ impl ProcessTracker {
             }
             ProcessTrackerQuery::IsWorkDone { response } => {
                 let _ = response.send(self.state.work_done);
+            }
+            ProcessTrackerQuery::GetTopProcesses {
+                by,
+                limit,
+                response,
+            } => {
+                let limit = if limit == 0 || limit > self.limit_processes {
+                    self.limit_processes
+                } else {
+                    limit
+                };
+                let result = match by {
+                    SortKey::Memory => self
+                        .state
+                        .last_top_by_memory
+                        .iter()
+                        .take(limit)
+                        .cloned()
+                        .collect(),
+                    SortKey::Cpu => self
+                        .state
+                        .last_top_by_cpu
+                        .iter()
+                        .take(limit)
+                        .cloned()
+                        .collect(),
+                };
+                let _ = response.send(result);
             }
         }
     }
@@ -309,7 +349,63 @@ impl ProcessTracker {
 
         self.state.last_children = child_snaps;
         self.state.prev_child_pids = current_child_pids;
+        if self.track_top_processes {
+            self.set_top_processes();
+        }
         self.first_tick = false;
+    }
+
+    fn set_top_processes(&mut self) {
+        let mut all: Vec<(u32, f32, u64)> = self
+            .sys
+            .processes()
+            .values()
+            .map(|p| (p.pid().as_u32(), p.cpu_usage(), p.memory()))
+            .collect();
+        let mut cache: HashMap<u32, ProcessSnapshot> = HashMap::new();
+        let mut get_or_create =
+            |pid: u32, cpu_usage: f32, memory_bytes: u64| -> Option<ProcessSnapshot> {
+                if let Some(cached) = cache.get(&pid) {
+                    return Some(cached.clone());
+                }
+                self.sys.process(Pid::from_u32(pid)).map(|p| {
+                    #[cfg(target_os = "linux")]
+                    let (cwd, cmdline) = collect_extended_info(pid);
+                    let process = ProcessSnapshot {
+                        pid,
+                        name: p.name().to_string_lossy().into_owned(),
+                        state: ProcessState::from(p.status()),
+                        cpu_usage,
+                        memory_bytes,
+                        #[cfg(target_os = "linux")]
+                        cwd,
+                        #[cfg(target_os = "linux")]
+                        cmdline,
+                        #[cfg(target_os = "linux")]
+                        open_files: collect_file_descriptors(pid),
+                        #[cfg(target_os = "linux")]
+                        io_stats: collect_io_stats(pid),
+                    };
+                    cache.insert(pid, process.clone());
+                    process
+                })
+            };
+        all.sort_unstable_by(|a, b| b.2.cmp(&a.2));
+        self.state.last_top_by_memory = all
+            .iter()
+            .take(self.limit_processes)
+            .filter_map(|&(pid, cpu_usage, memory_bytes)| {
+                get_or_create(pid, cpu_usage, memory_bytes)
+            })
+            .collect();
+        all.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        self.state.last_top_by_cpu = all
+            .iter()
+            .take(self.limit_processes)
+            .filter_map(|&(pid, cpu_usage, memory_bytes)| {
+                get_or_create(pid, cpu_usage, memory_bytes)
+            })
+            .collect();
     }
 
     fn collect_descendants(&self, root_pid: u32) -> Vec<ProcessSnapshot> {
@@ -424,4 +520,21 @@ pub async fn is_work_done() -> bool {
         .send(ProcessTrackerQuery::IsWorkDone { response: tx })
         .await;
     rx.await.unwrap_or(true)
+}
+
+/// Get the top N processes sorted by the given key.
+/// Returns an empty vec if the tracker was not started.
+pub async fn get_top_processes(by: SortKey, limit: usize) -> Vec<ProcessSnapshot> {
+    let Some(tx_ref) = get_process_tracker_query_sender() else {
+        return Vec::new();
+    };
+    let (tx, rx) = oneshot::channel();
+    let _ = tx_ref
+        .send(ProcessTrackerQuery::GetTopProcesses {
+            by,
+            limit,
+            response: tx,
+        })
+        .await;
+    rx.await.unwrap_or_default()
 }

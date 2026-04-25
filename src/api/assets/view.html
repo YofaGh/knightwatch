@@ -33,6 +33,28 @@
             </div>
             <div id="children-list"></div>
           </div>
+
+          <div id="top-processes-section">
+            <div class="section-header">
+              Top Processes
+              <div class="top-controls">
+                <select id="top-sort-select" class="control-input">
+                  <option value="cpu">CPU</option>
+                  <option value="mem">MEM</option>
+                </select>
+                <input
+                  type="number"
+                  id="top-limit-input"
+                  value="5"
+                  min="1"
+                  max="50"
+                  class="control-input"
+                  style="width: 3rem"
+                />
+              </div>
+            </div>
+            <div id="top-processes-list"></div>
+          </div>
         </div>
       </aside>
     </main>

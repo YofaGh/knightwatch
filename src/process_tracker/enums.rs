@@ -35,6 +35,11 @@ pub enum ProcessTrackerQuery {
     },
     /// Returns true when no live descendants remain.
     IsWorkDone { response: oneshot::Sender<bool> },
+    GetTopProcesses {
+        by: SortKey,
+        limit: usize,
+        response: oneshot::Sender<Vec<ProcessSnapshot>>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -89,5 +94,32 @@ impl std::fmt::Display for FDType {
             FDType::Other => "other",
         };
         write!(f, "{s}")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SortKey {
+    Memory,
+    Cpu,
+}
+
+impl std::fmt::Display for SortKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Memory => write!(f, "Memory"),
+            Self::Cpu => write!(f, "Cpu"),
+        }
+    }
+}
+
+impl TryFrom<String> for SortKey {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "cpu" => Ok(Self::Cpu),
+            "mem" => Ok(Self::Memory),
+            _ => Err(format!("Invalid sort key: '{value}'. Expected 'cpu' or 'mem'")),
+        }
     }
 }

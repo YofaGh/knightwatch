@@ -36,6 +36,7 @@ The Rust backend exposes a small HTTP API (served by Axum) that the frontend pol
 | `GET /process/root` | GET | Returns only the root process snapshot, or 404 if it has exited |
 | `GET /process/children` | GET | Returns snapshots of all currently live child processes |
 | `GET /process/status` | GET | Lightweight summary — root alive/dead, child count, and `work_done` flag |
+| `GET /top-processes` | GET | Returns the top N processes sorted by the given key. |
 | `POST /shutdown` | POST | Gracefully shuts down the server |
 
 ### Expected Response Shapes
@@ -103,6 +104,20 @@ Returns a single `ProcessInfo` object, or `404` if the root process has exited.
   "version": "0.1.0",
   "uptime": "3600s"
 }
+```
+
+**`/top-processes?sort=cpu&limit=1`**
+
+```json
+[
+  {
+    "name": "my-app",
+    "pid": 1234,
+    "state": "running",
+    "cpu_usage": 12.5,
+    "memory_human": "128 MB"
+  }
+]
 ```
 
 Process `state` can be `running`, `sleeping`, `gone`, or any other string (rendered as a warning-colored pill).
