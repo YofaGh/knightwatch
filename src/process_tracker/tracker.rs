@@ -14,57 +14,6 @@ use tokio::{
 use super::{enums::*, structs::*};
 use crate::prelude::*;
 
-// Linux-only helper functions
-#[cfg(target_os = "linux")]
-fn collect_file_descriptors(pid: u32) -> Vec<FileDescriptorInfo> {
-    let mut fds = Vec::new();
-    if let Ok(process) = Process::new(pid as i32) {
-        if let Ok(fd_iter) = process.fd() {
-            for fd_info in fd_iter.flatten() {
-                let fd_type = match &fd_info.target {
-                    FDTarget::Path(_) => FDType::File,
-                    FDTarget::Socket(_) => FDType::Socket,
-                    FDTarget::Pipe(_) => FDType::Pipe,
-                    _ => FDType::Other,
-                };
-                fds.push(FileDescriptorInfo {
-                    fd: fd_info.fd,
-                    target: format!("{:?}", fd_info.target),
-                    fd_type,
-                });
-            }
-        }
-    }
-    fds
-}
-
-#[cfg(target_os = "linux")]
-fn collect_io_stats(pid: u32) -> Option<IOStats> {
-    Process::new(pid as i32)
-        .ok()
-        .and_then(|p| p.io().ok())
-        .map(|io| IOStats {
-            read_bytes: io.read_bytes,
-            write_bytes: io.write_bytes,
-            read_chars: io.rchar,
-            write_chars: io.wchar,
-        })
-}
-
-#[cfg(target_os = "linux")]
-fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
-    let process = Process::new(pid as i32).ok();
-    let cwd = process
-        .as_ref()
-        .and_then(|p| p.cwd().ok())
-        .map(|path| path.to_string_lossy().into_owned());
-    let cmdline = process
-        .as_ref()
-        .and_then(|p| p.cmdline().ok())
-        .unwrap_or_default();
-    (cwd, cmdline)
-}
-
 impl ProcessTrackerChannels {
     pub fn new() -> Self {
         let (query_tx, query_rx) = mpsc::channel(1024);
@@ -85,9 +34,10 @@ impl ProcessTrackerChannels {
 }
 
 pub struct ProcessTrackerState {
-    root_pid: u32,
+    root_pid: Option<u32>,
     prev_child_pids: HashSet<u32>,
     work_done: bool,
+    root_exited: bool,
     children_ever_seen: bool,
     last_root: Option<ProcessSnapshot>,
     last_children: Vec<ProcessSnapshot>,
@@ -96,11 +46,12 @@ pub struct ProcessTrackerState {
 }
 
 impl ProcessTrackerState {
-    pub fn new(root_pid: u32) -> Self {
+    pub fn new(root_pid: Option<u32>) -> Self {
         Self {
             root_pid,
             prev_child_pids: HashSet::new(),
             work_done: false,
+            root_exited: false,
             children_ever_seen: false,
             last_root: None,
             last_children: Vec::new(),
@@ -122,7 +73,7 @@ pub struct ProcessTracker {
 }
 
 impl ProcessTracker {
-    pub fn new(pid: u32) -> Self {
+    pub fn new(pid: Option<u32>) -> Self {
         let config = get_config();
         Self {
             state: ProcessTrackerState::new(pid),
@@ -216,15 +167,26 @@ impl ProcessTracker {
             true,
             ProcessRefreshKind::nothing().with_cpu().with_memory(),
         );
+        if !self.state.root_exited
+            && let Some(pid) = self.state.root_pid
+        {
+            self.update_root_pid_state(pid);
+        }
+        if self.track_top_processes {
+            self.set_top_processes();
+        }
+        self.first_tick = false;
+    }
 
+    fn update_root_pid_state(&mut self, root_pid: u32) {
         // ----------------------------------------------------------------
         // Check root.
         // ----------------------------------------------------------------
-        let root_pid_sysinfo = Pid::from_u32(self.state.root_pid);
+        let root_pid_sysinfo = Pid::from_u32(root_pid);
         #[cfg(target_os = "linux")]
-        let (cwd, cmdline) = collect_extended_info(self.state.root_pid);
+        let (cwd, cmdline) = collect_extended_info(root_pid);
         let root_snap = self.sys.process(root_pid_sysinfo).map(|p| ProcessSnapshot {
-            pid: self.state.root_pid,
+            pid: root_pid,
             name: p.name().to_string_lossy().into_owned(),
             state: ProcessState::from(p.status()),
             cpu_usage: p.cpu_usage(),
@@ -234,28 +196,25 @@ impl ProcessTracker {
             #[cfg(target_os = "linux")]
             cmdline,
             #[cfg(target_os = "linux")]
-            open_files: collect_file_descriptors(self.state.root_pid),
+            open_files: collect_file_descriptors(root_pid),
             #[cfg(target_os = "linux")]
-            io_stats: collect_io_stats(self.state.root_pid),
+            io_stats: collect_io_stats(root_pid),
         });
 
         if root_snap.is_none() {
+            self.state.root_exited = true;
+            if !self.track_top_processes {
+                self.poll_interval_timer = None;
+            }
+            self.emit_event(ProcessTrackerEvent::RootExited { pid: root_pid });
             if self.first_tick {
-                error!(
-                    root_pid = self.state.root_pid,
-                    "root process not found on first poll — is the PID correct?"
-                );
-                // Don't emit RootExited on first tick — the PID might not exist yet
+                error!(root_pid, "root process not found — is the PID correct?");
+                return;
             } else {
-                warn!(root_pid = self.state.root_pid, "root process exited");
-                // Mark the last known root snapshot as Gone before clearing it.
+                warn!(root_pid, "root process exited");
                 if let Some(ref mut snap) = self.state.last_root {
                     snap.state = ProcessState::Gone;
                 }
-                self.emit_event(ProcessTrackerEvent::RootExited {
-                    pid: self.state.root_pid,
-                });
-                self.poll_interval_timer = None;
             }
         }
 
@@ -264,7 +223,7 @@ impl ProcessTracker {
         // ----------------------------------------------------------------
         // Collect full descendant subtree.
         // ----------------------------------------------------------------
-        let child_snaps = self.collect_descendants(self.state.root_pid);
+        let child_snaps = self.collect_descendants(root_pid);
         let current_child_pids: HashSet<u32> = child_snaps.iter().map(|s| s.pid).collect();
 
         // ----------------------------------------------------------------
@@ -339,20 +298,13 @@ impl ProcessTracker {
         let now_empty = current_child_pids.is_empty();
 
         if self.state.children_ever_seen && was_non_empty && now_empty {
-            info!(
-                root_pid = self.state.root_pid,
-                "all child processes have exited — work is done"
-            );
+            info!(root_pid, "all child processes have exited — work is done");
             self.state.work_done = true;
             self.emit_event(ProcessTrackerEvent::AllChildrenGone);
         }
 
         self.state.last_children = child_snaps;
         self.state.prev_child_pids = current_child_pids;
-        if self.track_top_processes {
-            self.set_top_processes();
-        }
-        self.first_tick = false;
     }
 
     fn set_top_processes(&mut self) {
@@ -460,9 +412,11 @@ static PROCESS_TRACKER_EVENT_SENDER: OnceLock<broadcast::Sender<ProcessTrackerEv
     OnceLock::new();
 
 pub fn init_process_tracker() {
-    let Some(pid) = get_config().args.pid else {
+    let config = get_config();
+    if config.args.pid.is_none() && !config.args.top_processes {
         return;
-    };
+    }
+    let pid = config.args.pid;
     let process_tracker = ProcessTracker::new(pid);
     PROCESS_TRACKER_QUERY_SENDER
         .set(process_tracker.channels.query_tx.clone())
@@ -475,7 +429,67 @@ pub fn init_process_tracker() {
             error!(?e, "process tracker loop exited with error");
         }
     });
-    info!("Process Tracker started with PID: {pid}");
+    info!("Process Tracker started");
+    if let Some(pid) = pid {
+        info!("Tracking process tree rooted at PID {pid}");
+    }
+    if config.args.top_processes {
+        info!(
+            "Tracking top processes (limit {})",
+            config.args.limit_processes
+        );
+    }
+}
+
+// Linux-only helper functions
+#[cfg(target_os = "linux")]
+fn collect_file_descriptors(pid: u32) -> Vec<FileDescriptorInfo> {
+    let mut fds = Vec::new();
+    if let Ok(process) = Process::new(pid as i32) {
+        if let Ok(fd_iter) = process.fd() {
+            for fd_info in fd_iter.flatten() {
+                let fd_type = match &fd_info.target {
+                    FDTarget::Path(_) => FDType::File,
+                    FDTarget::Socket(_) => FDType::Socket,
+                    FDTarget::Pipe(_) => FDType::Pipe,
+                    _ => FDType::Other,
+                };
+                fds.push(FileDescriptorInfo {
+                    fd: fd_info.fd,
+                    target: format!("{:?}", fd_info.target),
+                    fd_type,
+                });
+            }
+        }
+    }
+    fds
+}
+
+#[cfg(target_os = "linux")]
+fn collect_io_stats(pid: u32) -> Option<IOStats> {
+    Process::new(pid as i32)
+        .ok()
+        .and_then(|p| p.io().ok())
+        .map(|io| IOStats {
+            read_bytes: io.read_bytes,
+            write_bytes: io.write_bytes,
+            read_chars: io.rchar,
+            write_chars: io.wchar,
+        })
+}
+
+#[cfg(target_os = "linux")]
+fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
+    let process = Process::new(pid as i32).ok();
+    let cwd = process
+        .as_ref()
+        .and_then(|p| p.cwd().ok())
+        .map(|path| path.to_string_lossy().into_owned());
+    let cmdline = process
+        .as_ref()
+        .and_then(|p| p.cmdline().ok())
+        .unwrap_or_default();
+    (cwd, cmdline)
 }
 
 /// Subscribe to tracker events (e.g. from a Telegram bot or WebSocket handler).
