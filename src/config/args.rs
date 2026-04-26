@@ -42,11 +42,11 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub with_webhook: bool,
 
-    /// Enable Webhooks
+    /// Enable top processes tracker
     #[arg(long, default_value_t = false)]
     pub top_processes: bool,
 
-    /// Process ID to track
+    /// Limit number of top processes to track
     #[arg(long, default_value_t = 5)]
     pub limit_processes: usize,
 }

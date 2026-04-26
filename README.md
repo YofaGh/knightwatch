@@ -146,6 +146,8 @@ Pass the PID of the root process you want to monitor. The server will start on `
 | `--telegram` | `false` | Enable the Telegram bot |
 | `--with-webhook` | `false` | Enable webhook dispatching |
 | `--webhook <URL>` | — | Webhook URL to POST process events to (repeatable) |
+| `--top-processes` | `false` | Enable top processes tracker |
+| `--limit-processes <NUMBER>` | `5` | Limit number of top processes to track (default is 5) |
 
 To run without the API server:
 
@@ -163,6 +165,12 @@ To enable webhook dispatching with one or more targets:
 
 ```bash
 knightwatch --pid <PID> --with-webhook --webhook https://example.com/hook
+```
+
+To enable tracking top processes with a limit:
+
+```bash
+knightwatch --top-processes --limit-processes 10
 ```
 
 ### Log Level
@@ -294,28 +302,6 @@ knightwatch config set webhook-urls --clear
 # List all stored URLs
 knightwatch config get webhook-urls
 ```
-
----
-
-## Roadmap
-
-### 📊 Top Processes Endpoint *(planned)*
-
-A new `/top` endpoint to surface the most resource-intensive processes on the host machine.
-
-| Endpoint | Description |
-| --- | --- |
-| `GET /top` | Returns a ranked list of processes sorted by CPU or RAM usage |
-
-Planned query parameters:
-
-- `?sort=cpu` — sort by CPU usage (default)
-- `?sort=mem` — sort by memory usage
-- `?limit=10` — control how many processes are returned
-
-This will also be surfaced in the dashboard as a dedicated "Top Processes" panel alongside the existing process monitor.
-
----
 
 ## License
 
