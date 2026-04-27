@@ -12,7 +12,6 @@ use crate::{
     process_tracker::{
         self,
         structs::{ProcessInfo, ProcessStatus, ProcessTree},
-        utils::snapshot_to_response,
     },
     utils::now_rfc3339,
 };
@@ -125,11 +124,8 @@ pub async fn process_tree() -> Json<ProcessTree> {
 
     let child_count = children_snaps.len();
     Json(ProcessTree {
-        root: root_snap.map(|s| snapshot_to_response(&s)),
-        children: children_snaps
-            .into_iter()
-            .map(|s| snapshot_to_response(&s))
-            .collect(),
+        root: root_snap.map(Into::into),
+        children: children_snaps.into_iter().map(Into::into).collect(),
         child_count,
         work_done,
         timestamp: now_rfc3339(),
@@ -141,7 +137,7 @@ pub async fn process_tree() -> Json<ProcessTree> {
 /// Returns only the root process snapshot, or 404 if it has exited.
 pub async fn process_root() -> Result<Json<ProcessInfo>, (StatusCode, Json<ErrorResponse>)> {
     match process_tracker::get_root().await {
-        Some(snap) => Ok(Json(snapshot_to_response(&snap))),
+        Some(snap) => Ok(Json(ProcessInfo::from(snap))),
         None => Err((
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
@@ -157,12 +153,7 @@ pub async fn process_root() -> Result<Json<ProcessInfo>, (StatusCode, Json<Error
 /// Returns snapshots of all currently live child processes.
 pub async fn process_children() -> Json<Vec<ProcessInfo>> {
     let children = process_tracker::get_children().await;
-    Json(
-        children
-            .into_iter()
-            .map(|s| snapshot_to_response(&s))
-            .collect(),
-    )
+    Json(children.into_iter().map(Into::into).collect())
 }
 
 /// `GET /process/status`
@@ -212,7 +203,7 @@ pub async fn top_processes(
     let top_processes: Vec<ProcessInfo> = process_tracker::get_top_processes(sort_key, limit)
         .await
         .into_iter()
-        .map(|p| snapshot_to_response(&p))
+        .map(Into::into)
         .collect();
     Ok(Json(top_processes))
 }

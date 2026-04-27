@@ -45,7 +45,7 @@ impl From<&sysinfo::Process> for ProcessSnapshot {
     fn from(process: &sysinfo::Process) -> Self {
         let pid = process.pid().as_u32();
         #[cfg(target_os = "linux")]
-        let (cwd, cmdline) = collect_extended_info(pid);
+        let (cwd, cmdline) = super::utils::collect_extended_info(pid);
         Self {
             pid,
             name: process.name().to_string_lossy().into_owned(),
@@ -57,9 +57,9 @@ impl From<&sysinfo::Process> for ProcessSnapshot {
             #[cfg(target_os = "linux")]
             cmdline,
             #[cfg(target_os = "linux")]
-            open_files: collect_file_descriptors(pid),
+            open_files: super::utils::collect_file_descriptors(pid),
             #[cfg(target_os = "linux")]
-            io_stats: collect_io_stats(pid),
+            io_stats: super::utils::collect_io_stats(pid),
         }
     }
 }
@@ -93,6 +93,40 @@ pub struct ProcessInfo {
     pub open_files: Vec<FileDescriptorInfo>,
     #[cfg(target_os = "linux")]
     pub io_stats: Option<IOStats>,
+}
+
+impl From<&ProcessSnapshot> for ProcessInfo {
+    fn from(s: &ProcessSnapshot) -> Self {
+        Self {
+            memory_human: super::utils::format_memory(s.memory_bytes),
+            pid: s.pid,
+            name: s.name.clone(),
+            state: s.state.to_string(),
+            cpu_usage: s.cpu_usage,
+            memory_bytes: s.memory_bytes,
+            #[cfg(target_os = "linux")]
+            cwd: s.cwd.clone(),
+            #[cfg(target_os = "linux")]
+            cmdline: s.cmdline.clone(),
+            #[cfg(target_os = "linux")]
+            open_fds: s.open_files.len(),
+            #[cfg(target_os = "linux")]
+            open_files: s.open_files.clone(),
+            #[cfg(target_os = "linux")]
+            io_stats: s.io_stats.map(|io| super::structs::IOStats {
+                read_bytes: io.read_bytes,
+                write_bytes: io.write_bytes,
+                read_chars: io.read_chars,
+                write_chars: io.write_chars,
+            }),
+        }
+    }
+}
+
+impl From<ProcessSnapshot> for ProcessInfo {
+    fn from(s: ProcessSnapshot) -> Self {
+        Self::from(&s)
+    }
 }
 
 #[derive(Debug, Serialize)]

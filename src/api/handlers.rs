@@ -15,6 +15,7 @@ fn create_router(cancel_token: CancellationToken) -> Router {
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
         // ── Web dashboard ────────────────────────────────────────────────────
+        .route("/", get(view))
         .route("/view", get(view))
         .route("/view.css", get(view_css))
         .route("/view.js", get(view_js))

@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use super::models::{Command, TelegramDisplay};
 use crate::{
     prelude::*,
-    process_tracker::{self, utils::snapshot_to_response},
+    process_tracker::{self, structs::ProcessInfo},
     telegram_bot::utils::escape_mdv2,
 };
 
@@ -65,7 +65,7 @@ pub async fn process_tracker_event_notifier(
     bot: Bot,
     mut new_chat_id_receiver: mpsc::Receiver<ChatId>,
 ) {
-    let Some(mut receiver) = crate::process_tracker::subscribe_events() else {
+    let Some(mut receiver) = process_tracker::subscribe_events() else {
         return;
     };
     let mut chat_ids = vec![];
@@ -226,10 +226,10 @@ async fn handle_process(bot: Bot, msg: Message) -> Result<()> {
     let child_count = children_snaps.len();
     let process_tree_snapshot =
         super::models::TelegramDisplay(&process_tracker::structs::ProcessTree {
-            root: root_snap.map(|s| snapshot_to_response(&s)),
+            root: root_snap.map(Into::into),
             children: children_snaps
                 .into_iter()
-                .map(|s| snapshot_to_response(&s))
+                .map(Into::into)
                 .collect(),
             child_count,
             work_done,
@@ -268,7 +268,7 @@ async fn handle_top_processes_by(
     }
     let body = snapshots
         .iter()
-        .map(|s| TelegramDisplay(&process_tracker::utils::snapshot_to_response(s)).to_string())
+        .map(|s| TelegramDisplay(&ProcessInfo::from(s)).to_string())
         .collect::<Vec<_>>()
         .join("\n\n");
     let header = format!("📊 Top Processes by {label}\n\n");
