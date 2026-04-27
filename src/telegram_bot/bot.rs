@@ -28,12 +28,34 @@ pub fn init_bot(cancel_token: CancellationToken) -> Option<dispatching::Shutdown
     };
     let bot = Bot::new(token);
     let (sender, receiver) = mpsc::channel(64);
-    let sender = Arc::new(sender); // wrap in Arc
+    let sender = Arc::new(sender);
     let mut dispatcher = Dispatcher::builder(bot.clone(), schema())
-        .dependencies(dptree::deps![cancel_token, sender])
+        .dependencies(dptree::deps![cancel_token.clone(), sender])
         .build();
     let shutdown_token = dispatcher.shutdown_token();
-    tokio::spawn(async move { dispatcher.dispatch().await });
+    let bot_clone = bot.clone();
+    let cancel_clone = cancel_token.clone();
+    tokio::spawn(async move {
+        loop {
+            match bot_clone.get_me().await {
+                Ok(_) => {
+                    info!("Telegram connection established, starting dispatcher");
+                    break;
+                }
+                Err(err) => {
+                    warn!("Telegram unreachable, retrying in 10s: {err}");
+                    tokio::select! {
+                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {}
+                        _ = cancel_clone.cancelled() => {
+                            info!("Cancelled while waiting for Telegram");
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        dispatcher.dispatch().await;
+    });
     tokio::spawn(async move { process_tracker_event_notifier(bot, receiver).await });
     info!("Telegram Bot started");
     Some(shutdown_token)
