@@ -1,13 +1,68 @@
 const statusEl = document.getElementById("status");
 const screensDiv = document.getElementById("screens");
+const screensPane = document.getElementById("screens-pane");
 const rootSection = document.getElementById("root-section");
 const childSection = document.getElementById("children-section");
 const childrenList = document.getElementById("children-list");
 const childCount = document.getElementById("children-count");
 const workBanner = document.getElementById("work-banner");
 const topList = document.getElementById("top-processes-list");
+const topProcessesSection = document.getElementById("top-processes-section");
 const topSortSelect = document.getElementById("top-sort-select");
 const topLimitInput = document.getElementById("top-limit-input");
+const telegramIndicator = document.getElementById("telegram-indicator");
+
+// ── Config ─────────────────────────────────────────────────────────
+
+let config = null;
+
+async function loadConfig() {
+  try {
+    const r = await fetch("/config");
+    if (!r.ok) throw new Error("config fetch failed");
+    config = await r.json();
+  } catch {
+    config = { blind: false, pid: null, top_processes: true, limit_processes: 50, telegram_bot: false };
+  }
+
+  // Telegram indicator
+  if (telegramIndicator) {
+    telegramIndicator.style.display = "inline-flex";
+    if (config.telegram_bot) {
+      telegramIndicator.textContent = "TG Bot";
+      telegramIndicator.className = "telegram-indicator tg-on";
+      telegramIndicator.title = "Telegram bot is running";
+    } else {
+      telegramIndicator.textContent = "TG Bot";
+      telegramIndicator.className = "telegram-indicator tg-off";
+      telegramIndicator.title = "Telegram bot is not running";
+    }
+  }
+
+  // Hide screenshots pane if blind
+  if (config.blind) {
+    screensPane.style.display = "none";
+  }
+
+  // Hide process pane sections based on config
+  if (config.pid == null) {
+    rootSection.style.display = "none";
+    childSection.style.display = "none";
+    workBanner.style.display = "none";
+  }
+
+  if (!config.top_processes) {
+    topProcessesSection.style.display = "none";
+  }
+
+  // Clamp the limit input max to server's supported maximum
+  if (topLimitInput && config.limit_processes != null) {
+    topLimitInput.max = config.limit_processes;
+    if (parseInt(topLimitInput.value) > config.limit_processes) {
+      topLimitInput.value = config.limit_processes;
+    }
+  }
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -262,13 +317,25 @@ document.getElementById("shutdown-btn").addEventListener("click", () => {
 
 // ── Boot ───────────────────────────────────────────────────────────
 
-refreshScreenshots();
-refreshProcess();
-refreshTopProcesses();
+let screenshotInterval = null;
+let processInterval = null;
+let topInterval = null;
 
-topSortSelect?.addEventListener("change", refreshTopProcesses);
-topLimitInput?.addEventListener("change", refreshTopProcesses);
+loadConfig().then(() => {
+  if (!config.blind) {
+    refreshScreenshots();
+    screenshotInterval = setInterval(refreshScreenshots, 2000);
+  }
 
-setInterval(refreshScreenshots, 2000);
-setInterval(refreshProcess, 2000);
-setInterval(refreshTopProcesses, 2000);
+  if (config.pid != null) {
+    refreshProcess();
+    processInterval = setInterval(refreshProcess, 2000);
+  }
+
+  if (config.top_processes) {
+    refreshTopProcesses();
+    topSortSelect?.addEventListener("change", refreshTopProcesses);
+    topLimitInput?.addEventListener("change", refreshTopProcesses);
+    topInterval = setInterval(refreshTopProcesses, 2000);
+  }
+});

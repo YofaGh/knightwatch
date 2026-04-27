@@ -11,6 +11,7 @@ fn create_router(cancel_token: CancellationToken) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/shutdown", post(shutdown))
+        .route("/config", get(config))
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
         // ── Web dashboard ────────────────────────────────────────────────────

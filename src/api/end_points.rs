@@ -38,6 +38,17 @@ pub async fn health() -> Json<HealthResponse> {
     })
 }
 
+pub async fn config() -> Json<ConfigResponse> {
+    let args = &crate::prelude::get_config().args;
+    Json(ConfigResponse {
+        blind: args.blind,
+        pid: args.pid,
+        top_processes: args.top_processes,
+        limit_processes: args.limit_processes,
+        telegram_bot: args.telegram,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Screenshot endpoints
 // ---------------------------------------------------------------------------

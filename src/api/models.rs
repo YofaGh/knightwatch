@@ -1,8 +1,4 @@
-use serde::{Serialize, Deserialize};
-
-// ---------------------------------------------------------------------------
-// Screenshot
-// ---------------------------------------------------------------------------
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
@@ -11,6 +7,19 @@ pub struct HealthResponse {
     pub version: String,
     pub uptime: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct ConfigResponse {
+    pub blind: bool,
+    pub pid: Option<u32>,
+    pub top_processes: bool,
+    pub limit_processes: usize,
+    pub telegram_bot: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Screenshot
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
 pub struct ScreenshotImage {
