@@ -183,24 +183,7 @@ impl ProcessTracker {
         // Check root.
         // ----------------------------------------------------------------
         let root_pid_sysinfo = Pid::from_u32(root_pid);
-        #[cfg(target_os = "linux")]
-        let (cwd, cmdline) = collect_extended_info(root_pid);
-        let root_snap = self.sys.process(root_pid_sysinfo).map(|p| ProcessSnapshot {
-            pid: root_pid,
-            name: p.name().to_string_lossy().into_owned(),
-            state: ProcessState::from(p.status()),
-            cpu_usage: p.cpu_usage(),
-            memory_bytes: p.memory(),
-            #[cfg(target_os = "linux")]
-            cwd,
-            #[cfg(target_os = "linux")]
-            cmdline,
-            #[cfg(target_os = "linux")]
-            open_files: collect_file_descriptors(root_pid),
-            #[cfg(target_os = "linux")]
-            io_stats: collect_io_stats(root_pid),
-        });
-
+        let root_snap = self.sys.process(root_pid_sysinfo).map(Into::into);
         if root_snap.is_none() {
             self.state.root_exited = true;
             if !self.track_top_processes {
@@ -315,48 +298,27 @@ impl ProcessTracker {
             .map(|p| (p.pid().as_u32(), p.cpu_usage(), p.memory()))
             .collect();
         let mut cache: HashMap<u32, ProcessSnapshot> = HashMap::new();
-        let mut get_or_create =
-            |pid: u32, cpu_usage: f32, memory_bytes: u64| -> Option<ProcessSnapshot> {
-                if let Some(cached) = cache.get(&pid) {
-                    return Some(cached.clone());
-                }
-                self.sys.process(Pid::from_u32(pid)).map(|p| {
-                    #[cfg(target_os = "linux")]
-                    let (cwd, cmdline) = collect_extended_info(pid);
-                    let process = ProcessSnapshot {
-                        pid,
-                        name: p.name().to_string_lossy().into_owned(),
-                        state: ProcessState::from(p.status()),
-                        cpu_usage,
-                        memory_bytes,
-                        #[cfg(target_os = "linux")]
-                        cwd,
-                        #[cfg(target_os = "linux")]
-                        cmdline,
-                        #[cfg(target_os = "linux")]
-                        open_files: collect_file_descriptors(pid),
-                        #[cfg(target_os = "linux")]
-                        io_stats: collect_io_stats(pid),
-                    };
-                    cache.insert(pid, process.clone());
-                    process
-                })
-            };
+        let mut get_or_create = |pid: u32| -> Option<ProcessSnapshot> {
+            if let Some(cached) = cache.get(&pid) {
+                return Some(cached.clone());
+            }
+            self.sys.process(Pid::from_u32(pid)).map(|p| {
+                let process = ProcessSnapshot::from(p);
+                cache.insert(pid, process.clone());
+                process
+            })
+        };
         all.sort_unstable_by(|a, b| b.2.cmp(&a.2));
         self.state.last_top_by_memory = all
             .iter()
             .take(self.limit_processes)
-            .filter_map(|&(pid, cpu_usage, memory_bytes)| {
-                get_or_create(pid, cpu_usage, memory_bytes)
-            })
+            .filter_map(|&(pid, _, _)| get_or_create(pid))
             .collect();
         all.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         self.state.last_top_by_cpu = all
             .iter()
             .take(self.limit_processes)
-            .filter_map(|&(pid, cpu_usage, memory_bytes)| {
-                get_or_create(pid, cpu_usage, memory_bytes)
-            })
+            .filter_map(|&(pid, _, _)| get_or_create(pid))
             .collect();
     }
 
@@ -367,38 +329,8 @@ impl ProcessTracker {
         while let Some(parent) = queue.pop() {
             for (pid, proc) in self.sys.processes() {
                 if proc.parent() == Some(parent) && *pid != root {
-                    let pid_u32 = pid.as_u32();
-
-                    // Basic snapshot that works on all platforms
-                    #[cfg(not(target_os = "linux"))]
-                    {
-                        result.push(ProcessSnapshot {
-                            pid: pid_u32,
-                            name: proc.name().to_string_lossy().into_owned(),
-                            state: ProcessState::from(proc.status()),
-                            cpu_usage: proc.cpu_usage(),
-                            memory_bytes: proc.memory(),
-                        });
-                    }
-
-                    // Extended snapshot for Linux
-                    #[cfg(target_os = "linux")]
-                    {
-                        let (cwd, cmdline) = collect_extended_info(pid_u32);
-
-                        result.push(ProcessSnapshot {
-                            pid: pid_u32,
-                            name: proc.name().to_string_lossy().into_owned(),
-                            state: ProcessState::from(proc.status()),
-                            cpu_usage: proc.cpu_usage(),
-                            memory_bytes: proc.memory(),
-                            cwd,
-                            cmdline,
-                            open_files: collect_file_descriptors(pid_u32),
-                            io_stats: collect_io_stats(pid_u32),
-                        });
-                    }
-
+                    let process = ProcessSnapshot::from(proc);
+                    result.push(process);
                     queue.push(*pid);
                 }
             }

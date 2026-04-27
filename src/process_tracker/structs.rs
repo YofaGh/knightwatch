@@ -41,6 +41,29 @@ pub struct ProcessSnapshot {
     pub io_stats: Option<IOStats>,
 }
 
+impl From<&sysinfo::Process> for ProcessSnapshot {
+    fn from(process: &sysinfo::Process) -> Self {
+        let pid = process.pid().as_u32();
+        #[cfg(target_os = "linux")]
+        let (cwd, cmdline) = collect_extended_info(pid);
+        Self {
+            pid,
+            name: process.name().to_string_lossy().into_owned(),
+            state: ProcessState::from(process.status()),
+            cpu_usage: process.cpu_usage(),
+            memory_bytes: process.memory(),
+            #[cfg(target_os = "linux")]
+            cwd,
+            #[cfg(target_os = "linux")]
+            cmdline,
+            #[cfg(target_os = "linux")]
+            open_files: collect_file_descriptors(pid),
+            #[cfg(target_os = "linux")]
+            io_stats: collect_io_stats(pid),
+        }
+    }
+}
+
 pub struct ProcessTrackerChannels {
     pub query_tx: mpsc::Sender<ProcessTrackerQuery>,
     pub query_rx: Option<mpsc::Receiver<ProcessTrackerQuery>>,
