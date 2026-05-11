@@ -1,5 +1,8 @@
+#![recursion_limit = "256"]
+
 mod api;
 mod config;
+mod dashboard;
 mod errors;
 mod prelude;
 mod process_tracker;

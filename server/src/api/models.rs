@@ -8,7 +8,7 @@ pub struct HealthResponse {
     pub uptime: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigResponse {
     pub blind: bool,
     pub pid: Vec<u32>,
@@ -18,11 +18,7 @@ pub struct ConfigResponse {
     pub system_monitor: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Screenshot
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScreenshotImage {
     pub data: String,
     pub mime: String,
@@ -33,7 +29,7 @@ pub struct ScreenshotImage {
     pub timestamp: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScreenshotResponse {
     pub screens: Vec<ScreenshotImage>,
     pub count: usize,
@@ -50,3 +46,19 @@ pub struct TopProcessesParams {
     pub limit: Option<usize>,
     pub sort: String,
 }
+
+#[cfg(feature = "ssr")]
+#[derive(Clone, axum::extract::FromRef)]
+pub struct AppState {
+    pub cancel_token: tokio_util::sync::CancellationToken,
+    pub leptos_options: Option<leptos_config::LeptosOptions>,
+}
+
+#[cfg(feature = "ssr")]
+impl axum::extract::FromRef<AppState> for leptos_config::LeptosOptions {
+    fn from_ref(state: &AppState) -> Self {
+        state.leptos_options.clone()
+            .expect("leptos_options must be Some when dashboard is enabled")
+    }
+}
+

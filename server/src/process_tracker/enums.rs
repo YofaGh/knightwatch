@@ -1,4 +1,6 @@
+#[cfg(feature = "ssr")]
 use sysinfo::ProcessStatus;
+#[cfg(feature = "ssr")]
 use tokio::sync::oneshot;
 
 use super::structs::ProcessSnapshot;
@@ -36,6 +38,7 @@ pub enum ProcessTrackerEvent {
 }
 
 /// One-shot queries callers can send to read tracker state synchronously.
+#[cfg(feature = "ssr")]
 #[derive(Debug)]
 pub enum ProcessTrackerQuery {
     /// Returns a snapshot of the root process (None if already gone).
@@ -63,7 +66,7 @@ pub enum ProcessTrackerQuery {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub enum ProcessState {
     Running,
     Sleeping,
@@ -71,6 +74,7 @@ pub enum ProcessState {
     Gone,
 }
 
+#[cfg(feature = "ssr")]
 impl From<ProcessStatus> for ProcessState {
     fn from(status: ProcessStatus) -> Self {
         match status {
@@ -93,7 +97,7 @@ impl std::fmt::Display for ProcessState {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Debug, serde::Serialize, Clone)]
+#[derive(Debug, serde::Serialize, Clone, serde::Deserialize)]
 pub enum FDType {
     File,
     Socket,

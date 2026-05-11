@@ -20,7 +20,11 @@ pub struct CliArgs {
 
     /// Disable the API server entirely
     #[arg(long, default_value_t = false)]
-    pub no_server: bool,
+    pub no_api: bool,
+
+    /// Disable web dashboard
+    #[arg(long, default_value_t = false)]
+    pub no_dashboard: bool,
 
     /// Disable the Screen Capture API, which may require elevated permissions on some platforms
     #[arg(long, default_value_t = false)]

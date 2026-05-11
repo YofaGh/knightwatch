@@ -1,28 +1,31 @@
-use tokio::{net::TcpListener, sync::broadcast};
-
+#[cfg(feature = "ssr")]
 use crate::prelude::*;
 
-pub fn get_listener(address: &str) -> Result<TcpListener> {
+#[cfg(feature = "ssr")]
+pub fn get_listener(address: &str) -> Result<tokio::net::TcpListener> {
     let std_listener =
         std::net::TcpListener::bind(address).map_err(|err| Error::bind_address(address, err))?;
     std_listener
         .set_nonblocking(true)
         .map_err(|err| Error::bind_address(address, err))?;
-    TcpListener::from_std(std_listener).map_err(|err| Error::bind_address(address, err))
+    tokio::net::TcpListener::from_std(std_listener).map_err(|err| Error::bind_address(address, err))
 }
 
+#[cfg(feature = "ssr")]
 pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+#[cfg(feature = "ssr")]
 fn get_local_ip() -> Option<String> {
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
     socket.local_addr().ok().map(|addr| addr.ip().to_string())
 }
 
+#[cfg(feature = "ssr")]
 pub fn print_local_ips(port: u16) {
-    println!("API Server running at:");
+    println!("Server running at:");
     println!("  → http://localhost:{}", port);
     println!("  → http://127.0.0.1:{}", port);
     if let Some(ip) = get_local_ip() {
@@ -75,13 +78,14 @@ pub fn format_uptime(secs: u64) -> String {
     }
 }
 
-pub async fn recv_or_pending<T: Clone>(rx: &mut Option<broadcast::Receiver<T>>, name: &str) -> T {
+#[cfg(feature = "ssr")]
+pub async fn recv_or_pending<T: Clone>(rx: &mut Option<tokio::sync::broadcast::Receiver<T>>, name: &str) -> T {
     match rx {
         Some(rx) => loop {
             match rx.recv().await {
                 Ok(val) => return val,
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => {
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     error!("{name} channel closed");
                     std::future::pending().await
                 }

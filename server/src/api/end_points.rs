@@ -1,8 +1,7 @@
 use axum::{
-    body::Body,
     extract::{Path, Query, State},
-    http::{StatusCode, header},
-    response::{Html, Json, Response},
+    http::StatusCode,
+    response::Json,
 };
 use base64::{Engine as _, engine::general_purpose};
 
@@ -71,26 +70,6 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Json<
         .collect();
     let count = screens.len();
     Ok(Json(ScreenshotResponse { screens, count }))
-}
-
-pub async fn view() -> Html<&'static str> {
-    Html(VIEW_HTML)
-}
-
-pub async fn view_css() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "text/css")
-        .body(Body::from(VIEW_CSS))
-        .unwrap()
-}
-
-pub async fn view_js() -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/javascript")
-        .body(Body::from(VIEW_JS))
-        .unwrap()
 }
 
 // ---------------------------------------------------------------------------

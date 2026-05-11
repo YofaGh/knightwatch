@@ -1,9 +1,10 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
+#[cfg(feature = "ssr")]
 use tokio::sync::oneshot;
 
 use super::structs::*;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum SystemMonitorEvent {
     /// Emitted on the very first tick; establishes a baseline for all metrics.
     InitialSnapshot { snapshot: SystemSnapshot },
@@ -31,6 +32,7 @@ pub enum SystemMonitorEvent {
     BatteryStateChanged { state: BatteryState },
 }
 
+#[cfg(feature = "ssr")]
 #[derive(Debug)]
 pub enum SystemMonitorQuery {
     /// Returns the most recent full snapshot.
@@ -79,7 +81,7 @@ pub enum SystemMonitorQuery {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SystemHealth {
     /// Everything within normal thresholds.
     Healthy,
@@ -99,7 +101,7 @@ impl std::fmt::Display for SystemHealth {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BatteryState {
     Charging,
     Discharging,
@@ -119,6 +121,7 @@ impl std::fmt::Display for BatteryState {
     }
 }
 
+#[cfg(feature = "ssr")]
 impl From<battery::State> for BatteryState {
     fn from(state: battery::State) -> Self {
         match state {
@@ -130,7 +133,7 @@ impl From<battery::State> for BatteryState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DiskKind {
     Ssd,
     Hdd,
@@ -138,6 +141,7 @@ pub enum DiskKind {
     Unknown,
 }
 
+#[cfg(feature = "ssr")]
 impl From<sysinfo::DiskKind> for DiskKind {
     fn from(kind: sysinfo::DiskKind) -> Self {
         match kind {

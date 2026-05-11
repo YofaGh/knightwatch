@@ -1,12 +1,14 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssr")]
 use std::collections::HashSet;
+#[cfg(feature = "ssr")]
 use tokio::sync::{broadcast, mpsc};
 
 use super::{enums::*, process_state_serde};
 
 // Linux-only structures
 #[cfg(target_os = "linux")]
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct FileDescriptorInfo {
     pub fd: i32,
     pub target: String,
@@ -25,7 +27,7 @@ impl From<procfs::process::FDInfo> for FileDescriptorInfo {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Clone, Copy, Deserialize)]
 pub struct IOStats {
     pub read_bytes: u64,
     pub write_bytes: u64,
@@ -45,6 +47,7 @@ impl From<procfs::process::Io> for IOStats {
     }
 }
 
+#[cfg(feature = "ssr")]
 pub struct RootProcess {
     #[allow(unused)]
     pub root_pid: u32,
@@ -58,6 +61,7 @@ pub struct RootProcess {
     pub last_children: Vec<ProcessSnapshot>,
 }
 
+#[cfg(feature = "ssr")]
 impl RootProcess {
     pub fn new(root_pid: u32) -> Self {
         Self {
@@ -75,7 +79,7 @@ impl RootProcess {
 }
 
 /// Lightweight per-process data captured each tick.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessSnapshot {
     pub pid: u32,
     pub name: String,
@@ -95,6 +99,7 @@ pub struct ProcessSnapshot {
     pub io_stats: Option<IOStats>,
 }
 
+#[cfg(feature = "ssr")]
 impl From<&sysinfo::Process> for ProcessSnapshot {
     fn from(process: &sysinfo::Process) -> Self {
         let pid = process.pid().as_u32();
@@ -118,13 +123,14 @@ impl From<&sysinfo::Process> for ProcessSnapshot {
     }
 }
 
+#[cfg(feature = "ssr")]
 pub struct ProcessTrackerChannels {
     pub query_tx: mpsc::Sender<ProcessTrackerQuery>,
     pub query_rx: Option<mpsc::Receiver<ProcessTrackerQuery>>,
     pub event_tx: broadcast::Sender<ProcessTrackerEvent>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProcessTree {
     pub root: Option<ProcessSnapshot>,
     pub children: Vec<ProcessSnapshot>,

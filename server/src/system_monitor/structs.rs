@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 use super::enums::*;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemSnapshot {
     pub timestamp: String,
     pub cpu: CpuSnapshot,
@@ -22,7 +22,7 @@ pub struct SystemSnapshot {
 // CPU
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CpuSnapshot {
     /// Aggregate usage across all logical cores, 0–100.
     pub usage_percent: f32,
@@ -44,7 +44,7 @@ pub struct CpuSnapshot {
     pub load_avg: LoadAverage,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CpuCoreSnapshot {
     /// Core label, e.g. "cpu0".
     pub name: String,
@@ -54,6 +54,7 @@ pub struct CpuCoreSnapshot {
     pub frequency_mhz: u64,
 }
 
+#[cfg(feature = "ssr")]
 impl From<&sysinfo::Cpu> for CpuCoreSnapshot {
     fn from(cpu: &sysinfo::Cpu) -> Self {
         Self {
@@ -65,7 +66,7 @@ impl From<&sysinfo::Cpu> for CpuCoreSnapshot {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadAverage {
     pub one: f64,
     pub five: f64,
@@ -87,7 +88,7 @@ impl From<sysinfo::LoadAvg> for LoadAverage {
 // Memory
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemorySnapshot {
     // --- RAM ---
     pub total_bytes: u64,
@@ -109,7 +110,7 @@ pub struct MemorySnapshot {
 // Disk
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiskSnapshot {
     /// OS-level device name, e.g. "/dev/sda1" or "C:\\".
     pub name: String,
@@ -127,6 +128,7 @@ pub struct DiskSnapshot {
     pub used_percent: f32,
 }
 
+#[cfg(feature = "ssr")]
 impl From<&sysinfo::Disk> for DiskSnapshot {
     fn from(disk: &sysinfo::Disk) -> Self {
         let total = disk.total_space();
@@ -155,7 +157,7 @@ impl From<&sysinfo::Disk> for DiskSnapshot {
 // Network
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkSnapshot {
     /// Interface name, e.g. "eth0", "en0", "Wi-Fi".
     pub interface: String,
@@ -181,6 +183,7 @@ pub struct NetworkSnapshot {
     pub tx_errors: u64,
 }
 
+#[cfg(feature = "ssr")]
 impl From<(&String, &sysinfo::NetworkData)> for NetworkSnapshot {
     fn from((name, data): (&String, &sysinfo::NetworkData)) -> Self {
         Self {
@@ -201,7 +204,7 @@ impl From<(&String, &sysinfo::NetworkData)> for NetworkSnapshot {
 // GPU
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuSnapshot {
     /// Identifier, e.g. "NVIDIA GeForce RTX 4090" or "Apple M3 Pro (GPU)".
     pub name: String,
@@ -222,6 +225,7 @@ pub struct GpuSnapshot {
     pub fan_speed_percent: Vec<f32>,
 }
 
+#[cfg(feature = "ssr")]
 impl From<nvml_wrapper::Device<'_>> for GpuSnapshot {
     fn from(device: nvml_wrapper::Device) -> Self {
         let vram = device.memory_info().ok();
@@ -264,7 +268,7 @@ impl From<nvml_wrapper::Device<'_>> for GpuSnapshot {
 // Battery
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatterySnapshot {
     /// Charge level 0–100.
     pub charge_percent: f32,
@@ -281,6 +285,7 @@ pub struct BatterySnapshot {
     pub health_percent: Option<f32>,
 }
 
+#[cfg(feature = "ssr")]
 impl From<battery::Battery> for BatterySnapshot {
     fn from(battery: battery::Battery) -> Self {
         Self {
@@ -299,7 +304,7 @@ impl From<battery::Battery> for BatterySnapshot {
 // Thermals
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThermalSnapshot {
     /// Sensor label, e.g. "coretemp Package id 0", "acpitz temp1".
     pub label: String,
@@ -310,6 +315,7 @@ pub struct ThermalSnapshot {
     pub temperature_critical_celsius: Option<f32>,
 }
 
+#[cfg(feature = "ssr")]
 impl From<&sysinfo::Component> for ThermalSnapshot {
     fn from(c: &sysinfo::Component) -> Self {
         Self {
@@ -327,7 +333,7 @@ impl From<&sysinfo::Component> for ThermalSnapshot {
 
 /// Static host information. Collected once at startup and re-broadcast inside
 /// every `SystemSnapshot` for convenience.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostInfo {
     pub hostname: Option<String>,
     /// OS long name, e.g. "Ubuntu 24.04.1 LTS".
@@ -342,6 +348,7 @@ pub struct HostInfo {
     pub process_count: usize,
 }
 
+#[cfg(feature = "ssr")]
 #[derive(Debug, Clone, Serialize)]
 pub struct StaticHostInfo {
     pub hostname: Option<String>,
@@ -353,6 +360,7 @@ pub struct StaticHostInfo {
     pub cpu_arch: Option<String>,
 }
 
+#[cfg(feature = "ssr")]
 pub struct Thresholds {
     pub cpu_warn: f32,
     pub memory_warn: f32,
@@ -360,6 +368,7 @@ pub struct Thresholds {
     pub battery_low: f32,
 }
 
+#[cfg(feature = "ssr")]
 impl Default for Thresholds {
     fn default() -> Self {
         Self {
