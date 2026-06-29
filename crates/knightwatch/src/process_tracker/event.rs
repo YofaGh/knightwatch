@@ -1,0 +1,76 @@
+use serde_json::json;
+
+use kw_types::process::ProcessSnapshot;
+
+#[derive(Debug, Clone)]
+pub enum ProcessTrackerEvent {
+    /// Emitted on the very first tick; contains everything we found.
+    InitialSnapshot {
+        root: Option<ProcessSnapshot>,
+        children: Vec<ProcessSnapshot>,
+    },
+    /// One or more new child processes appeared.
+    ChildrenAppeared {
+        pid: u32,
+        children: Vec<ProcessSnapshot>,
+    },
+    /// One or more child PIDs exited.
+    ChildrenExited {
+        pid: u32,
+        children: Vec<u32>,
+    },
+    /// All descendants have exited (root may still be alive).
+    AllChildrenGone {
+        pid: u32,
+    },
+    /// The root process itself has exited.
+    RootExited {
+        pid: u32,
+    },
+    WorkComplete {
+        pid: u32,
+    },
+    /// A process was killed via a KillProcess or KillTree command.
+    ProcessKilled {
+        pid: u32,
+        /// `false` if the signal was sent but the OS reported failure,
+        /// or if the process was not found.
+        success: bool,
+    },
+}
+
+impl From<&ProcessTrackerEvent> for crate::events::EventPayload {
+    fn from(event: &ProcessTrackerEvent) -> Self {
+        let (event_name, data) = match event {
+            ProcessTrackerEvent::RootExited { pid } => {
+                ("process.root_exited", json!({ "pid": pid }))
+            }
+            ProcessTrackerEvent::ChildrenExited { pid, children } => (
+                "process.children_exited",
+                json!({ "pid": pid, "children": children }),
+            ),
+            ProcessTrackerEvent::ChildrenAppeared { pid, children } => (
+                "process.children_appeared",
+                json!({ "pid": pid, "children": children }),
+            ),
+            ProcessTrackerEvent::AllChildrenGone { pid } => {
+                ("process.all_children_gone", json!({ "pid": pid }))
+            }
+            ProcessTrackerEvent::InitialSnapshot { root, children } => (
+                "process.initial_snapshot",
+                json!({
+                    "root_pid": if let Some(root) = root { root.pid } else { 0 },
+                    "child_count": children.len()
+                }),
+            ),
+            ProcessTrackerEvent::WorkComplete { pid } => {
+                ("process.work_complete", json!({ "pid": pid }))
+            }
+            ProcessTrackerEvent::ProcessKilled { pid, success } => (
+                "process.process_killed",
+                json!({ "pid": pid, "success": success }),
+            ),
+        };
+        Self::new(crate::events::EventSource::ProcessTracker, event_name, data)
+    }
+}

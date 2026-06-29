@@ -1,0 +1,19 @@
+[package]
+name = "kw-types"
+version = "1.0.18"
+edition = "2024"
+
+[features]
+server = ["bollard", "nvml-wrapper", "procfs", "starship-battery", "sysinfo"]
+
+[dependencies]
+bollard = { workspace = true, optional = true }
+chrono = { workspace = true }
+nvml-wrapper = { workspace = true, optional = true }
+serde = { workspace = true }
+starship-battery = { workspace = true, optional = true }
+sysinfo = { workspace = true, optional = true }
+kw-utils = { path = "../kw-utils" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+procfs = { version = "0.18.0", optional = true }

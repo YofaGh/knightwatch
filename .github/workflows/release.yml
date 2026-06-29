@@ -69,7 +69,7 @@ jobs:
             libgbm-dev
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }} --package knightwatch
 
       - name: Package (unix)
         if: runner.os != 'Windows'
@@ -116,7 +116,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cargo wix --target ${{ matrix.target }} --nocapture -o "target\wix\${env:BIN_NAME}-${{ matrix.target }}.msi"
+          cargo wix --manifest-path crates/knightwatch/Cargo.toml --target ${{ matrix.target }} --nocapture -o "target\wix\${env:BIN_NAME}-${{ matrix.target }}.msi"
           Copy-Item "target\wix\${env:BIN_NAME}-${{ matrix.target }}.msi" "."
           $hash = Get-FileHash "${env:BIN_NAME}-${{ matrix.target }}.msi" -Algorithm SHA256
           "$($hash.Hash.ToLower())  ${env:BIN_NAME}-${{ matrix.target }}.msi" | Out-File -Encoding ascii "${env:BIN_NAME}-${{ matrix.target }}.msi.sha256"
@@ -148,7 +148,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Build headless binary
-        run: cargo build --release --locked --no-default-features
+        run: cargo build --release --locked --no-default-features --package knightwatch
       - name: Package
         run: |
           cp target/release/${BIN_NAME} target/release/${BIN_NAME}-headless
@@ -177,7 +177,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
       - name: Build headless binary
-        run: cargo build --release --locked --no-default-features --target aarch64-unknown-linux-gnu
+        run: cargo build --release --locked --no-default-features --target aarch64-unknown-linux-gnu --package knightwatch
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
       - name: Package

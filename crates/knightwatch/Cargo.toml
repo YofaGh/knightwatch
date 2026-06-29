@@ -1,0 +1,62 @@
+[package]
+name = "knightwatch"
+version = "1.0.18"
+edition = "2024"
+authors = ["YofaGh"]
+description = "System Monitoring tool"
+homepage = "https://github.com/YofaGh/knightwatch"
+repository = "https://github.com/YofaGh/knightwatch"
+license = "MIT"
+
+[package.metadata.wix]
+upgrade-guid = "C81EA21C-82A5-406E-9389-719E2E0B2150"
+path-guid = "58DBAEB2-B794-44A9-BAE0-2E2803C35264"
+license = false
+eula = false
+
+[features]
+default = ["screenshot"]
+screenshot = ["xcap"]
+
+[dependencies]
+axum = "0.8.8"
+axum-extra = { version = "0.12.6", features = ["typed-header"] }
+base64 = "0.22.1"
+bcrypt = "0.19.1"
+bollard = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+directories = "6.0.0"
+futures = "0.3.32"
+mime_guess = "2.0.5"
+native-tls = { version = "0.2.18", features = ["vendored"] }
+nvml-wrapper = { workspace = true }
+rand = "0.10.1"
+reqwest = { workspace = true, features = ["json"] }
+rpassword = "7.5.2"
+rust-embed = { version = "8.11.0", features = ["interpolate-folder-path"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+starship-battery = { workspace = true }
+sysinfo = { workspace = true }
+teloxide = { version = "0.17.0", features = ["macros"] }
+tokio = { workspace = true }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
+tokio-util = { version = "0.7.18", features = ["rt"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+uuid = { version = "1.23.1", features = ["v4"] }
+xcap = { version = "0.9.4", optional = true }
+kw-types = { path = "../kw-types", features = ["server"] }
+kw-utils = { path = "../kw-utils" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5.15.0", features = ["tokio"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_System_Threading",
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Console",
+] }

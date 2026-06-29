@@ -1,0 +1,4 @@
+[package]
+name = "kw-utils"
+version = "1.0.18"
+edition = "2024"
