@@ -35,13 +35,13 @@ Knightwatch provides a sleek dark-mode web interface that streams system perform
 ### Shell (macOS & Linux)
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/YofaGh/knightwatch/releases/latest/download/knightwatch-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/YofaGh/knightwatch/releases/latest/download/install.sh | sh
 ```
 
 ### PowerShell (Windows)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/YofaGh/knightwatch/releases/latest/download/knightwatch-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/YofaGh/knightwatch/releases/latest/download/install.ps1 | iex"
 ```
 
 ### Homebrew (macOS)
@@ -55,8 +55,9 @@ brew install YofaGh/tap/knightwatch
 For Linux servers without a display server, a headless build (no screenshot support) is available as a standalone tarball on the [Releases page](https://github.com/YofaGh/knightwatch/releases/latest). Download `knightwatch-headless-x86_64-unknown-linux.tar.gz` and extract it:
 
 ```bash
-tar -xzf knightwatch-headless-x86_64-unknown-linux.tar.gz 
-./knightwatch
+tar -xzf knightwatch-headless-x86_64-unknown-linux.tar.gz
+chmod +x knightwatch-headless
+./knightwatch-headless
 ```
 
 ### Pre-built Binaries
