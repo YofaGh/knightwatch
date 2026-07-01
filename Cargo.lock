@@ -1957,7 +1957,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "knightwatch"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "axum",
  "axum-extra",
@@ -2008,7 +2008,7 @@ dependencies = [
 
 [[package]]
 name = "kw-types"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "bollard",
  "kw-utils",
