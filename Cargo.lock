@@ -1994,6 +1994,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "knightwatch-cli"
+version = "1.0.0"
+dependencies = [
+ "base64",
+ "clap",
+ "kw-types",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kw-types"
 version = "1.0.18"
 dependencies = [

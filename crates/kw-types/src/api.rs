@@ -91,7 +91,7 @@ impl fmt::Display for LoginResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotImage {
     pub data: String,
     pub mime: String,
@@ -102,7 +102,22 @@ pub struct ScreenshotImage {
     pub timestamp: String,
 }
 
-#[derive(Debug, Serialize)]
+impl fmt::Display for ScreenshotImage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Screenshot[monitor={} ({}), {}x{}, mime={}, taken_at={}]",
+            self.monitor_name,
+            self.monitor_id,
+            self.width,
+            self.height,
+            self.mime,
+            self.timestamp
+        )
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ScreenshotResponse {
     pub screens: Vec<ScreenshotImage>,
     pub count: usize,

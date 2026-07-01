@@ -21,7 +21,7 @@ screenshot = ["xcap"]
 [dependencies]
 axum = "0.8.8"
 axum-extra = { version = "0.12.6", features = ["typed-header"] }
-base64 = "0.22.1"
+base64 = { workspace = true }
 bcrypt = "0.19.1"
 bollard = { workspace = true }
 chrono = { workspace = true }
