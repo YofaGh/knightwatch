@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installer for the knightwatch family of tools.
 # Usage:
-#   curl -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/main/scripts/install.sh | sh
+#   curl -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.sh | sh
 #   curl -LsSf .../install.sh | sh -s -- --package knightwatch-cli
 #   curl -LsSf .../install.sh | sh -s -- --version 1.0.17
 #   curl -LsSf .../install.sh | sh -s -- --package knightwatch-cli --version 1.0.0

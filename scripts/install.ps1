@@ -1,9 +1,9 @@
 # Installer for the knightwatch family of tools.
 # Usage:
-#   irm https://raw.githubusercontent.com/YofaGh/knightwatch/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 | iex
 # To pass parameters (pick a package/version), download then run it directly,
 # since piping into `iex` can't forward -Package/-Version arguments:
-#   iwr -useb https://raw.githubusercontent.com/YofaGh/knightwatch/main/scripts/install.ps1 -OutFile install.ps1
+#   iwr -useb https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 -OutFile install.ps1
 #   .\install.ps1 -Package knightwatch-cli -Version 1.0.0
 param(
     [string]$Package = "knightwatch",
