@@ -8,6 +8,8 @@ A lightweight, real-time browser-based dashboard for monitoring system performan
 
 Knightwatch provides a sleek dark-mode web interface that streams system performance, live screen captures, and process telemetry directly in your browser. The backend is a Rust server built on [Tokio](https://tokio.rs/) and [Axum](https://github.com/tokio-rs/axum), keeping the footprint small and performance high — no heavy agents or desktop apps required.
 
+A companion `knightwatch-cli` client is also available for connecting to a remote or local knightwatch server through its API from the terminal.
+
 ---
 
 ## Features
@@ -32,22 +34,42 @@ Knightwatch provides a sleek dark-mode web interface that streams system perform
 
 ## Installation
 
+Knightwatch ships two binaries: the `knightwatch` server and the `knightwatch-cli` client, which connects to a remote or local knightwatch server through its API. Both are installed with the same scripts — just pick a package.
+
 ### Shell (macOS & Linux)
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/YofaGh/knightwatch/releases/latest/download/install.sh | sh
+# Install the server (default package)
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 | sh
+
+# Install the CLI client
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.sh | sh -s -- --package knightwatch-cli
 ```
+
+You can also pin a specific version with `--version <VERSION>`.
 
 ### PowerShell (Windows)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/YofaGh/knightwatch/releases/latest/download/install.ps1 | iex"
+# Install the server (default package)
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 | iex"
+```
+
+Piping into `iex` can't forward `-Package`/`-Version` arguments, so to install the CLI (or pin a version), download the script and run it directly:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 -OutFile install.ps1
+.\install.ps1 -Package knightwatch-cli -Version 1.0.0
 ```
 
 ### Homebrew (macOS)
 
 ```bash
+# Install the server
 brew install YofaGh/tap/knightwatch
+
+# Install the CLI client
+brew install YofaGh/tap/knightwatch-cli
 ```
 
 ### Linux Servers (Headless)
@@ -63,14 +85,6 @@ chmod +x knightwatch-headless
 ### Pre-built Binaries
 
 Standalone binaries for all supported platforms are available on the [Releases page](https://github.com/YofaGh/knightwatch/releases/latest).
-
-### Updating
-
-If you installed via the shell or PowerShell installer, a `knightwatch-update` binary is included alongside the main binary. Run it to update to the latest release:
-
-```bash
-knightwatch-update
-```
 
 ---
 
@@ -161,6 +175,7 @@ Full reference documentation is available in the [Wiki](https://github.com/YofaG
 - [Webhooks](https://github.com/YofaGh/knightwatch/wiki/Webhooks) — Payload format and event catalogue
 - [Authentication](https://github.com/YofaGh/knightwatch/wiki/Authentication) — User management and API auth
 - [Persistent Configuration](https://github.com/YofaGh/knightwatch/wiki/Persistent-Configuration) — Stored settings via `config` subcommand
+- [Knightwatch CLI](https://github.com/YofaGh/knightwatch/wiki/Knightwatch-cli) — Using `knightwatch-cli` to connect to a remote or local server
 
 ---
 
