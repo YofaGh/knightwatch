@@ -162,7 +162,7 @@ jobs:
         if: runner.os == 'Windows' && inputs.build_msi
         shell: pwsh
         run: |
-          cargo wix --manifest-path crates/${{ env.PACKAGE }}/Cargo.toml --target ${{ matrix.target }} --nocapture -o "target\wix\${env:BIN_NAME}-${{ matrix.target }}.msi"
+          cargo wix --package ${{ env.PACKAGE }} --target ${{ matrix.target }} --nocapture -o "target\wix\${env:BIN_NAME}-${{ matrix.target }}.msi"
           Copy-Item "target\wix\${env:BIN_NAME}-${{ matrix.target }}.msi" "."
           $hash = Get-FileHash "${env:BIN_NAME}-${{ matrix.target }}.msi" -Algorithm SHA256
           "$($hash.Hash.ToLower())  ${env:BIN_NAME}-${{ matrix.target }}.msi" | Out-File -Encoding ascii "${env:BIN_NAME}-${{ matrix.target }}.msi.sha256"
