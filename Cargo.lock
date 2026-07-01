@@ -2011,7 +2011,6 @@ name = "kw-types"
 version = "1.0.18"
 dependencies = [
  "bollard",
- "chrono",
  "kw-utils",
  "nvml-wrapper",
  "procfs",

@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt};
+use std::fmt;
 
 #[cfg(all(feature = "server", target_os = "linux"))]
 use procfs::process::Process;
 
 // Linux-only structures
 #[cfg(target_os = "linux")]
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileDescriptorInfo {
     pub fd: i32,
     pub target: String,
@@ -25,7 +25,7 @@ impl From<procfs::process::FDInfo> for FileDescriptorInfo {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct IOStats {
     pub read_bytes: u64,
     pub write_bytes: u64,
@@ -41,34 +41,6 @@ impl From<procfs::process::Io> for IOStats {
             write_bytes: io.write_bytes,
             read_chars: io.rchar,
             write_chars: io.wchar,
-        }
-    }
-}
-
-pub struct RootProcess {
-    pub root_pid: u32,
-    pub first_tick: bool,
-    pub root_appeared: bool,
-    pub prev_child_pids: HashSet<u32>,
-    pub work_done: bool,
-    pub root_exited: bool,
-    pub children_ever_seen: bool,
-    pub last_root: Option<ProcessSnapshot>,
-    pub last_children: Vec<ProcessSnapshot>,
-}
-
-impl RootProcess {
-    pub fn new(root_pid: u32) -> Self {
-        Self {
-            root_pid,
-            first_tick: true,
-            root_appeared: false,
-            prev_child_pids: HashSet::new(),
-            work_done: false,
-            root_exited: false,
-            children_ever_seen: false,
-            last_root: None,
-            last_children: Vec::new(),
         }
     }
 }
@@ -162,19 +134,6 @@ impl fmt::Display for ProcessTree {
     }
 }
 
-impl From<&RootProcess> for ProcessTree {
-    fn from(root_process: &RootProcess) -> Self {
-        Self {
-            root_pid: root_process.root_pid,
-            root: root_process.last_root.clone(),
-            children: root_process.last_children.clone(),
-            child_count: root_process.last_children.len(),
-            work_done: root_process.work_done,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }
-    }
-}
-
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ProcessStatus {
     pub root_alive: bool,
@@ -197,19 +156,6 @@ impl fmt::Display for ProcessStatus {
             "[{pid}] {name}  alive={} children={} work_done={}",
             self.root_alive, self.child_count, self.work_done
         )
-    }
-}
-
-impl From<&RootProcess> for ProcessStatus {
-    fn from(root_process: &RootProcess) -> Self {
-        Self {
-            root_alive: root_process.last_root.is_some(),
-            root_pid: root_process.last_root.as_ref().map(|p| p.pid),
-            root_name: root_process.last_root.as_ref().map(|p| p.name.clone()),
-            child_count: root_process.last_children.len(),
-            work_done: root_process.work_done,
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        }
     }
 }
 
@@ -344,7 +290,7 @@ impl fmt::Display for ProcessState {
 }
 
 #[cfg(target_os = "linux")]
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum FDType {
     File,
     Socket,

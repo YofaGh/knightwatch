@@ -10,7 +10,7 @@ use tokio::{
 
 use kw_types::process::*;
 
-use super::{commands::*, event::*};
+use super::{commands::*, event::*, process::RootProcess};
 use crate::prelude::*;
 
 struct ProcessTrackerState {

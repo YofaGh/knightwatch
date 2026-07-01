@@ -8,7 +8,6 @@ server = ["bollard", "nvml-wrapper", "procfs", "starship-battery", "sysinfo"]
 
 [dependencies]
 bollard = { workspace = true, optional = true }
-chrono = { workspace = true }
 nvml-wrapper = { workspace = true, optional = true }
 serde = { workspace = true }
 starship-battery = { workspace = true, optional = true }

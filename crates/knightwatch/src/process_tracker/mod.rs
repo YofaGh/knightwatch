@@ -2,6 +2,7 @@ mod client;
 mod commands;
 mod event;
 mod tracker;
+mod process;
 
 pub use kw_types::process::{ProcessSignal, ProcessSnapshot, ProcessStatus, ProcessTree, SortKey};
 

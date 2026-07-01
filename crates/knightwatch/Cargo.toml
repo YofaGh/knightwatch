@@ -24,7 +24,7 @@ axum-extra = { version = "0.12.6", features = ["typed-header"] }
 base64 = { workspace = true }
 bcrypt = "0.19.1"
 bollard = { workspace = true }
-chrono = { workspace = true }
+chrono = { version = "0.4.43", features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
 directories = "6.0.0"
 futures = "0.3.32"
