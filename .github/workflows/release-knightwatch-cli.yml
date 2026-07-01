@@ -1,0 +1,23 @@
+name: Release knightwatch-cli
+
+on:
+  push:
+    tags:
+      - 'knightwatch-cli/[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/_release.yml
+    with:
+      package: knightwatch-cli
+      bin_name: knightwatch-cli
+      linux_extra_deps: ""
+      build_msi: true
+      build_headless: false
+      homebrew_class: KnightwatchCli
+      homebrew_desc: "Command-line interface for knightwatch"
+      latest: false
+    secrets: inherit

@@ -1,0 +1,36 @@
+class __CLASS__ < Formula
+  desc "__DESC__"
+  homepage "https://github.com/YofaGh/knightwatch"
+  version "__VERSION__"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/YofaGh/knightwatch/releases/download/__TAG__/__BIN__-aarch64-apple-darwin.tar.gz"
+      sha256 "__SHA_DARWIN_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/YofaGh/knightwatch/releases/download/__TAG__/__BIN__-x86_64-apple-darwin.tar.gz"
+      sha256 "__SHA_DARWIN_X86_64__"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/YofaGh/knightwatch/releases/download/__TAG__/__BIN__-aarch64-unknown-linux-gnu.tar.gz"
+      sha256 "__SHA_LINUX_ARM64__"
+    end
+    on_intel do
+      url "https://github.com/YofaGh/knightwatch/releases/download/__TAG__/__BIN__-x86_64-unknown-linux-gnu.tar.gz"
+      sha256 "__SHA_LINUX_X86_64__"
+    end
+  end
+
+  def install
+    bin.install "__BIN__"
+  end
+
+  test do
+    system "#{bin}/__BIN__", "--version"
+  end
+end
