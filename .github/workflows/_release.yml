@@ -324,15 +324,15 @@ jobs:
       - name: Render formula
         run: |
           sed \
-            -e "s/__VERSION__/${{ needs.prep.outputs.version }}/g" \
-            -e "s/__TAG__/${{ needs.prep.outputs.tag }}/g" \
-            -e "s/__CLASS__/${{ inputs.homebrew_class }}/g" \
-            -e "s/__BIN__/${{ env.BIN_NAME }}/g" \
-            -e "s/__DESC__/${{ inputs.homebrew_desc }}/g" \
-            -e "s/__SHA_DARWIN_ARM64__/${{ steps.sha.outputs.aarch64-apple-darwin }}/g" \
-            -e "s/__SHA_DARWIN_X86_64__/${{ steps.sha.outputs.x86_64-apple-darwin }}/g" \
-            -e "s/__SHA_LINUX_ARM64__/${{ steps.sha.outputs.aarch64-unknown-linux-gnu }}/g" \
-            -e "s/__SHA_LINUX_X86_64__/${{ steps.sha.outputs.x86_64-unknown-linux-gnu }}/g" \
+            -e "s|__VERSION__|${{ needs.prep.outputs.version }}|g" \
+            -e "s|__TAG__|${{ needs.prep.outputs.tag }}|g" \
+            -e "s|__CLASS__|${{ inputs.homebrew_class }}|g" \
+            -e "s|__BIN__|${{ env.BIN_NAME }}|g" \
+            -e "s|__DESC__|${{ inputs.homebrew_desc }}|g" \
+            -e "s|__SHA_DARWIN_ARM64__|${{ steps.sha.outputs.aarch64-apple-darwin }}|g" \
+            -e "s|__SHA_DARWIN_X86_64__|${{ steps.sha.outputs.x86_64-apple-darwin }}|g" \
+            -e "s|__SHA_LINUX_ARM64__|${{ steps.sha.outputs.aarch64-unknown-linux-gnu }}|g" \
+            -e "s|__SHA_LINUX_X86_64__|${{ steps.sha.outputs.x86_64-unknown-linux-gnu }}|g" \
             homebrew/formula.rb.template > "${{ env.PACKAGE }}.rb"
 
       - name: Push formula to tap
