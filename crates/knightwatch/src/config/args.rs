@@ -22,6 +22,10 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub enable_auth: bool,
 
+    /// Enable shutdown command
+    #[arg(long, default_value_t = false)]
+    pub enable_shutdown: bool,
+
     /// Disable the API server entirely
     #[arg(long, default_value_t = false)]
     pub no_api: bool,

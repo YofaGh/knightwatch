@@ -19,9 +19,12 @@ fn create_common_router() -> Router {
         .route("/info", get(info))
 }
 
-fn create_api_router(cancel_token: CancellationToken, auth_layer: bool) -> Router {
-    let api = Router::new()
-        .route("/shutdown", post(shutdown))
+fn create_api_router(
+    cancel_token: CancellationToken,
+    enable_shutdown: bool,
+    auth_layer: bool,
+) -> Router {
+    let mut api = Router::new()
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
         // ── Process tracking ──────────────────────────────────────────────
@@ -58,13 +61,14 @@ fn create_api_router(cancel_token: CancellationToken, auth_layer: bool) -> Route
         .route("/sse/process-tracker", get(sse_stream_process))
         .route("/sse/system-resources", get(sse_stream_system_resources))
         .route("/sse/systemd", get(sse_stream_systemd))
-        .route("/sse/docker-tracker", get(sse_stream_docker))
-        .with_state(cancel_token);
-    if auth_layer {
-        api.layer(middleware::from_fn(auth_middleware))
-    } else {
-        api
+        .route("/sse/docker-tracker", get(sse_stream_docker));
+    if enable_shutdown {
+        api = api.route("/shutdown", post(shutdown));
     }
+    if auth_layer {
+        api = api.layer(middleware::from_fn(auth_middleware));
+    }
+    api.with_state(cancel_token)
 }
 
 fn create_process_commands_router() -> Router {
@@ -148,7 +152,11 @@ pub fn create_routers(
     config: &crate::config::AppConfig,
     cancel_token: CancellationToken,
 ) -> Router {
-    let api_router = create_api_router(cancel_token, config.args.enable_auth);
+    let api_router = create_api_router(
+        cancel_token,
+        config.args.enable_shutdown,
+        config.args.enable_auth,
+    );
     let mut app = Router::new()
         .nest("/api", api_router)
         .nest("/api", create_common_router());

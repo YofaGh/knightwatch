@@ -40,6 +40,7 @@ pub async fn info() -> Json<InfoResponse> {
     let args = &crate::prelude::get_config().args;
     Json(InfoResponse {
         auth_enabled: args.enable_auth,
+        shutdown_enabled: args.enable_shutdown,
         blind: args.is_blind(),
         pid: process_tracker::get_root_pids().await,
         top_processes: args.top_processes,

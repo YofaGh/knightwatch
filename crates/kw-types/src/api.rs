@@ -22,6 +22,7 @@ impl fmt::Display for HealthResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InfoResponse {
     pub auth_enabled: bool,
+    pub shutdown_enabled: bool,
     pub blind: bool,
     pub pid: Vec<u32>,
     pub top_processes: bool,
@@ -41,6 +42,7 @@ impl fmt::Display for InfoResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let pids: Vec<String> = self.pid.iter().map(|p| p.to_string()).collect();
         writeln!(f, "auth enabled:    {}", self.auth_enabled)?;
+        writeln!(f, "shutdown enabled:    {}", self.shutdown_enabled)?;
         writeln!(f, "blind:           {}", self.blind)?;
         writeln!(
             f,

@@ -111,6 +111,7 @@
       if (e?.message === "Unauthorized") return;
       info = {
         auth_enabled: false,
+        shutdown_enabled: false,
         blind: false,
         pid: [],
         top_processes: false,

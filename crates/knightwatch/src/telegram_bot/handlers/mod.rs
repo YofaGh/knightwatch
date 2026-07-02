@@ -66,6 +66,14 @@ pub async fn handle_help(bot: Bot, msg: Message) -> Result<()> {
 }
 
 pub async fn handle_stop(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
+    if !crate::prelude::get_config().args.enable_shutdown {
+        bot.send_message(
+            msg.chat.id,
+            "🛑 Stopping Knight Watch is disabled.",
+        )
+        .await?;
+        return Ok(());
+    }
     bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…")
         .await?;
     cancel_token.cancel();

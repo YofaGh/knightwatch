@@ -142,15 +142,17 @@
       </span>
     {/if}
 
-    <button
-      id="shutdown-btn"
-      title="Shut down the server"
-      disabled={shutdownDisabled}
-      onclick={onshutdown}
-    >
-      <span class="sd-dot"></span>
-      {shutdownLabel}
-    </button>
+    {#if info?.shutdown_enabled}
+      <button
+        id="shutdown-btn"
+        title="Shut down the server"
+        disabled={shutdownDisabled}
+        onclick={onshutdown}
+      >
+        <span class="sd-dot"></span>
+        {shutdownLabel}
+      </button>
+    {/if}
 
     {#if showLoginButton}
       <button
