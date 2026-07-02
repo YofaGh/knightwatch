@@ -35,13 +35,27 @@
   export function getTabEl(name) {
     return tabEls[name];
   }
+
+  let canLogout = $derived(
+    Boolean(
+      $auth.token &&
+        (info?.auth_enabled ||
+          info?.allow_process_commands ||
+          info?.allow_screen_commands ||
+          info?.allow_system_resources_commands ||
+          info?.allow_systemd_commands ||
+          info?.allow_docker_commands),
+    ),
+  );
 </script>
 
 <header id="topbar">
   <div class="topbar-brand">
     <span class="brand-dot"></span>
     <h1>Knight Watch</h1>
-    <span id="status" class:error={statusError}>{status}</span>
+    <span id="status" class:error={statusError} class:ok={!statusError}
+      >{status}</span
+    >
   </div>
 
   <div id="tabnav" role="tablist" aria-label="Sections" bind:this={tabnavEl}>
@@ -149,7 +163,7 @@
       </button>
     {/if}
 
-    {#if info?.auth_enabled || (info?.allow_process_commands && info?.allow_screen_commands && info?.allow_system_resources_commands && info?.allow_systemd_commands && info?.allow_docker_commands && $auth.token)}
+    {#if canLogout}
       <button id="logout-btn" title="Sign out" onclick={() => auth.logout()}>
         <span class="logout-icon" aria-hidden="true">⏻</span>
         Sign out
@@ -210,6 +224,9 @@
   }
   #status.error {
     color: var(--error);
+  }
+  #status.ok {
+    color: var(--success);
   }
 
   .topbar-actions {
