@@ -133,6 +133,7 @@ knightwatch --pid <PID> --allow-process-commands
 | `--host <HOST>` | `0.0.0.0` | Host address for the API server |
 | `--port <PORT>` / `-p` | `8083` | Port for the API server |
 | `--enable-auth` | `false` | Enable authentication |
+| `--enable-shutdown` | `false` | Enable app shutdown remotely |
 | `--no-api` | `false` | Disable the API server entirely |
 | `--no-dashboard` | `false` | Disable the web dashboard |
 | `--blind` | `false` | Disable screen capture |
