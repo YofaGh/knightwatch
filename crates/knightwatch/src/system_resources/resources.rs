@@ -69,12 +69,6 @@ impl SystemResources {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_poll_interval(mut self, d: Duration) -> Self {
-        self.poll_interval = d;
-        self
-    }
-
     fn emit_event(&self, event: SystemResourcesEvent) {
         // Err means no subscribers — that's fine.
         let _ = self.channels.event_tx.send(event);

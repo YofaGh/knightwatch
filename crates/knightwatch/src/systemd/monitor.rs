@@ -56,12 +56,6 @@ impl SystemdMonitor {
     }
 
     #[allow(dead_code)]
-    pub fn with_poll_interval(mut self, d: Duration) -> Self {
-        self.poll_interval = d;
-        self
-    }
-
-    #[allow(dead_code)]
     pub fn with_filter(mut self, filter: UnitFilter) -> Self {
         self.filter = filter;
         self

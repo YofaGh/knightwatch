@@ -22,12 +22,6 @@ impl ScreenCapture {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_poll_interval(mut self, d: Duration) -> Self {
-        self.poll_interval = d;
-        self
-    }
-
     async fn start_capturing_loop(mut self) -> Result<()> {
         self.handle_tick().await;
         let mut query_rx = self

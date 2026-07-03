@@ -58,12 +58,6 @@ impl ProcessTracker {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn with_poll_interval(mut self, d: Duration) -> Self {
-        self.poll_interval = d;
-        self
-    }
-
     fn emit_event(&self, event: ProcessTrackerEvent) {
         // Err means no subscribers are listening right now — that's fine.
         let _ = self.channels.event_tx.send(event);
