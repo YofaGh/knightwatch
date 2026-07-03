@@ -299,7 +299,12 @@ jobs:
 
   publish-homebrew:
     needs: [prep, build, create-release]
-    if: inputs.homebrew_class != ''
+    if: |
+      always() &&
+      inputs.homebrew_class != '' &&
+      needs.prep.result == 'success' &&
+      needs.build.result == 'success' &&
+      needs.create-release.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
