@@ -5,7 +5,7 @@ fn project_dirs() -> ProjectDirs {
     ProjectDirs::from("com", "", "knightwatch").expect("Could not determine app data directory")
 }
 
-pub fn conig_file_path(file: &'static str) -> PathBuf {
+pub fn config_file_path(file: &'static str) -> PathBuf {
     project_dirs().config_dir().join(file)
 }
 
