@@ -13,7 +13,7 @@ jobs:
     uses: ./.github/workflows/_release.yml
     with:
       package: knightwatch-cli
-      bin_name: knightwatch-cli
+      bin_name: kwctl
       linux_extra_deps: ""
       build_msi: true
       build_headless: false

@@ -8,6 +8,10 @@ homepage = "https://github.com/YofaGh/knightwatch"
 repository = "https://github.com/YofaGh/knightwatch"
 license = "MIT"
 
+[[bin]]
+name = "kwctl"
+path = "src/main.rs"
+
 [package.metadata.wix]
 upgrade-guid = "16227121-66F5-4BDB-B2AA-16A3E9046720"
 path-guid = "7B1159E0-79F3-48CF-8256-3E59C1C60C2F"

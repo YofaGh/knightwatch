@@ -112,9 +112,9 @@
                 <Component Id='binary0' Guid='57acb55c-c208-4e39-8906-1b6240238486'>
                     <File
                         Id='exe0'
-                        Name='knightwatch-cli.exe'
+                        Name='kwctl.exe'
                         DiskId='1'
-                        Source='$(var.CargoTargetBinDir)\knightwatch-cli.exe'
+                        Source='$(var.CargoTargetBinDir)\kwctl.exe'
                         KeyPath='yes' />
                 </Component>
             </Directory>
