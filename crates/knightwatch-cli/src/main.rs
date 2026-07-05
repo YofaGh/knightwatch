@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use reqwest::{Client, RequestBuilder};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -11,6 +11,9 @@ use kw_types::{
     resources,
     systemd::UnitSnapshot,
 };
+
+mod colors;
+mod interactive;
 
 /// CLI client for Knightwatch API
 #[derive(Parser)]
@@ -28,8 +31,10 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(clap::Subcommand)]
 enum Commands {
+    // ── Interactive ────────────────────────────────────────────────────────
+    Interactive,
     // ── Common ────────────────────────────────────────────────────────────
     /// Check server health
     Health,
@@ -57,15 +62,25 @@ enum Commands {
     /// List tracked root PIDs
     RootPids,
     /// Full process tree for a root PID
-    ProcessTree { root_pid: u32 },
+    ProcessTree {
+        root_pid: u32,
+    },
     /// Root process snapshot only
-    ProcessRoot { root_pid: u32 },
+    ProcessRoot {
+        root_pid: u32,
+    },
     /// Child process snapshots
-    ProcessChildren { root_pid: u32 },
+    ProcessChildren {
+        root_pid: u32,
+    },
     /// Lightweight process status summary
-    ProcessStatus { root_pid: u32 },
+    ProcessStatus {
+        root_pid: u32,
+    },
     /// Check whether all children of a root PID have exited
-    ProcessIsDone { root_pid: u32 },
+    ProcessIsDone {
+        root_pid: u32,
+    },
     /// All tracked process trees
     ProcessTrees,
     /// Top processes by CPU/memory/disk
@@ -88,11 +103,17 @@ enum Commands {
         signal: ProcessSignal,
     },
     /// Kill an entire process tree
-    KillTree { root_pid: u32 },
+    KillTree {
+        root_pid: u32,
+    },
     /// Start tracking a PID
-    TrackPid { pid: u32 },
+    TrackPid {
+        pid: u32,
+    },
     /// Stop tracking a PID
-    UntrackPid { pid: u32 },
+    UntrackPid {
+        pid: u32,
+    },
     /// Pause the process tracker poll loop
     ProcessPollPause,
     /// Resume the process tracker poll loop
@@ -109,7 +130,9 @@ enum Commands {
     /// Resume the screen capture poll loop
     ScreenPollResume,
     /// Set the screen capture poll interval
-    ScreenPollInterval { interval_ms: u64 },
+    ScreenPollInterval {
+        interval_ms: u64,
+    },
 
     // ── System resources ──────────────────────────────────────────────────
     /// Full system snapshot
@@ -163,15 +186,21 @@ enum Commands {
     /// Resume the system resources poll loop
     ResourcesPollResume,
     /// Set the system resources poll interval
-    ResourcesPollInterval { interval_ms: u64 },
+    ResourcesPollInterval {
+        interval_ms: u64,
+    },
 
     // ── Systemd ───────────────────────────────────────────────────────────
     /// Systemd snapshot (all units)
     Systemd,
     /// Snapshot of a single unit
-    Unit { unit_name: String },
+    Unit {
+        unit_name: String,
+    },
     /// Units filtered by active state (e.g. active, failed, inactive)
-    UnitsByState { unit_state: String },
+    UnitsByState {
+        unit_state: String,
+    },
     /// List failed units
     FailedUnits,
     /// Pause the systemd poll loop
@@ -179,13 +208,17 @@ enum Commands {
     /// Resume the systemd poll loop
     SystemdPollResume,
     /// Set the systemd poll interval
-    SystemdPollInterval { interval_ms: u64 },
+    SystemdPollInterval {
+        interval_ms: u64,
+    },
 
     // ── Docker ────────────────────────────────────────────────────────────
     /// List all docker containers
     DockerContainers,
     /// Get a container by ID or name
-    Container { id_or_name: String },
+    Container {
+        id_or_name: String,
+    },
     /// Top containers by CPU/memory
     TopContainers {
         /// Sort key: cpu | memory
@@ -210,7 +243,9 @@ enum Commands {
         signal: Option<String>,
     },
     /// Start a container
-    StartContainer { id_or_name: String },
+    StartContainer {
+        id_or_name: String,
+    },
     /// Restart a container
     RestartContainer {
         id_or_name: String,
@@ -218,15 +253,21 @@ enum Commands {
         timeout_secs: Option<i32>,
     },
     /// Pause a container
-    PauseContainer { id_or_name: String },
+    PauseContainer {
+        id_or_name: String,
+    },
     /// Unpause a container
-    UnpauseContainer { id_or_name: String },
+    UnpauseContainer {
+        id_or_name: String,
+    },
     /// Pause the docker tracker poll loop
     DockerPollPause,
     /// Resume the docker tracker poll loop
     DockerPollResume,
     /// Set the docker tracker poll interval
-    DockerPollInterval { interval_ms: u64 },
+    DockerPollInterval {
+        interval_ms: u64,
+    },
 }
 
 struct ApiClient {
@@ -339,12 +380,8 @@ fn ok() {
     println!("OK");
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
-    let api = ApiClient::new(cli.url, cli.token);
-
-    match cli.command {
+async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Error>> {
+    match command {
         // ── Common ────────────────────────────────────────────────────────
         Commands::Health => {
             let v: kw_types::api::HealthResponse = api.get_typed("/health").await?;
@@ -742,7 +779,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await?;
             ok();
         }
+        Commands::Interactive => {
+            // Handled before dispatch is called — should never reach here.
+            unreachable!()
+        }
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse();
+    let api = ApiClient::new(cli.url, cli.token);
+
+    if matches!(cli.command, Commands::Interactive) {
+        interactive::run_interactive(api).await;
+        return Ok(());
     }
 
-    Ok(())
+    dispatch(cli.command, &api).await
 }

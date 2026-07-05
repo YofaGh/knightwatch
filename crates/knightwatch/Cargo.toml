@@ -26,7 +26,7 @@ bcrypt = "0.19.1"
 bollard = { workspace = true }
 chrono = { version = "0.4.43", features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
-directories = "6.0.0"
+directories = { workspace = true }
 futures = "0.3.32"
 mime_guess = "2.0.5"
 native-tls = { version = "0.2.18", features = ["vendored"] }
