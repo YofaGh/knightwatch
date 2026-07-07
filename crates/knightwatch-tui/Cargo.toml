@@ -1,0 +1,13 @@
+[package]
+name = "knightwatch-tui"
+version = "0.1.0"
+edition = "2024"
+authors = ["YofaGh"]
+description = "TUI client for Knightwatch"
+homepage = "https://github.com/YofaGh/knightwatch"
+repository = "https://github.com/YofaGh/knightwatch"
+license = "MIT"
+
+[[bin]]
+name = "kwtui"
+path = "src/main.rs"

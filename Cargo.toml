@@ -1,9 +1,10 @@
 [workspace]
 members = [
     "crates/knightwatch",
+    "crates/knightwatch-cli",
+    "crates/knightwatch-tui",
     "crates/kw-types",
     "crates/kw-utils",
-    "crates/knightwatch-cli",
 ]
 default-members = ["crates/knightwatch"]
 resolver = "2"

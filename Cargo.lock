@@ -2040,6 +2040,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "knightwatch-tui"
+version = "0.1.0"
+
+[[package]]
 name = "kw-types"
 version = "1.0.20"
 dependencies = [
