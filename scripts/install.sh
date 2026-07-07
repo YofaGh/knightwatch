@@ -21,9 +21,54 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# The binary name matches the package name for every crate in this repo today.
-# If that ever diverges for a future crate, set it explicitly here instead.
-BIN_NAME="$PACKAGE"
+# --- Package/tag/binary naming ------------------------------------------
+#
+# Three names are involved for each crate in this repo, and they are NOT
+# guaranteed to be the same string:
+#
+#   1. CRATE NAME   - what the crate is called in Cargo.toml. This is also
+#                      the prefix used in git tags, e.g. "knightwatch-cli/1.0.1".
+#                      Release resolution (resolve_latest_tag below) always
+#                      keys off the crate name, because that's what the tags
+#                      use.
+#   2. BIN_NAME     - the actual binary produced by the crate, and the
+#                      prefix of the release asset filenames, e.g.
+#                      "kwctl-x86_64-unknown-linux-gnu.tar.gz".
+#   3. --package    - what the *user* types on the command line. We accept
+#                      either the crate name or the binary name here for
+#                      convenience, since users often only know the binary
+#                      they run day to day.
+#
+# When a crate's binary name matches its crate name, no entry below is
+# needed (see the "*" fallthrough). Only add a case here when a crate's
+# binary name diverges from its crate name - as knightwatch-cli/kwctl does.
+#
+# To add a new crate whose binary name differs from its crate name:
+#   1. Add a line mapping the crate name -> its binary name.
+#   2. Add a line mapping the binary name -> the same binary name, so users
+#      can pass either one via --package.
+resolve_bin_name() {
+  case "$1" in
+    knightwatch-cli) echo "kwctl" ;;
+    kwctl) echo "kwctl" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# The crate/tag name is whatever --package resolves the binary name's
+# "owning" crate to be. Since tags are keyed by crate name, and a user might
+# pass either the crate name or the binary name, normalize --package back to
+# the crate name for tag lookups.
+resolve_crate_name() {
+  case "$1" in
+    kwctl) echo "knightwatch-cli" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+CRATE_NAME="$(resolve_crate_name "$PACKAGE")"
+BIN_NAME="$(resolve_bin_name "$PACKAGE")"
+# -------------------------------------------------------------------------
 
 uname_os="$(uname -s)"
 uname_arch="$(uname -m)"
@@ -43,12 +88,13 @@ esac
 target="${arch}-${os}"
 archive="${BIN_NAME}-${target}.tar.gz"
 
-# Resolve "latest" to the newest release tag for THIS package specifically.
+# Resolve "latest" to the newest release tag for THIS crate specifically.
 # GitHub's /releases/latest shortcut is repo-wide (whichever crate released
 # most recently), so it can't be used once multiple crates release independently.
+# NOTE: tags are keyed by CRATE_NAME, not BIN_NAME - see naming note above.
 resolve_latest_tag() {
   curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
-    | grep -o "\"tag_name\": *\"${PACKAGE}/[^\"]*\"" \
+    | grep -o "\"tag_name\": *\"${CRATE_NAME}/[^\"]*\"" \
     | head -n1 \
     | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/'
 }
@@ -61,8 +107,8 @@ if [ "$VERSION" = "latest" ]; then
   fi
 else
   case "$VERSION" in
-    */*) tag="$VERSION" ;;                # already a full tag, e.g. "knightwatch-cli/1.0.0"
-    *)   tag="${PACKAGE}/${VERSION}" ;;    # just a version number, e.g. "1.0.0"
+    */*) tag="$VERSION" ;;                     # already a full tag, e.g. "knightwatch-cli/1.0.0"
+    *)   tag="${CRATE_NAME}/${VERSION}" ;;      # just a version number, e.g. "1.0.0"
   esac
 fi
 
@@ -73,7 +119,6 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 echo "Downloading ${url}"
 curl --proto '=https' --tlsv1.2 -LsSf "$url" -o "${tmpdir}/${archive}"
-
 tar -xzf "${tmpdir}/${archive}" -C "$tmpdir"
 
 stage_dir="${tmpdir}/${BIN_NAME}-${target}"
@@ -81,6 +126,7 @@ mkdir -p "$INSTALL_DIR"
 install -m 755 "${stage_dir}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
 
 echo "Installed ${BIN_NAME} (${tag}) to ${INSTALL_DIR}/${BIN_NAME}"
+
 case ":$PATH:" in
   *":${INSTALL_DIR}:"*) ;;
   *) echo "Note: ${INSTALL_DIR} is not on your PATH. Add it to your shell profile." ;;
