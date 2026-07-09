@@ -5,15 +5,13 @@ mod tabs;
 mod ui;
 mod utils;
 
-use std::io;
-
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui_image::picker::Picker;
-use tokio::sync::mpsc;
+use std::io;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -55,21 +53,27 @@ async fn main() -> io::Result<()> {
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
 
-    let mut app = app::App::new(picker);
-
     let base_url = std::env::var("KW_URL").unwrap_or_else(|_| "http://localhost:8083".to_string());
     let token = std::env::var("KW_TOKEN").ok();
-    let api = std::sync::Arc::new(kw_clients::ApiClient::new(base_url, token));
+    let api = std::sync::Arc::new(kw_clients::ApiClient::new(base_url.clone(), token));
+
+    let info = api.info().await.expect(&format!(
+        "Failed to connect to knightwatch server at: {base_url}"
+    ));
+
+    let mut app = app::App::new(picker, (&info).into());
 
     // Single channel, single event enum, one receiver in the main loop.
     // Every producer below just sends into a clone of `tx`.
-    let (tx, mut rx) = mpsc::channel(32);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
     // --- Keyboard / mouse input ---
     pollers::spawn_input(tx.clone());
 
     // --- Screen tab ---
-    pollers::spawn_screen_poller(tx.clone(), api.clone());
+    if !info.blind {
+        pollers::spawn_screen_poller(tx.clone(), api.clone());
+    }
 
     // Drop our own sender. If we didn't, `rx.recv()` would never return
     // `None` even after every spawned task above exits, since a sender

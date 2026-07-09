@@ -20,14 +20,24 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(picker: Picker) -> Self {
-        let tabs: Vec<Box<dyn Tab>> = vec![
-            Box::new(tabs::ScreenTab::new(picker)),
-            Box::new(tabs::ProcessesTab::new()),
-            Box::new(tabs::SystemResourcesTab::new()),
-            Box::new(tabs::SystemdTab::new()),
-            Box::new(tabs::DockerTab::new()),
-        ];
+    pub fn new(picker: Picker, tabs_filter: tabs::TabsFilter) -> Self {
+        let mut tabs: Vec<Box<dyn Tab>> = vec![];
+
+        if tabs_filter.show_screen {
+            tabs.push(Box::new(tabs::ScreenTab::new(picker)));
+        }
+        if tabs_filter.show_processes {
+            tabs.push(Box::new(tabs::ProcessesTab::new()));
+        }
+        if tabs_filter.show_system_resources {
+            tabs.push(Box::new(tabs::SystemResourcesTab::new()));
+        }
+        if tabs_filter.show_systemd {
+            tabs.push(Box::new(tabs::SystemdTab::new()));
+        }
+        if tabs_filter.show_docker {
+            tabs.push(Box::new(tabs::DockerTab::new()));
+        }
 
         Self {
             should_quit: false,
