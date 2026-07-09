@@ -22,10 +22,10 @@ eula = false
 base64 = { workspace = true }
 clap = { workspace = true }
 directories = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 kw-types = { path = "../kw-types" }
+kw-clients = { path = "../kw-clients" }
 rustyline = { version = "18.0.1", features = ["derive"] }
 shlex = "2.0.1"

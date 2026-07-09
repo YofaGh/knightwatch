@@ -1,15 +1,9 @@
 use clap::Parser;
-use reqwest::{Client, RequestBuilder};
-use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
 use std::error::Error;
 
 use kw_types::{
-    api::{ContainerRequest, ContainerTimeoutRequest, SetPollIntervalRequest},
-    docker::{ContainerSnapshot, DockerSortKey},
-    process::{ProcessSignal, ProcessSnapshot, ProcessTree, SortKey},
-    resources,
-    systemd::UnitSnapshot,
+    docker::DockerSortKey,
+    process::{ProcessSignal, SortKey},
 };
 
 mod colors;
@@ -270,109 +264,7 @@ enum Commands {
     },
 }
 
-struct ApiClient {
-    client: Client,
-    base: String,
-    token: Option<String>,
-}
-
-impl ApiClient {
-    fn new(base: String, token: Option<String>) -> Self {
-        Self {
-            client: Client::new(),
-            base,
-            token,
-        }
-    }
-
-    fn url(&self, path: &str) -> String {
-        format!("{}/api{}", self.base, path)
-    }
-
-    fn bearer(&self, req: RequestBuilder) -> RequestBuilder {
-        match &self.token {
-            Some(t) => req.bearer_auth(t),
-            None => req,
-        }
-    }
-
-    async fn get(&self, path: &str) -> Result<Value, Box<dyn Error>> {
-        let resp = self.bearer(self.client.get(self.url(path))).send().await?;
-        handle(resp).await
-    }
-
-    async fn get_typed<T: DeserializeOwned>(&self, path: &str) -> Result<T, Box<dyn Error>> {
-        let resp = self.bearer(self.client.get(self.url(path))).send().await?;
-        let text = resp.text().await?;
-        Ok(serde_json::from_str(&text)?)
-    }
-
-    async fn get_typed_query<P: Serialize, T: DeserializeOwned>(
-        &self,
-        path: &str,
-        params: P,
-    ) -> Result<T, Box<dyn Error>> {
-        let resp = self
-            .bearer(self.client.get(self.url(path)).query(&params))
-            .send()
-            .await?;
-        let text = resp.text().await?;
-        Ok(serde_json::from_str(&text)?)
-    }
-
-    async fn post<B: Serialize>(
-        &self,
-        path: &str,
-        body: B,
-    ) -> Result<Option<Value>, Box<dyn Error>> {
-        let resp = self
-            .bearer(self.client.post(self.url(path)).json(&body))
-            .send()
-            .await?;
-        handle_post(resp).await
-    }
-
-    async fn post_typed<B: Serialize, T: DeserializeOwned>(
-        &self,
-        path: &str,
-        body: B,
-    ) -> Result<T, Box<dyn Error>> {
-        let resp = self
-            .bearer(self.client.post(self.url(path)).json(&body))
-            .send()
-            .await?;
-        let text = resp.text().await?;
-        Ok(serde_json::from_str(&text)?)
-    }
-}
-
-async fn handle(resp: reqwest::Response) -> Result<Value, Box<dyn Error>> {
-    let status = resp.status();
-    let text = resp.text().await?;
-    if status.is_success() {
-        Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
-    } else {
-        Err(format!("HTTP {status}: {text}").into())
-    }
-}
-
-async fn handle_post(resp: reqwest::Response) -> Result<Option<Value>, Box<dyn Error>> {
-    let status = resp.status();
-    let text = resp.text().await?;
-    if status.is_success() {
-        if text.is_empty() || status == reqwest::StatusCode::NO_CONTENT {
-            Ok(None)
-        } else {
-            Ok(Some(
-                serde_json::from_str(&text).unwrap_or(Value::String(text)),
-            ))
-        }
-    } else {
-        Err(format!("HTTP {status}: {text}").into())
-    }
-}
-
-fn print(v: &Value) {
+fn print<T: serde::Serialize>(v: &T) {
     println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
 }
 
@@ -380,19 +272,17 @@ fn ok() {
     println!("OK");
 }
 
-async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Error>> {
+async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), Box<dyn Error>> {
     match command {
         // ── Common ────────────────────────────────────────────────────────
         Commands::Health => {
-            let v: kw_types::api::HealthResponse = api.get_typed("/health").await?;
-            println!("{v}");
+            println!("{}", api.health().await?);
         }
         Commands::Info => {
-            let v: kw_types::api::InfoResponse = api.get_typed("/info").await?;
-            println!("{v}");
+            println!("{}", api.info().await?);
         }
         Commands::Shutdown => {
-            if let Some(v) = api.post("/shutdown", json!({})).await? {
+            if let Some(v) = api.shutdown().await? {
                 print(&v);
             } else {
                 ok();
@@ -401,23 +291,16 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
 
         // ── Auth ──────────────────────────────────────────────────────────
         Commands::Login { username, password } => {
-            let v: kw_types::api::LoginResponse = api
-                .post_typed(
-                    "/auth/login",
-                    kw_types::api::LoginRequest { username, password },
-                )
-                .await?;
-            println!("{v}");
+            println!("{}", api.login(username, password).await?);
         }
         Commands::Logout => {
-            api.post("/auth/logout", json!({})).await?;
+            api.logout().await?;
             ok();
         }
 
         // ── Screenshot ────────────────────────────────────────────────────
         Commands::Screenshot => {
-            let screenshot_response: kw_types::api::ScreenshotResponse =
-                api.get_typed("/screenshot").await?;
+            let screenshot_response = api.screenshot().await?;
             for screen in screenshot_response.screens {
                 let ext = screen.mime.split('/').nth(1).unwrap_or("png");
                 let filename = format!(
@@ -436,155 +319,119 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             }
         }
 
+        // ── Screen capture commands ───────────────────────────────────────
+        Commands::ScreenPollPause => {
+            api.screen_capture_poll_pause().await?;
+            ok();
+        }
+        Commands::ScreenPollResume => {
+            api.screen_capture_poll_resume().await?;
+            ok();
+        }
+        Commands::ScreenPollInterval { interval_ms } => {
+            api.screen_capture_interval(interval_ms).await?;
+            ok();
+        }
+
         // ── Process tracking ──────────────────────────────────────────────
-        Commands::RootPids => print(&api.get("/root_pids").await?),
+        Commands::RootPids => print(&api.root_pids().await?),
         Commands::ProcessTree { root_pid } => {
-            let v: ProcessTree = api.get_typed(&format!("/process/{root_pid}")).await?;
-            println!("{v}");
+            println!("{}", api.process_tree(root_pid).await?);
         }
         Commands::ProcessRoot { root_pid } => {
-            let v: ProcessSnapshot = api.get_typed(&format!("/process/root/{root_pid}")).await?;
-            println!("{v}");
+            println!("{}", api.process_root(root_pid).await?);
         }
         Commands::ProcessChildren { root_pid } => {
-            let v: Vec<ProcessSnapshot> = api
-                .get_typed(&format!("/process/children/{root_pid}"))
-                .await?;
+            let v = api.process_children(root_pid).await?;
             for p in &v {
                 println!("{p}");
             }
         }
         Commands::ProcessStatus { root_pid } => {
-            let v: kw_types::process::ProcessStatus = api
-                .get_typed(&format!("/process/status/{root_pid}"))
-                .await?;
-            println!("{v}");
+            println!("{}", api.process_status(root_pid).await?);
         }
-        Commands::ProcessIsDone { root_pid } => {
-            print(&api.get(&format!("/process/is-done/{root_pid}")).await?)
-        }
+        Commands::ProcessIsDone { root_pid } => print(&api.process_is_done(root_pid).await?),
         Commands::ProcessTrees => {
-            let v: Vec<ProcessTree> = api.get_typed("/process/trees").await?;
+            let v = api.process_trees().await?;
             for p in &v {
                 println!("{p}");
             }
         }
         Commands::TopProcesses { sort, limit } => {
-            let v: Vec<ProcessSnapshot> = api
-                .get_typed_query(
-                    "/top-processes",
-                    kw_types::api::TopProcessesParams { sort, limit },
-                )
-                .await?;
+            let v = api.top_processes(sort, limit).await?;
             for p in &v {
                 println!("{p}");
             }
         }
-        Commands::SupportedSignals => print(&api.get("/supported-signals").await?),
+        Commands::SupportedSignals => {
+            print(&api.supported_signals().await?);
+        }
 
         // ── Process commands ──────────────────────────────────────────────
         Commands::KillProcess { pid, signal } => {
-            api.post(
-                &format!("/process/kill/{pid}"),
-                kw_types::api::KillProcessRequest { signal },
-            )
-            .await?;
+            api.kill_process(pid, signal).await?;
             ok();
         }
         Commands::KillTree { root_pid } => {
-            if let Some(v) = api
-                .post(&format!("/process/kill-tree/{root_pid}"), json!({}))
-                .await?
-            {
-                print(&v);
-            }
+            print(&api.kill_process_tree(root_pid).await?);
         }
         Commands::TrackPid { pid } => {
-            api.post(&format!("/process/track/{pid}"), json!({}))
-                .await?;
+            api.track_pid(pid).await?;
             ok();
         }
         Commands::UntrackPid { pid } => {
-            api.post(&format!("/process/untrack/{pid}"), json!({}))
-                .await?;
+            api.untrack_pid(pid).await?;
             ok();
         }
         Commands::ProcessPollPause => {
-            api.post("/process/poll/pause", json!({})).await?;
+            api.process_poll_pause().await?;
             ok();
         }
         Commands::ProcessPollResume => {
-            api.post("/process/poll/resume", json!({})).await?;
+            api.process_poll_resume().await?;
             ok();
         }
         Commands::ProcessPollInterval { interval_ms } => {
-            api.post(
-                "/process/poll/interval",
-                SetPollIntervalRequest { interval_ms },
-            )
-            .await?;
-            ok();
-        }
-
-        // ── Screen capture commands ───────────────────────────────────────
-        Commands::ScreenPollPause => {
-            api.post("/screen/poll/pause", json!({})).await?;
-            ok();
-        }
-        Commands::ScreenPollResume => {
-            api.post("/screen/poll/resume", json!({})).await?;
-            ok();
-        }
-        Commands::ScreenPollInterval { interval_ms } => {
-            api.post(
-                "/screen/poll/interval",
-                SetPollIntervalRequest { interval_ms },
-            )
-            .await?;
+            api.process_poll_interval(interval_ms).await?;
             ok();
         }
 
         // ── System resources ──────────────────────────────────────────────
         Commands::System => {
-            let v: resources::SystemSnapshot = api.get_typed("/system").await?;
-            println!("{v}");
+            println!("{}", api.system_snapshot().await?);
         }
         Commands::Cpu => {
-            let v: resources::CpuSnapshot = api.get_typed("/cpu").await?;
-            println!("{v}");
+            println!("{}", api.cpu_snapshot().await?);
         }
         Commands::Memory => {
-            let v: resources::MemorySnapshot = api.get_typed("/memory").await?;
-            println!("{v}");
+            println!("{}", api.memory_snapshot().await?);
         }
         Commands::Disks => {
-            let v: Vec<resources::DiskSnapshot> = api.get_typed("/disks").await?;
+            let v = api.disk_snapshots().await?;
             for d in &v {
                 println!("{d}");
             }
         }
         Commands::Networks => {
-            let v: Vec<resources::NetworkSnapshot> = api.get_typed("/networks").await?;
+            let v = api.network_snapshots().await?;
             for n in &v {
                 println!("{n}");
             }
         }
         Commands::Gpus => {
-            let v: Vec<resources::GpuSnapshot> = api.get_typed("/gpus").await?;
+            let v = api.gpu_snapshots().await?;
             for g in &v {
                 println!("{g}");
             }
         }
         Commands::Battery => {
-            let v: resources::BatterySnapshot = api.get_typed("/battery").await?;
-            println!("{v}");
+            println!("{}", api.battery_snapshot().await?);
         }
         Commands::HostInfo => {
-            let v: resources::HostInfo = api.get_typed("/host-info").await?;
-            println!("{v}");
+            println!("{}", api.host_info().await?);
         }
         Commands::Temperatures => {
-            let v: Vec<resources::ThermalSnapshot> = api.get_typed("/temperatures").await?;
+            let v = api.temperatures().await?;
             for t in &v {
                 println!("{t}");
             }
@@ -597,16 +444,8 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             disk_warn,
             battery_low,
         } => {
-            api.post(
-                "/resources/thresholds",
-                kw_types::api::SetThresholdsRequest {
-                    cpu_warn,
-                    memory_warn,
-                    disk_warn,
-                    battery_low,
-                },
-            )
-            .await?;
+            api.set_thresholds(cpu_warn, memory_warn, disk_warn, battery_low)
+                .await?;
             ok();
         }
         Commands::SetRefreshMask {
@@ -617,95 +456,68 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             temperatures,
             gpus,
         } => {
-            api.post(
-                "/resources/refresh-mask",
-                kw_types::api::SetRefreshMaskRequest {
-                    cpu,
-                    memory,
-                    disks,
-                    networks,
-                    temperatures,
-                    gpus,
-                },
-            )
-            .await?;
+            api.set_refresh_mask(cpu, memory, disks, networks, temperatures, gpus)
+                .await?;
             ok();
         }
         Commands::ResourcesPollPause => {
-            api.post("/resources/poll/pause", json!({})).await?;
+            api.resources_poll_pause().await?;
             ok();
         }
         Commands::ResourcesPollResume => {
-            api.post("/resources/poll/resume", json!({})).await?;
+            api.resources_poll_resume().await?;
             ok();
         }
         Commands::ResourcesPollInterval { interval_ms } => {
-            api.post(
-                "/resources/poll/interval",
-                SetPollIntervalRequest { interval_ms },
-            )
-            .await?;
+            api.resources_poll_interval(interval_ms).await?;
             ok();
         }
 
         // ── Systemd ───────────────────────────────────────────────────────
         Commands::Systemd => {
-            let v: Vec<kw_types::systemd::SystemdSnapshot> = api.get_typed("/systemd").await?;
-            for s in &v {
-                println!("{s}");
-            }
+            println!("{}", api.systemd_snapshot().await?);
         }
         Commands::Unit { unit_name } => {
-            let v: UnitSnapshot = api.get_typed(&format!("/unit/{unit_name}")).await?;
-            println!("{v}");
+            println!("{}", api.unit_snapshot(&unit_name).await?);
         }
         Commands::UnitsByState { unit_state } => {
-            let v: Vec<UnitSnapshot> = api.get_typed(&format!("/units/{unit_state}")).await?;
+            let v = api.units_by_state(&unit_state).await?;
             for u in &v {
                 println!("{u}");
             }
         }
         Commands::FailedUnits => {
-            let v: Vec<UnitSnapshot> = api.get_typed("/failed_units").await?;
+            let v = api.failed_units().await?;
             for u in &v {
                 println!("{u}");
             }
         }
         Commands::SystemdPollPause => {
-            api.post("/systemd/poll/pause", json!({})).await?;
+            api.systemd_poll_pause().await?;
             ok();
         }
         Commands::SystemdPollResume => {
-            api.post("/systemd/poll/resume", json!({})).await?;
+            api.systemd_poll_resume().await?;
             ok();
         }
         Commands::SystemdPollInterval { interval_ms } => {
-            api.post(
-                "/systemd/poll/interval",
-                SetPollIntervalRequest { interval_ms },
-            )
-            .await?;
+            api.systemd_poll_interval(interval_ms).await?;
             ok();
         }
 
         // ── Docker ────────────────────────────────────────────────────────
         Commands::DockerContainers => {
-            let v: Vec<ContainerSnapshot> = api.get_typed("/docker-containers").await?;
+            let v = api.docker_containers().await?;
             for c in &v {
                 println!("{c}");
             }
         }
         Commands::Container { id_or_name } => {
-            let v: ContainerSnapshot = api.get_typed(&format!("/container/{id_or_name}")).await?;
+            let v = api.docker_container(&id_or_name).await?;
             println!("{v}");
         }
         Commands::TopContainers { sort, limit } => {
-            let v: Vec<ContainerSnapshot> = api
-                .get_typed_query(
-                    "/top-containers",
-                    kw_types::api::TopContainersParams { sort, limit },
-                )
-                .await?;
+            let v = api.top_containers(sort, limit).await?;
             for c in &v {
                 println!("{c}");
             }
@@ -716,67 +528,42 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             id_or_name,
             timeout_secs,
         } => {
-            api.post(
-                "/docker/stop-container",
-                ContainerTimeoutRequest {
-                    id_or_name,
-                    timeout_secs,
-                },
-            )
-            .await?;
+            api.stop_container(&id_or_name, timeout_secs).await?;
             ok();
         }
         Commands::KillContainer { id_or_name, signal } => {
-            api.post(
-                "/docker/kill-container",
-                kw_types::api::KillContainerRequest { id_or_name, signal },
-            )
-            .await?;
+            api.kill_container(&id_or_name, signal).await?;
             ok();
         }
         Commands::StartContainer { id_or_name } => {
-            api.post("/docker/start-container", ContainerRequest { id_or_name })
-                .await?;
+            api.start_container(&id_or_name).await?;
             ok();
         }
         Commands::RestartContainer {
             id_or_name,
             timeout_secs,
         } => {
-            api.post(
-                "/docker/restart-container",
-                ContainerTimeoutRequest {
-                    id_or_name,
-                    timeout_secs,
-                },
-            )
-            .await?;
+            api.restart_container(&id_or_name, timeout_secs).await?;
             ok();
         }
         Commands::PauseContainer { id_or_name } => {
-            api.post("/docker/pause-container", ContainerRequest { id_or_name })
-                .await?;
+            api.pause_container(&id_or_name).await?;
             ok();
         }
         Commands::UnpauseContainer { id_or_name } => {
-            api.post("/docker/unpause-container", ContainerRequest { id_or_name })
-                .await?;
+            api.unpause_container(&id_or_name).await?;
             ok();
         }
         Commands::DockerPollPause => {
-            api.post("/docker/poll/pause", json!({})).await?;
+            api.docker_poll_pause().await?;
             ok();
         }
         Commands::DockerPollResume => {
-            api.post("/docker/poll/resume", json!({})).await?;
+            api.docker_poll_resume().await?;
             ok();
         }
         Commands::DockerPollInterval { interval_ms } => {
-            api.post(
-                "/docker/poll/interval",
-                SetPollIntervalRequest { interval_ms },
-            )
-            .await?;
+            api.docker_poll_interval(interval_ms).await?;
             ok();
         }
         Commands::Interactive => {
@@ -790,7 +577,7 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-    let api = ApiClient::new(cli.url, cli.token);
+    let api = kw_clients::ApiClient::new(cli.url, cli.token);
 
     if matches!(cli.command, Commands::Interactive) {
         interactive::run_interactive(api).await;

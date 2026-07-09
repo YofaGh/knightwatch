@@ -145,7 +145,7 @@ impl rustyline::completion::Completer for SubcommandCompleter {
 
 // ── REPL entry point ──────────────────────────────────────────────────────────
 
-pub async fn run_interactive(api: crate::ApiClient) {
+pub async fn run_interactive(api: kw_clients::ApiClient) {
     println!(
         "{CYAN}kwctl interactive shell{RESET}  \
          {DIM}(type 'help' for commands, 'exit' to quit){RESET}"
