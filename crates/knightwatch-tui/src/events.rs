@@ -10,5 +10,5 @@ pub enum AppEvent {
     Input(crossterm::event::Event),
 
     /// A fresh screenshot of the primary monitor, for the Screen tab.
-    ScreenImage(image::DynamicImage),
+    ScreenImages(Vec<kw_types::api::ScreenshotImage>),
 }

@@ -47,12 +47,11 @@ impl App {
                 self.handle_event(ev);
                 self.dirty = true;
             }
-            AppEvent::ScreenImage(image) => {
-                let event = AppEvent::ScreenImage(image);
-                for tab in self.tabs.iter_mut() {
-                    if tab.handle_app_event(&event) {
-                        self.dirty = true;
-                    }
+            AppEvent::ScreenImages(_) => {
+                if let Some(tab) = self.get_tab_by_name("Screen")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
                 }
             }
         }
@@ -60,6 +59,10 @@ impl App {
 
     pub fn tab_titles(&self) -> Vec<&'static str> {
         self.tabs.iter().map(|t| t.name()).collect()
+    }
+
+    pub fn get_tab_by_name(&mut self, name: &str) -> Option<&mut Box<dyn Tab>> {
+        self.tabs.iter_mut().find(|t| t.name() == name)
     }
 
     pub fn handle_event(&mut self, event: Event) {

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::Sender;
 
-use crate::{events::AppEvent, utils};
+use crate::events::AppEvent;
 
 /// Spawns a background task that calls `fetch` on a fixed interval and
 /// forwards whatever `AppEvent` it produces into `tx`. This is the whole
@@ -41,11 +41,11 @@ pub fn spawn_input(tx: Sender<AppEvent>) {
 }
 
 pub fn spawn_screen_poller(tx: Sender<AppEvent>, api: Arc<kw_clients::ApiClient>) {
-    spawn_poller(tx, Duration::from_secs(10), move || {
+    spawn_poller(tx, Duration::from_secs(2), move || {
         let api = api.clone();
         async move {
-            match utils::fetch_screen_image(&api).await {
-                Ok(image) => Some(AppEvent::ScreenImage(image)),
+            match api.screenshot().await.map(|r| r.screens) {
+                Ok(screenshots) => Some(AppEvent::ScreenImages(screenshots)),
                 Err(_) => None,
             }
         }

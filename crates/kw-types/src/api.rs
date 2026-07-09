@@ -93,7 +93,7 @@ impl fmt::Display for LoginResponse {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ScreenshotImage {
     pub data: String,
     pub mime: String,
