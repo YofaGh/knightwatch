@@ -81,9 +81,11 @@ pub struct CpuSnapshot {
     /// Number of physical cores (may differ from `cores.len()` with HT).
     pub physical_core_count: Option<usize>,
 
-    /// System load averages (1 min, 5 min, 15 min). Linux/macOS only.
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    pub load_avg: LoadAverage,
+    /// System load averages (1/5/15 min). `None` on platforms where
+    /// this isn't available (e.g. Windows), regardless of which
+    /// platform is reading the data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_avg: Option<LoadAverage>,
 }
 
 impl fmt::Display for CpuSnapshot {
@@ -130,7 +132,6 @@ impl From<&sysinfo::Cpu> for CpuCoreSnapshot {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadAverage {
     pub one: f64,

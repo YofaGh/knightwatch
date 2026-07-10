@@ -146,17 +146,11 @@ fn health_color(h: &SystemHealth) -> Color {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn load_avg_line(cpu: &CpuSnapshot) -> String {
-    format!(
-        "load {:.2} {:.2} {:.2}",
-        cpu.load_avg.one, cpu.load_avg.five, cpu.load_avg.fifteen
-    )
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn load_avg_line(_cpu: &CpuSnapshot) -> String {
-    String::new()
+    match &cpu.load_avg {
+        Some(la) => format!("load {:.2} {:.2} {:.2}", la.one, la.five, la.fifteen),
+        None => String::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------

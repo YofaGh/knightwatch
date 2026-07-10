@@ -4,8 +4,7 @@ use std::fmt;
 #[cfg(all(feature = "server", target_os = "linux"))]
 use procfs::process::Process;
 
-// Linux-only structures
-#[cfg(target_os = "linux")]
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileDescriptorInfo {
     pub fd: i32,
@@ -24,7 +23,6 @@ impl From<procfs::process::FDInfo> for FileDescriptorInfo {
     }
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct IOStats {
     pub read_bytes: u64,
@@ -55,14 +53,14 @@ pub struct ProcessSnapshot {
     pub memory_bytes: u64,
     pub disk_usage: u64,
 
-    // Optional fields only available on Linux
-    #[cfg(target_os = "linux")]
+    /// Linux-only. `None`/empty when the reporting host isn't Linux.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    #[cfg(target_os = "linux")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cmdline: Vec<String>,
-    #[cfg(target_os = "linux")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub open_files: Vec<FileDescriptorInfo>,
-    #[cfg(target_os = "linux")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub io_stats: Option<IOStats>,
 }
 
@@ -85,8 +83,7 @@ impl fmt::Display for ProcessSnapshot {
 impl From<&sysinfo::Process> for ProcessSnapshot {
     fn from(process: &sysinfo::Process) -> Self {
         let pid = process.pid().as_u32();
-        #[cfg(target_os = "linux")]
-        let (cwd, cmdline) = collect_extended_info(pid);
+        let ext = collect_extended_process_info(pid);
         Self {
             pid,
             name: process.name().to_string_lossy().into_owned(),
@@ -94,14 +91,10 @@ impl From<&sysinfo::Process> for ProcessSnapshot {
             cpu_usage: process.cpu_usage(),
             memory_bytes: process.memory(),
             disk_usage: disk_usage_total(process.disk_usage()),
-            #[cfg(target_os = "linux")]
-            cwd,
-            #[cfg(target_os = "linux")]
-            cmdline,
-            #[cfg(target_os = "linux")]
-            open_files: collect_file_descriptors(pid),
-            #[cfg(target_os = "linux")]
-            io_stats: collect_io_stats(pid),
+            cwd: ext.cwd,
+            cmdline: ext.cmdline,
+            open_files: ext.open_files,
+            io_stats: ext.io_stats,
         }
     }
 }
@@ -289,7 +282,6 @@ impl fmt::Display for ProcessState {
     }
 }
 
-#[cfg(target_os = "linux")]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum FDType {
     File,
@@ -298,7 +290,6 @@ pub enum FDType {
     Other,
 }
 
-#[cfg(target_os = "linux")]
 impl fmt::Display for FDType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
@@ -394,4 +385,32 @@ pub fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
 #[cfg(feature = "server")]
 pub fn disk_usage_total(disk_usage: sysinfo::DiskUsage) -> u64 {
     disk_usage.written_bytes + disk_usage.read_bytes
+}
+
+struct ExtendedProcessInfo {
+    cwd: Option<String>,
+    cmdline: Vec<String>,
+    open_files: Vec<FileDescriptorInfo>,
+    io_stats: Option<IOStats>,
+}
+
+#[cfg(target_os = "linux")]
+fn collect_extended_process_info(pid: u32) -> ExtendedProcessInfo {
+    let (cwd, cmdline) = collect_extended_info(pid);
+    ExtendedProcessInfo {
+        cwd,
+        cmdline,
+        open_files: collect_file_descriptors(pid),
+        io_stats: collect_io_stats(pid),
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_extended_process_info(_pid: u32) -> ExtendedProcessInfo {
+    ExtendedProcessInfo {
+        cwd: None,
+        cmdline: Vec::new(),
+        open_files: Vec::new(),
+        io_stats: None,
+    }
 }
