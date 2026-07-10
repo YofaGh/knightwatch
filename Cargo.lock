@@ -2604,6 +2604,7 @@ dependencies = [
  "image",
  "kw-clients",
  "kw-types",
+ "kw-utils",
  "ratatui",
  "ratatui-image",
  "serde",

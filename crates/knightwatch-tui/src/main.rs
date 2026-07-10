@@ -75,6 +75,11 @@ async fn main() -> io::Result<()> {
         pollers::spawn_screen_poller(tx.clone(), api.clone());
     }
 
+    // --- System Resources tab ---
+    if info.system_resources {
+        pollers::spawn_system_resources_poller(tx.clone(), api.clone());
+    }
+
     // Drop our own sender. If we didn't, `rx.recv()` would never return
     // `None` even after every spawned task above exits, since a sender
     // would always still technically be alive — that's the classic

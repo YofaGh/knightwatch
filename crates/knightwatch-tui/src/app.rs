@@ -64,6 +64,13 @@ impl App {
                     self.dirty = true;
                 }
             }
+            AppEvent::SystemSnapshot(_) => {
+                if let Some(tab) = self.get_tab_by_name("System Resources")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
         }
     }
 

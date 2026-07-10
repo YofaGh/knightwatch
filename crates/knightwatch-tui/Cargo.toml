@@ -22,5 +22,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 ratatui-image = { version = "11.0.6", default-features = false, features = ["crossterm"] }
 image = "0.25.10"
-kw-types = { path = "../kw-types" }
 kw-clients = { path = "../kw-clients" }
+kw-types = { path = "../kw-types" }
+kw-utils = { path = "../kw-utils" }
