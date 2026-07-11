@@ -15,9 +15,10 @@ use crate::prelude::*;
 
 struct ProcessTrackerState {
     root_processes: HashMap<u32, RootProcess>,
-    last_top_by_memory: Vec<ProcessSnapshot>,
-    last_top_by_cpu: Vec<ProcessSnapshot>,
-    last_top_by_disk: Vec<ProcessSnapshot>,
+    process_cache: HashMap<u32, ProcessSnapshot>,
+    last_top_by_memory: Vec<u32>,
+    last_top_by_cpu: Vec<u32>,
+    last_top_by_disk: Vec<u32>,
 }
 
 impl ProcessTrackerState {
@@ -27,6 +28,7 @@ impl ProcessTrackerState {
                 .into_iter()
                 .map(|pid| (pid, RootProcess::new(pid)))
                 .collect(),
+            process_cache: HashMap::new(),
             last_top_by_memory: Vec::new(),
             last_top_by_cpu: Vec::new(),
             last_top_by_disk: Vec::new(),
@@ -146,29 +148,16 @@ impl ProcessTracker {
                 } else {
                     limit
                 };
-                let result = match by {
-                    ProcessesSortKey::Memory => self
-                        .state
-                        .last_top_by_memory
-                        .iter()
-                        .take(limit)
-                        .cloned()
-                        .collect(),
-                    ProcessesSortKey::Cpu => self
-                        .state
-                        .last_top_by_cpu
-                        .iter()
-                        .take(limit)
-                        .cloned()
-                        .collect(),
-                    ProcessesSortKey::Disk => self
-                        .state
-                        .last_top_by_disk
-                        .iter()
-                        .take(limit)
-                        .cloned()
-                        .collect(),
+                let pids: &[u32] = match by {
+                    ProcessesSortKey::Memory => &self.state.last_top_by_memory,
+                    ProcessesSortKey::Cpu => &self.state.last_top_by_cpu,
+                    ProcessesSortKey::Disk => &self.state.last_top_by_disk,
                 };
+                let result = pids
+                    .iter()
+                    .take(limit)
+                    .filter_map(|pid| self.state.process_cache.get(pid).cloned())
+                    .collect();
                 let _ = response.send(result);
             }
         }
@@ -465,14 +454,15 @@ impl ProcessTracker {
                 )
             })
             .collect();
-        let mut cache: HashMap<u32, ProcessSnapshot> = HashMap::new();
-        let mut get_or_create = |pid| -> Option<ProcessSnapshot> {
-            if let Some(cached) = cache.get(&pid) {
+        // Rebuild the cache fresh each tick so stale/reused pids never linger.
+        let mut new_cache: HashMap<u32, ProcessSnapshot> = HashMap::new();
+        let mut get_or_create = |pid: u32| -> Option<ProcessSnapshot> {
+            if let Some(cached) = new_cache.get(&pid) {
                 return Some(cached.clone());
             }
             self.sys.process(Pid::from_u32(pid)).map(|p| {
                 let process = ProcessSnapshot::from(p);
-                cache.insert(pid, process.clone());
+                new_cache.insert(pid, process.clone());
                 process
             })
         };
@@ -480,20 +470,21 @@ impl ProcessTracker {
         self.state.last_top_by_memory = all
             .iter()
             .take(self.limit_processes)
-            .filter_map(|&(pid, _, _, _)| get_or_create(pid))
+            .filter_map(|&(pid, _, _, _)| get_or_create(pid).map(|_| pid))
             .collect();
         all.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         self.state.last_top_by_cpu = all
             .iter()
             .take(self.limit_processes)
-            .filter_map(|&(pid, _, _, _)| get_or_create(pid))
+            .filter_map(|&(pid, _, _, _)| get_or_create(pid).map(|_| pid))
             .collect();
         all.sort_unstable_by_key(|b| std::cmp::Reverse(b.3));
         self.state.last_top_by_disk = all
             .iter()
             .take(self.limit_processes)
-            .filter_map(|&(pid, _, _, _)| get_or_create(pid))
+            .filter_map(|&(pid, _, _, _)| get_or_create(pid).map(|_| pid))
             .collect();
+        self.state.process_cache = new_cache;
     }
 
     fn collect_descendants(&self, root_pid: u32) -> Vec<ProcessSnapshot> {
