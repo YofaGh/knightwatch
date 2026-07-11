@@ -48,7 +48,7 @@ pub async fn handle_top_processes_menu(bot: Bot, msg: Message, state: State) -> 
 pub async fn handle_top_processes_by(
     bot: Bot,
     msg: Message,
-    by: process_tracker::SortKey,
+    by: process_tracker::ProcessesSortKey,
 ) -> Result<()> {
     let label = by.to_string();
     bot.send_message(

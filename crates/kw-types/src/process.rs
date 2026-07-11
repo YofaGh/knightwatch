@@ -317,13 +317,13 @@ impl From<procfs::process::FDTarget> for FDType {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum SortKey {
+pub enum ProcessesSortKey {
     Memory,
     Cpu,
     Disk,
 }
 
-impl fmt::Display for SortKey {
+impl fmt::Display for ProcessesSortKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Memory => write!(f, "Memory"),
@@ -333,7 +333,7 @@ impl fmt::Display for SortKey {
     }
 }
 
-impl TryFrom<&str> for SortKey {
+impl TryFrom<&str> for ProcessesSortKey {
     type Error = String;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {

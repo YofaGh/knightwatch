@@ -21,7 +21,7 @@ pub enum ProcessTrackerQuery {
         response: oneshot::Sender<Option<bool>>,
     },
     GetTopProcesses {
-        by: kw_types::process::SortKey,
+        by: kw_types::process::ProcessesSortKey,
         limit: usize,
         response: oneshot::Sender<Vec<ProcessSnapshot>>,
     },

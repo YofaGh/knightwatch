@@ -147,21 +147,21 @@ impl ProcessTracker {
                     limit
                 };
                 let result = match by {
-                    SortKey::Memory => self
+                    ProcessesSortKey::Memory => self
                         .state
                         .last_top_by_memory
                         .iter()
                         .take(limit)
                         .cloned()
                         .collect(),
-                    SortKey::Cpu => self
+                    ProcessesSortKey::Cpu => self
                         .state
                         .last_top_by_cpu
                         .iter()
                         .take(limit)
                         .cloned()
                         .collect(),
-                    SortKey::Disk => self
+                    ProcessesSortKey::Disk => self
                         .state
                         .last_top_by_disk
                         .iter()

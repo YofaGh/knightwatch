@@ -184,7 +184,7 @@ impl ApiClient {
 
     pub async fn top_processes(
         &self,
-        sort: kw_types::process::SortKey,
+        sort: kw_types::process::ProcessesSortKey,
         limit: Option<usize>,
     ) -> Result<Vec<ProcessSnapshot>> {
         self.get_typed_query(

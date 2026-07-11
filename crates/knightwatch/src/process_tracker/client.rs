@@ -118,7 +118,7 @@ pub async fn get_process_status(root_pid: u32) -> Option<ProcessStatus> {
 
 /// Get the top N processes sorted by the given key.
 /// Returns an empty vec if the tracker was not started.
-pub async fn get_top_processes(by: kw_types::process::SortKey, limit: usize) -> Vec<ProcessSnapshot> {
+pub async fn get_top_processes(by: kw_types::process::ProcessesSortKey, limit: usize) -> Vec<ProcessSnapshot> {
     let Some(tx_ref) = get_process_tracker_query_sender() else {
         return Vec::new();
     };

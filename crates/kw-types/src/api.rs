@@ -128,7 +128,7 @@ pub struct ScreenshotResponse {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TopProcessesParams {
     pub limit: Option<usize>,
-    pub sort: crate::process::SortKey,
+    pub sort: crate::process::ProcessesSortKey,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

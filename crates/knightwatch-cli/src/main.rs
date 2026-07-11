@@ -3,7 +3,7 @@ use std::error::Error;
 
 use kw_types::{
     docker::DockerSortKey,
-    process::{ProcessSignal, SortKey},
+    process::{ProcessSignal, ProcessesSortKey},
 };
 
 mod colors;
@@ -79,9 +79,9 @@ enum Commands {
     ProcessTrees,
     /// Top processes by CPU/memory/disk
     TopProcesses {
-        /// Sort key: cpu | memory | disk
-        #[arg(long, default_value = "cpu", value_parser = |s: &str| SortKey::try_from(s))]
-        sort: SortKey,
+        /// Processes Sort key: cpu | memory | disk
+        #[arg(long, default_value = "cpu", value_parser = |s: &str| ProcessesSortKey::try_from(s))]
+        sort: ProcessesSortKey,
         /// Max results (0 = all)
         #[arg(long)]
         limit: Option<usize>,

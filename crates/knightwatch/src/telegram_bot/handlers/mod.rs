@@ -27,7 +27,7 @@ use super::{
     models::{AuthState, ChatState, State, Subsystem},
     utils::escape_mdv2,
 };
-use crate::{docker_tracker::DockerSortKey, prelude::*};
+use crate::{docker_tracker::DockerSortKey, prelude::*, process_tracker::ProcessesSortKey};
 
 pub async fn handle_start(
     bot: Bot,
@@ -111,15 +111,9 @@ pub async fn handle_plain_message(
         "🖥️ System Resources" => handle_system_resources(bot, msg, state).await?,
         "📊 Process" => handle_process(bot, msg, state).await?,
         "📊 Top Processes" => handle_top_processes_menu(bot, msg, state).await?,
-        "🔥 By CPU" => {
-            handle_top_processes_by(bot, msg, crate::process_tracker::SortKey::Cpu).await?
-        }
-        "🧠 By Memory" => {
-            handle_top_processes_by(bot, msg, crate::process_tracker::SortKey::Memory).await?
-        }
-        "💾 By Disk" => {
-            handle_top_processes_by(bot, msg, crate::process_tracker::SortKey::Disk).await?
-        }
+        "🔥 By CPU" => handle_top_processes_by(bot, msg, ProcessesSortKey::Cpu).await?,
+        "🧠 By Memory" => handle_top_processes_by(bot, msg, ProcessesSortKey::Memory).await?,
+        "💾 By Disk" => handle_top_processes_by(bot, msg, ProcessesSortKey::Disk).await?,
         "🔧 Systemd" => handle_systemd_menu(bot, msg, state).await?,
         "📋 Systemd Overview" => handle_systemd_overview(bot, msg).await?,
         "🔴 Failed Units" => handle_systemd_failed(bot, msg).await?,
