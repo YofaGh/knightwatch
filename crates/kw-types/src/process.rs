@@ -387,6 +387,7 @@ pub fn disk_usage_total(disk_usage: sysinfo::DiskUsage) -> u64 {
     disk_usage.written_bytes + disk_usage.read_bytes
 }
 
+#[cfg(feature = "server")]
 struct ExtendedProcessInfo {
     cwd: Option<String>,
     cmdline: Vec<String>,
@@ -394,7 +395,7 @@ struct ExtendedProcessInfo {
     io_stats: Option<IOStats>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(feature = "server", target_os = "linux"))]
 fn collect_extended_process_info(pid: u32) -> ExtendedProcessInfo {
     let (cwd, cmdline) = collect_extended_info(pid);
     ExtendedProcessInfo {
@@ -405,7 +406,7 @@ fn collect_extended_process_info(pid: u32) -> ExtendedProcessInfo {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(feature = "server", not(target_os = "linux")))]
 fn collect_extended_process_info(_pid: u32) -> ExtendedProcessInfo {
     ExtendedProcessInfo {
         cwd: None,
