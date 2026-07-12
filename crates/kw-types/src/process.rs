@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[cfg(all(feature = "server", target_os = "linux"))]
-use procfs::process::Process;
-
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileDescriptorInfo {
     pub fd: i32,
@@ -348,46 +344,13 @@ impl TryFrom<&str> for ProcessesSortKey {
     }
 }
 
-// Linux-only helper functions
-#[cfg(all(feature = "server", target_os = "linux"))]
-pub fn collect_file_descriptors(pid: u32) -> Vec<super::process::FileDescriptorInfo> {
-    if let Ok(process) = Process::new(pid as i32)
-        && let Ok(fd_iter) = process.fd()
-    {
-        fd_iter.flatten().map(|fd_info| fd_info.into()).collect()
-    } else {
-        vec![]
-    }
-}
-
-#[cfg(all(feature = "server", target_os = "linux"))]
-pub fn collect_io_stats(pid: u32) -> Option<super::process::IOStats> {
-    Process::new(pid as i32)
-        .ok()
-        .and_then(|p| p.io().ok())
-        .map(Into::into)
-}
-
-#[cfg(all(feature = "server", target_os = "linux"))]
-pub fn collect_extended_info(pid: u32) -> (Option<String>, Vec<String>) {
-    let process = Process::new(pid as i32).ok();
-    let cwd = process
-        .as_ref()
-        .and_then(|p| p.cwd().ok())
-        .map(|path| path.to_string_lossy().into_owned());
-    let cmdline = process
-        .as_ref()
-        .and_then(|p| p.cmdline().ok())
-        .unwrap_or_default();
-    (cwd, cmdline)
-}
-
 #[cfg(feature = "server")]
 pub fn disk_usage_total(disk_usage: sysinfo::DiskUsage) -> u64 {
     disk_usage.written_bytes + disk_usage.read_bytes
 }
 
 #[cfg(feature = "server")]
+#[derive(Default)]
 struct ExtendedProcessInfo {
     cwd: Option<String>,
     cmdline: Vec<String>,
@@ -395,23 +358,29 @@ struct ExtendedProcessInfo {
     io_stats: Option<IOStats>,
 }
 
+#[cfg(all(feature = "server", not(target_os = "linux")))]
+fn collect_extended_process_info(_pid: u32) -> ExtendedProcessInfo {
+    ExtendedProcessInfo::default()
+}
+
 #[cfg(all(feature = "server", target_os = "linux"))]
 fn collect_extended_process_info(pid: u32) -> ExtendedProcessInfo {
-    let (cwd, cmdline) = collect_extended_info(pid);
+    let Ok(process) = procfs::process::Process::new(pid as i32) else {
+        return ExtendedProcessInfo::default();
+    };
+    let cwd = process
+        .cwd()
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned());
+    let cmdline = process.cmdline().ok().unwrap_or_default();
     ExtendedProcessInfo {
         cwd,
         cmdline,
-        open_files: collect_file_descriptors(pid),
-        io_stats: collect_io_stats(pid),
-    }
-}
-
-#[cfg(all(feature = "server", not(target_os = "linux")))]
-fn collect_extended_process_info(_pid: u32) -> ExtendedProcessInfo {
-    ExtendedProcessInfo {
-        cwd: None,
-        cmdline: Vec::new(),
-        open_files: Vec::new(),
-        io_stats: None,
+        open_files: process
+            .fd()
+            .ok()
+            .map(|fd| fd.flatten().map(|fd_info| fd_info.into()).collect())
+            .unwrap_or_default(),
+        io_stats: process.io().ok().map(Into::into),
     }
 }
