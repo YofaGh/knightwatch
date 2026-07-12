@@ -106,11 +106,13 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::Syst
         )?;
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
-        writeln!(
-            f,
-            "   └ Load avg: `{:.2}` / `{:.2}` / `{:.2}`",
-            s.cpu.load_avg.one, s.cpu.load_avg.five, s.cpu.load_avg.fifteen,
-        )?;
+        if let Some(load_avg) = &s.cpu.load_avg {
+            writeln!(
+                f,
+                "   └ Load avg: `{:.2}` / `{:.2}` / `{:.2}`",
+                load_avg.one, load_avg.five, load_avg.fifteen,
+            )?;
+        }
 
         // ── Memory ──────────────────────────────────────────────────────────
         write!(

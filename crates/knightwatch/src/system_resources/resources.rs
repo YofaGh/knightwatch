@@ -332,7 +332,7 @@ impl SystemResources {
             brand,
             physical_core_count: System::physical_core_count(),
             #[cfg(any(target_os = "linux", target_os = "macos"))]
-            load_avg: System::load_average().into(),
+            load_avg: Some(System::load_average().into()),
             #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             load_avg: None,
         }
