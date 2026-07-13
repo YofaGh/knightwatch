@@ -3,6 +3,7 @@ mod events;
 mod pollers;
 mod tabs;
 mod ui;
+mod ui_helpers;
 mod utils;
 
 use crossterm::{

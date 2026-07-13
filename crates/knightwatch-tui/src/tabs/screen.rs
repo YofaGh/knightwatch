@@ -1,7 +1,7 @@
 use crossterm::event::{Event, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::Paragraph,
 };
@@ -71,18 +71,7 @@ impl super::Tab for ScreenTab {
 
     fn render(&mut self, frame: &mut Frame, area: Rect) {
         if self.screenshots.is_empty() {
-            let mid = area.height / 2;
-            let centered = Rect {
-                y: area.y + mid,
-                height: 1,
-                ..area
-            };
-            frame.render_widget(
-                Paragraph::new("[ Screen: waiting for first image... ]")
-                    .style(Style::default().fg(Color::DarkGray))
-                    .alignment(Alignment::Center),
-                centered,
-            );
+            crate::ui_helpers::waiting_placeholder(frame, area, "Screen");
             return;
         }
 

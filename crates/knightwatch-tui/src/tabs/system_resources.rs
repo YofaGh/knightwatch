@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Sparkline, Table},
@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use kw_types::resources::{self, BatteryState, CpuSnapshot, SystemHealth, SystemSnapshot};
 use kw_utils::{format_bytes, format_time};
 
-use crate::events::AppEvent;
+use crate::{events::AppEvent, ui_helpers::*};
 
 /// How many samples of CPU/memory history to keep for the sparklines.
 const HISTORY_LEN: usize = 90;
@@ -59,18 +59,7 @@ impl super::Tab for SystemResourcesTab {
         let snapshot = match &self.snapshot {
             Some(s) => s,
             None => {
-                let mid = area.height / 2;
-                let centered = Rect {
-                    y: area.y + mid,
-                    height: 1,
-                    ..area
-                };
-                frame.render_widget(
-                    Paragraph::new("[ System Resources: waiting for first snapshot... ]")
-                        .style(Style::default().fg(Color::DarkGray))
-                        .alignment(Alignment::Center),
-                    centered,
-                );
+                waiting_placeholder(frame, area, "System Resources");
                 return;
             }
         };
@@ -119,25 +108,6 @@ impl super::Tab for SystemResourcesTab {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Simple unicode-block text bar, used inside table cells / list rows where
-/// a real Gauge widget can't be nested.
-fn bar(percent: f32, width: usize) -> String {
-    let percent = percent.clamp(0.0, 100.0);
-    let filled = ((percent / 100.0) * width as f32).round() as usize;
-    let filled = filled.min(width);
-    format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
-}
-
-fn percent_color(p: f32) -> Color {
-    if p >= 90.0 {
-        Color::Red
-    } else if p >= 70.0 {
-        Color::Yellow
-    } else {
-        Color::Green
-    }
-}
-
 fn health_color(h: &SystemHealth) -> Color {
     match h {
         SystemHealth::Healthy => Color::Green,
@@ -158,12 +128,7 @@ fn load_avg_line(cpu: &CpuSnapshot) -> String {
 // ---------------------------------------------------------------------------
 
 fn render_host(frame: &mut Frame, area: Rect, snap: &SystemSnapshot) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" Host ", Style::default().fg(Color::Cyan)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = bordered_block(frame, area, "Host");
 
     let host = &snap.host;
     let health_label = format!(" {} ", snap.health);
@@ -189,12 +154,7 @@ fn render_host(frame: &mut Frame, area: Rect, snap: &SystemSnapshot) {
 }
 
 fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &VecDeque<u64>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" CPU ", Style::default().fg(Color::Cyan)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = bordered_block(frame, area, "CPU");
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -230,10 +190,11 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
         .split(rows[1]);
 
-    let gauge = Gauge::default()
-        .gauge_style(Style::default().fg(percent_color(cpu.usage_percent)))
-        .ratio((cpu.usage_percent as f64 / 100.0).clamp(0.0, 1.0))
-        .label(format!("{:.1}%", cpu.usage_percent));
+    let gauge = percent_gauge(
+        "",
+        cpu.usage_percent as f64,
+        format!("{:.1}%", cpu.usage_percent),
+    );
     frame.render_widget(gauge, gauge_sparkline[0]);
 
     let data: Vec<u64> = history.iter().copied().collect();
@@ -255,23 +216,18 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
             let line = format!(
                 "{:<8} {} {:>5.1}%  {:>5} MHz",
                 c.name,
-                bar(c.usage_percent, 20),
+                bar(c.usage_percent as f64, 20),
                 c.usage_percent,
                 c.frequency_mhz
             );
-            ListItem::new(line).style(Style::default().fg(percent_color(c.usage_percent)))
+            ListItem::new(line).style(Style::default().fg(percent_color(c.usage_percent as f64)))
         })
         .collect();
     frame.render_widget(List::new(items), rows[2]);
 }
 
 fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &VecDeque<u64>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" Memory ", Style::default().fg(Color::Cyan)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = bordered_block(frame, area, "Memory");
 
     let mem = &snap.memory;
     let rows = Layout::default()
@@ -284,16 +240,16 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
         ])
         .split(inner);
 
-    let ram_gauge = Gauge::default()
-        .block(Block::default().title("RAM"))
-        .gauge_style(Style::default().fg(percent_color(mem.used_percent)))
-        .ratio((mem.used_percent as f64 / 100.0).clamp(0.0, 1.0))
-        .label(format!(
+    let ram_gauge = percent_gauge(
+        "RAM",
+        mem.used_percent as f64,
+        format!(
             "{:.1}%  {} / {}",
             mem.used_percent,
             format_bytes(mem.used_bytes),
             format_bytes(mem.total_bytes)
-        ));
+        ),
+    );
     frame.render_widget(ram_gauge, rows[0]);
 
     frame.render_widget(
@@ -308,16 +264,16 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
 
     if mem.swap_total_bytes > 0 {
         let swap_pct = mem.swap_used_percent.unwrap_or(0.0);
-        let swap_gauge = Gauge::default()
-            .block(Block::default().title("Swap"))
-            .gauge_style(Style::default().fg(percent_color(swap_pct)))
-            .ratio((swap_pct as f64 / 100.0).clamp(0.0, 1.0))
-            .label(format!(
+        let swap_gauge = percent_gauge(
+            "Swap",
+            swap_pct as f64,
+            format!(
                 "{:.1}%  {} / {}",
                 swap_pct,
                 format_bytes(mem.swap_used_bytes),
                 format_bytes(mem.swap_total_bytes)
-            ));
+            ),
+        );
         frame.render_widget(swap_gauge, rows[2]);
     } else {
         frame.render_widget(
@@ -340,18 +296,10 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
 }
 
 fn render_disks(frame: &mut Frame, area: Rect, disks: &[resources::DiskSnapshot]) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" Disks ", Style::default().fg(Color::Cyan)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = bordered_block(frame, area, "Disks");
 
     if disks.is_empty() {
-        frame.render_widget(
-            Paragraph::new("no disks reported").style(Style::default().fg(Color::DarkGray)),
-            inner,
-        );
+        empty_note(frame, inner, "no disks reported");
         return;
     }
 
@@ -361,14 +309,14 @@ fn render_disks(frame: &mut Frame, area: Rect, disks: &[resources::DiskSnapshot]
     let rows: Vec<Row> = disks
         .iter()
         .map(|d| {
-            let color = percent_color(d.used_percent);
+            let color = percent_color(d.used_percent as f64);
             Row::new(vec![
                 Cell::from(d.mount_point.clone()),
                 Cell::from(d.file_system.clone()),
                 Cell::from(d.kind.to_string()),
                 Cell::from(format!(
                     "{} {:>5.1}%",
-                    bar(d.used_percent, 12),
+                    bar(d.used_percent as f64, 12),
                     d.used_percent
                 ))
                 .style(Style::default().fg(color)),
@@ -394,18 +342,10 @@ fn render_disks(frame: &mut Frame, area: Rect, disks: &[resources::DiskSnapshot]
 }
 
 fn render_networks(frame: &mut Frame, area: Rect, nets: &[resources::NetworkSnapshot]) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" Networks ", Style::default().fg(Color::Cyan)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = bordered_block(frame, area, "Networks");
 
     if nets.is_empty() {
-        frame.render_widget(
-            Paragraph::new("no interfaces reported").style(Style::default().fg(Color::DarkGray)),
-            inner,
-        );
+        empty_note(frame, inner, "no interfaces reported");
         return;
     }
 
@@ -453,18 +393,10 @@ fn render_networks(frame: &mut Frame, area: Rect, nets: &[resources::NetworkSnap
 }
 
 fn render_gpus(frame: &mut Frame, area: Rect, gpus: &[resources::GpuSnapshot]) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" GPUs ", Style::default().fg(Color::Cyan)));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+    let inner = bordered_block(frame, area, "GPUs");
 
     if gpus.is_empty() {
-        frame.render_widget(
-            Paragraph::new("no GPUs reported").style(Style::default().fg(Color::DarkGray)),
-            inner,
-        );
+        empty_note(frame, inner, "no GPUs reported");
         return;
     }
 
@@ -475,7 +407,7 @@ fn render_gpus(frame: &mut Frame, area: Rect, gpus: &[resources::GpuSnapshot]) {
             Style::default().add_modifier(Modifier::BOLD),
         )];
         if let Some(u) = g.usage_percent {
-            parts.push(Span::raw(format!("  {} {:>5.1}%", bar(u, 12), u)));
+            parts.push(Span::raw(format!("  {} {:>5.1}%", bar(u as f64, 12), u)));
         }
         lines.push(Line::from(parts));
 
@@ -527,12 +459,7 @@ fn render_battery_temps(
         .constraints([Constraint::Length(4), Constraint::Min(0)])
         .split(area);
 
-    let battery_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(" Battery ", Style::default().fg(Color::Cyan)));
-    let battery_inner = battery_block.inner(rows[0]);
-    frame.render_widget(battery_block, rows[0]);
+    let battery_inner = bordered_block(frame, rows[0], "Battery");
 
     match battery {
         Some(b) => {
@@ -561,28 +488,14 @@ fn render_battery_temps(
             frame.render_widget(gauge, battery_inner);
         }
         None => {
-            frame.render_widget(
-                Paragraph::new("no battery").style(Style::default().fg(Color::DarkGray)),
-                battery_inner,
-            );
+            empty_note(frame, battery_inner, "no battery");
         }
     }
 
-    let temps_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(
-            " Temperatures ",
-            Style::default().fg(Color::Cyan),
-        ));
-    let temps_inner = temps_block.inner(rows[1]);
-    frame.render_widget(temps_block, rows[1]);
+    let temps_inner = bordered_block(frame, rows[1], "Temperatures");
 
     if temps.is_empty() {
-        frame.render_widget(
-            Paragraph::new("no sensors reported").style(Style::default().fg(Color::DarkGray)),
-            temps_inner,
-        );
+        empty_note(frame, temps_inner, "no sensors reported");
         return;
     }
 
