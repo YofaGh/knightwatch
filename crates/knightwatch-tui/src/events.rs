@@ -9,4 +9,7 @@ pub enum AppEvent {
 
     /// A fresh system resources snapshot, for the System Resources tab.
     SystemSnapshot(kw_types::resources::SystemSnapshot),
+
+    /// A fresh docker container snapshot, for the Docker tab.
+    DockerContainers(Vec<kw_types::docker::ContainerSnapshot>),
 }

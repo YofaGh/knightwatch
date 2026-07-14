@@ -65,3 +65,15 @@ pub fn spawn_system_resources_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) 
         }
     });
 }
+
+pub fn spawn_docker_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
+    spawn_poller(tx, Duration::from_secs(2), move || {
+        let api = api.clone();
+        async move {
+            match api.docker_containers().await {
+                Ok(snapshot) => Some(AppEvent::DockerContainers(snapshot)),
+                Err(_) => None,
+            }
+        }
+    });
+}

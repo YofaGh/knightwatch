@@ -71,6 +71,13 @@ impl App {
                     self.dirty = true;
                 }
             }
+            AppEvent::DockerContainers(_) => {
+                if let Some(tab) = self.get_tab_by_name("Docker")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
         }
     }
 
