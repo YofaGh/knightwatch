@@ -74,6 +74,18 @@ pub enum UnitLoadState {
     Masked,
 }
 
+impl fmt::Display for UnitLoadState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            UnitLoadState::Loaded => "loaded",
+            UnitLoadState::NotFound => "not-found",
+            UnitLoadState::BadSetting => "bad-setting",
+            UnitLoadState::Error => "error",
+            UnitLoadState::Masked => "masked",
+        })
+    }
+}
+
 impl From<&str> for UnitLoadState {
     fn from(s: &str) -> Self {
         match s {
@@ -135,6 +147,20 @@ pub enum UnitType {
     Mount,
     Device,
     Other(String),
+}
+
+impl fmt::Display for UnitType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            UnitType::Service => "service",
+            UnitType::Socket => "socket",
+            UnitType::Target => "target",
+            UnitType::Timer => "timer",
+            UnitType::Mount => "mount",
+            UnitType::Device => "device",
+            UnitType::Other(name) => name,
+        })
+    }
 }
 
 impl UnitType {

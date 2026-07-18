@@ -78,6 +78,13 @@ impl App {
                     self.dirty = true;
                 }
             }
+            AppEvent::SystemdSnapshot(_) => {
+                if let Some(tab) = self.get_tab_by_name("Systemd")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
         }
     }
 

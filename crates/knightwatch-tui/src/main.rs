@@ -86,6 +86,11 @@ async fn main() -> io::Result<()> {
         pollers::spawn_docker_poller(tx.clone(), api.clone());
     }
 
+    // --- Systemd tab ---
+    if info.systemd {
+        pollers::spawn_systemd_poller(tx.clone(), api.clone());
+    }
+
     // Drop our own sender. If we didn't, `rx.recv()` would never return
     // `None` even after every spawned task above exits, since a sender
     // would always still technically be alive — that's the classic

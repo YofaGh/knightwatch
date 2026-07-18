@@ -77,3 +77,15 @@ pub fn spawn_docker_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
         }
     });
 }
+
+pub fn spawn_systemd_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
+    spawn_poller(tx, Duration::from_secs(2), move || {
+        let api = api.clone();
+        async move {
+            match api.systemd_snapshot().await {
+                Ok(snapshot) => Some(AppEvent::SystemdSnapshot(snapshot)),
+                Err(_) => None,
+            }
+        }
+    });
+}

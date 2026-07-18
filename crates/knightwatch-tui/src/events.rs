@@ -12,4 +12,7 @@ pub enum AppEvent {
 
     /// A fresh docker container snapshot, for the Docker tab.
     DockerContainers(Vec<kw_types::docker::ContainerSnapshot>),
+
+    /// A fresh systemd snapshot, for the systemd tab.
+    SystemdSnapshot(kw_types::systemd::SystemdSnapshot),
 }
