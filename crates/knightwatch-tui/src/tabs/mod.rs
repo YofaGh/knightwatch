@@ -7,32 +7,14 @@ mod processes;
 mod screen;
 mod system_resources;
 mod systemd;
+mod top_processes;
 
 pub use docker::DockerTab;
 pub use processes::ProcessesTab;
 pub use screen::ScreenTab;
 pub use system_resources::SystemResourcesTab;
 pub use systemd::SystemdTab;
-
-pub struct TabsFilter {
-    pub show_screen: bool,
-    pub show_processes: bool,
-    pub show_system_resources: bool,
-    pub show_systemd: bool,
-    pub show_docker: bool,
-}
-
-impl From<&kw_types::api::InfoResponse> for TabsFilter {
-    fn from(info: &kw_types::api::InfoResponse) -> Self {
-        Self {
-            show_screen: !info.blind,
-            show_processes: info.pid.len() > 0 || info.top_processes || info.allow_process_commands,
-            show_system_resources: info.system_resources,
-            show_systemd: info.systemd,
-            show_docker: info.docker || info.allow_docker_commands,
-        }
-    }
-}
+pub use top_processes::{TopProcessesPollConfig, TopProcessesTab};
 
 pub trait Tab {
     fn name(&self) -> &'static str;

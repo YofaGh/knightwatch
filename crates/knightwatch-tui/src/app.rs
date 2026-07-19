@@ -1,8 +1,10 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui_image::picker::Picker;
+use std::sync::Arc;
 
 use crate::{
     events::AppEvent,
+    pollers,
     tabs::{self, Tab},
 };
 
@@ -20,23 +22,49 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(picker: Picker, tabs_filter: tabs::TabsFilter) -> Self {
+    pub fn new(
+        picker: Picker,
+        api: Arc<kw_clients::ApiClient>,
+        info: kw_types::api::InfoResponse,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+    ) -> Self {
         let mut tabs: Vec<Box<dyn Tab>> = vec![];
 
-        if tabs_filter.show_screen {
+        // --- Keyboard / mouse input ---
+        pollers::spawn_input(tx.clone());
+
+        // --- Screen tab ---
+        if !info.blind {
+            pollers::spawn_screen_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::ScreenTab::new(picker)));
         }
-        if tabs_filter.show_processes {
+        // --- Process Trees tab ---
+        if !info.pid.is_empty() || info.allow_process_commands {
+            pollers::spawn_process_trees_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::ProcessesTab::new()));
         }
-        if tabs_filter.show_system_resources {
+        // --- System Resources tab ---
+        if info.system_resources {
+            pollers::spawn_system_resources_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::SystemResourcesTab::new()));
         }
-        if tabs_filter.show_systemd {
+        // --- Systemd tab ---
+        if info.systemd {
+            pollers::spawn_systemd_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::SystemdTab::new()));
         }
-        if tabs_filter.show_docker {
+        // --- Docker tab ---
+        if info.docker || info.allow_docker_commands {
+            pollers::spawn_docker_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::DockerTab::new()));
+        }
+        // --- Top Processes tab ---
+        if info.top_processes {
+            let poll_config = Arc::new(std::sync::Mutex::new(
+                tabs::TopProcessesPollConfig::default(),
+            ));
+            pollers::spawn_top_processes_poller(tx, api, poll_config.clone());
+            tabs.push(Box::new(tabs::TopProcessesTab::new(poll_config)));
         }
 
         Self {
@@ -80,6 +108,20 @@ impl App {
             }
             AppEvent::SystemdSnapshot(_) => {
                 if let Some(tab) = self.get_tab_by_name("Systemd")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
+            AppEvent::ProcessTrees(_) => {
+                if let Some(tab) = self.get_tab_by_name("Processes")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
+            AppEvent::TopProcesses(_) => {
+                if let Some(tab) = self.get_tab_by_name("Top Processes")
                     && tab.handle_app_event(&event)
                 {
                     self.dirty = true;

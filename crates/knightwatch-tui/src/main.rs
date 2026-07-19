@@ -1,6 +1,7 @@
 mod app;
 mod events;
 mod pollers;
+mod process_widgets;
 mod tabs;
 mod ui;
 mod ui_helpers;
@@ -62,34 +63,11 @@ async fn main() -> io::Result<()> {
         "Failed to connect to knightwatch server at: {base_url}"
     ));
 
-    let mut app = app::App::new(picker, (&info).into());
-
     // Single channel, single event enum, one receiver in the main loop.
     // Every producer below just sends into a clone of `tx`.
     let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
-    // --- Keyboard / mouse input ---
-    pollers::spawn_input(tx.clone());
-
-    // --- Screen tab ---
-    if !info.blind {
-        pollers::spawn_screen_poller(tx.clone(), api.clone());
-    }
-
-    // --- System Resources tab ---
-    if info.system_resources {
-        pollers::spawn_system_resources_poller(tx.clone(), api.clone());
-    }
-
-    // --- Docker tab ---
-    if info.docker || info.allow_docker_commands {
-        pollers::spawn_docker_poller(tx.clone(), api.clone());
-    }
-
-    // --- Systemd tab ---
-    if info.systemd {
-        pollers::spawn_systemd_poller(tx.clone(), api.clone());
-    }
+    let mut app = app::App::new(picker, api, info, tx.clone());
 
     // Drop our own sender. If we didn't, `rx.recv()` would never return
     // `None` even after every spawned task above exits, since a sender

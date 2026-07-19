@@ -95,7 +95,7 @@ impl From<&sysinfo::Process> for ProcessSnapshot {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProcessTree {
     pub root_pid: u32,
     pub root: Option<ProcessSnapshot>,

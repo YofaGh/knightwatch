@@ -89,3 +89,33 @@ pub fn spawn_systemd_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
         }
     });
 }
+
+pub fn spawn_process_trees_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
+    spawn_poller(tx, Duration::from_secs(2), move || {
+        let api = api.clone();
+        async move {
+            match api.process_trees().await {
+                Ok(process_trees) => Some(AppEvent::ProcessTrees(process_trees)),
+                Err(_) => None,
+            }
+        }
+    });
+}
+
+pub fn spawn_top_processes_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    poll_config: Arc<std::sync::Mutex<crate::tabs::TopProcessesPollConfig>>,
+) {
+    spawn_poller(tx, Duration::from_secs(2), move || {
+        let api = api.clone();
+        let config = poll_config.clone();
+        async move {
+            let cfg = *config.lock().unwrap(); // Copy, so this is instant, no await while holding the lock
+            match api.top_processes(cfg.sort, cfg.limit).await {
+                Ok(top_processes) => Some(AppEvent::TopProcesses(top_processes)),
+                Err(_) => None,
+            }
+        }
+    });
+}

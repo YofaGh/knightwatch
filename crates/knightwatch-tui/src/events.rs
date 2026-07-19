@@ -15,4 +15,10 @@ pub enum AppEvent {
 
     /// A fresh systemd snapshot, for the systemd tab.
     SystemdSnapshot(kw_types::systemd::SystemdSnapshot),
+
+    /// A fresh process trees, for the systemd tab.
+    ProcessTrees(Vec<kw_types::process::ProcessTree>),
+
+    /// A fresh top processes snapshot, for the Top Processes tab.
+    TopProcesses(Vec<kw_types::process::ProcessSnapshot>),
 }
