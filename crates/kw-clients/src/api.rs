@@ -15,7 +15,7 @@ type Result<T, E = Box<dyn std::error::Error>> = std::result::Result<T, E>;
 pub struct ApiClient {
     client: Client,
     base: String,
-    token: Option<String>,
+    token: std::sync::RwLock<Option<String>>,
 }
 
 impl ApiClient {
@@ -23,7 +23,7 @@ impl ApiClient {
         Self {
             client: Client::new(),
             base: base.trim_end_matches('/').to_string(),
-            token,
+            token: std::sync::RwLock::new(token),
         }
     }
 
@@ -32,7 +32,7 @@ impl ApiClient {
     }
 
     pub fn bearer(&self, req: RequestBuilder) -> RequestBuilder {
-        match &self.token {
+        match self.token.read().unwrap().as_ref() {
             Some(t) => req.bearer_auth(t),
             None => req,
         }
@@ -111,15 +111,24 @@ impl ApiClient {
         username: String,
         password: String,
     ) -> Result<kw_types::api::LoginResponse> {
-        self.post_typed(
-            "/auth/login",
-            kw_types::api::LoginRequest { username, password },
-        )
-        .await
+        let result: Result<kw_types::api::LoginResponse> = self
+            .post_typed(
+                "/auth/login",
+                kw_types::api::LoginRequest { username, password },
+            )
+            .await;
+        match &result {
+            Ok(login_response) => {
+                *self.token.write().unwrap() = Some(login_response.token.clone());
+            }
+            Err(e) => eprintln!("Error occurred: {}", e),
+        }
+        result
     }
 
     pub async fn logout(&self) -> Result<()> {
         self.post("/auth/logout", json!({})).await?;
+        *self.token.write().unwrap() = None;
         Ok(())
     }
 

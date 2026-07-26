@@ -21,4 +21,10 @@ pub enum AppEvent {
 
     /// A fresh top processes snapshot, for the Top Processes tab.
     TopProcesses(Vec<kw_types::process::ProcessSnapshot>),
+
+    /// login result from the login screen.
+    LoginResult(Result<(), String>),
+
+    /// logout result from the logout action.
+    LogoutResult,
 }

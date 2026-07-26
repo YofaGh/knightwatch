@@ -8,6 +8,11 @@ use ratatui::{
 pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     let area = frame.area();
 
+    if let Some(login) = &app.login {
+        login.render(frame, area);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(0)])

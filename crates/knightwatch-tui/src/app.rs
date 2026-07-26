@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::{
     events::AppEvent,
+    login::{LoginOutcome, LoginState},
     pollers,
     tabs::{self, Tab},
 };
@@ -19,6 +20,13 @@ pub struct App {
     /// event-driven instead of redrawing on a fixed tick regardless of
     /// whether anything changed.
     pub dirty: bool,
+    /// `Some` whenever the login screen should be shown full-screen
+    /// instead of the tabs — either the mandatory startup login, or one
+    /// re-opened later (e.g. via Ctrl+L, or after a 401).
+    pub login: Option<LoginState>,
+    api: Arc<kw_clients::ApiClient>,
+    tx: tokio::sync::mpsc::Sender<AppEvent>,
+    auth_enabled: bool,
 }
 
 impl App {
@@ -63,9 +71,16 @@ impl App {
             let poll_config = Arc::new(std::sync::Mutex::new(
                 tabs::TopProcessesPollConfig::default(),
             ));
-            pollers::spawn_top_processes_poller(tx, api, poll_config.clone());
+            pollers::spawn_top_processes_poller(tx.clone(), api.clone(), poll_config.clone());
             tabs.push(Box::new(tabs::TopProcessesTab::new(poll_config)));
         }
+
+        // Mandatory login gate: /info is assumed to be reachable
+        // unauthenticated (it's the thing that tells us auth is needed
+        // in the first place). Tabs/pollers are built regardless — they
+        // already tolerate request failures and will just start working
+        // once the token is set.
+        let login = info.auth_enabled.then(|| LoginState::new(false));
 
         Self {
             should_quit: false,
@@ -73,6 +88,10 @@ impl App {
             tab_hit_rects: Vec::new(),
             tabs,
             dirty: false,
+            login,
+            api,
+            tx,
+            auth_enabled: info.auth_enabled,
         }
     }
 
@@ -83,6 +102,20 @@ impl App {
         match event {
             AppEvent::Input(ev) => {
                 self.handle_event(ev);
+                self.dirty = true;
+            }
+            AppEvent::LoginResult(result) => {
+                if let Some(login) = &mut self.login {
+                    match result {
+                        Ok(()) => self.login = None,
+                        Err(message) => login.fail(message),
+                    }
+                }
+                self.dirty = true;
+            }
+            AppEvent::LogoutResult => {
+                // login screen is already showing (set synchronously in
+                // spawn_logout); nothing to do here besides redraw.
                 self.dirty = true;
             }
             AppEvent::ScreenImages(_) => {
@@ -139,6 +172,16 @@ impl App {
     }
 
     pub fn handle_event(&mut self, event: Event) {
+        // Login screen, when present, owns all input.
+        if let Some(login) = &mut self.login {
+            match login.handle_event(&event) {
+                LoginOutcome::Submit { username, password } => self.spawn_login(username, password),
+                LoginOutcome::Cancel => self.login = None,
+                LoginOutcome::None => {}
+            }
+            return;
+        }
+
         let consumed = self
             .tabs
             .get_mut(self.selected_tab)
@@ -154,6 +197,12 @@ impl App {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.should_quit = true
+                }
+                KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.login = Some(LoginState::new(true));
+                }
+                KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.spawn_logout();
                 }
                 KeyCode::Tab | KeyCode::Right => self.next_tab(),
                 KeyCode::BackTab | KeyCode::Left => self.prev_tab(),
@@ -181,12 +230,44 @@ impl App {
         }
     }
 
+    fn spawn_login(&self, username: String, password: String) {
+        let api = self.api.clone();
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let result = api
+                .login(username, password)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::LoginResult(result)).await;
+        });
+    }
+
+    fn spawn_logout(&mut self) {
+        let api = self.api.clone();
+        let tx = self.tx.clone();
+        // Reopen the login screen immediately — it's non-cancellable
+        // only if the server actually requires auth; otherwise the user
+        // can still Esc out and browse unauthenticated.
+        self.login = Some(LoginState::new(!self.auth_enabled));
+        tokio::spawn(async move {
+            if let Err(e) = api.logout().await {
+                eprintln!("logout failed: {e}");
+            }
+            let _ = tx.send(AppEvent::LogoutResult).await;
+        });
+    }
+
     fn next_tab(&mut self) {
-        self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
+        if !self.tabs.is_empty() {
+            self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
+        }
     }
 
     fn prev_tab(&mut self) {
-        self.selected_tab =
-            (self.selected_tab + self.tabs.len().saturating_sub(1)) % self.tabs.len();
+        if !self.tabs.is_empty() {
+            self.selected_tab =
+                (self.selected_tab + self.tabs.len().saturating_sub(1)) % self.tabs.len();
+        }
     }
 }

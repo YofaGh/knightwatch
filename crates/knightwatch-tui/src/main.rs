@@ -1,5 +1,6 @@
 mod app;
 mod events;
+mod login;
 mod pollers;
 mod process_widgets;
 mod tabs;
