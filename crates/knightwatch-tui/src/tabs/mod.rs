@@ -31,7 +31,13 @@ pub trait Tab {
         false
     }
 
-    fn render(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+    /// `logged_in` is true whenever commands can actually be run right now —
+    /// either auth isn't enabled at all, or it is and the user has a valid
+    /// session. Tabs that support commands should call
+    /// `ui_helpers::command_login_banner` as the first thing they do here,
+    /// and render their real content into the `Rect` it returns.
+    fn render(&mut self, frame: &mut ratatui::Frame, area: Rect, logged_in: bool) {
+        let _ = logged_in;
         let mid = area.height / 2;
         let centered = Rect {
             y: area.y + mid,

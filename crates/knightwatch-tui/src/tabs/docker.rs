@@ -20,14 +20,16 @@ pub struct DockerTab {
     /// Screen-space rects of the table rows from the last render, tagged
     /// with the container id they represent, for mouse hit testing.
     row_hit_rects: Vec<(Rect, String)>,
+    commands_allowed: bool,
 }
 
 impl DockerTab {
-    pub fn new() -> Self {
+    pub fn new(allow_docker_commands: bool) -> Self {
         Self {
             containers: Vec::new(),
             selected_id: None,
             row_hit_rects: Vec::new(),
+            commands_allowed: allow_docker_commands,
         }
     }
 
@@ -99,7 +101,14 @@ impl super::Tab for DockerTab {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
+        let area = crate::ui_helpers::command_login_banner(
+            frame,
+            area,
+            self.commands_allowed,
+            logged_in,
+        );
+
         if self.containers.is_empty() {
             waiting_placeholder(frame, area, "Docker");
             return;
@@ -128,12 +137,6 @@ impl super::Tab for DockerTab {
 
         self.row_hit_rects = render_table(frame, main[0], &self.containers, selected_idx);
         render_detail(frame, main[1], &self.containers[selected_idx]);
-    }
-}
-
-impl Default for DockerTab {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

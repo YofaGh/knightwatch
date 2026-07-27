@@ -24,6 +24,11 @@ pub struct App {
     /// instead of the tabs — either the mandatory startup login, or one
     /// re-opened later (e.g. via Ctrl+L, or after a 401).
     pub login: Option<LoginState>,
+    /// True only once a login has actually succeeded. Starts `false`
+    /// unconditionally — even when `auth_enabled` is `false` — because a
+    /// tab's command-bool can require login independently of whether the
+    /// mandatory startup gate exists.
+    pub authenticated: bool,
     api: Arc<kw_clients::ApiClient>,
     tx: tokio::sync::mpsc::Sender<AppEvent>,
     auth_enabled: bool,
@@ -44,27 +49,34 @@ impl App {
         // --- Screen tab ---
         if !info.blind {
             pollers::spawn_screen_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::ScreenTab::new(picker)));
+            tabs.push(Box::new(tabs::ScreenTab::new(
+                picker,
+                info.allow_screen_commands,
+            )));
         }
         // --- Process Trees tab ---
         if !info.pid.is_empty() || info.allow_process_commands {
             pollers::spawn_process_trees_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::ProcessesTab::new()));
+            tabs.push(Box::new(tabs::ProcessesTab::new(
+                info.allow_process_commands,
+            )));
         }
         // --- System Resources tab ---
         if info.system_resources {
             pollers::spawn_system_resources_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::SystemResourcesTab::new()));
+            tabs.push(Box::new(tabs::SystemResourcesTab::new(
+                info.allow_system_resources_commands,
+            )));
         }
         // --- Systemd tab ---
         if info.systemd {
             pollers::spawn_systemd_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::SystemdTab::new()));
+            tabs.push(Box::new(tabs::SystemdTab::new(info.allow_systemd_commands)));
         }
         // --- Docker tab ---
         if info.docker || info.allow_docker_commands {
             pollers::spawn_docker_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::DockerTab::new()));
+            tabs.push(Box::new(tabs::DockerTab::new(info.allow_docker_commands)));
         }
         // --- Top Processes tab ---
         if info.top_processes {
@@ -72,7 +84,10 @@ impl App {
                 tabs::TopProcessesPollConfig::default(),
             ));
             pollers::spawn_top_processes_poller(tx.clone(), api.clone(), poll_config.clone());
-            tabs.push(Box::new(tabs::TopProcessesTab::new(poll_config)));
+            tabs.push(Box::new(tabs::TopProcessesTab::new(
+                poll_config,
+                info.allow_process_commands,
+            )));
         }
 
         // Mandatory login gate: /info is assumed to be reachable
@@ -92,6 +107,7 @@ impl App {
             api,
             tx,
             auth_enabled: info.auth_enabled,
+            authenticated: false,
         }
     }
 
@@ -107,7 +123,10 @@ impl App {
             AppEvent::LoginResult(result) => {
                 if let Some(login) = &mut self.login {
                     match result {
-                        Ok(()) => self.login = None,
+                        Ok(()) => {
+                            self.login = None;
+                            self.authenticated = true;
+                        }
                         Err(message) => login.fail(message),
                     }
                 }
@@ -250,6 +269,7 @@ impl App {
         // only if the server actually requires auth; otherwise the user
         // can still Esc out and browse unauthenticated.
         self.login = Some(LoginState::new(!self.auth_enabled));
+        self.authenticated = false;
         tokio::spawn(async move {
             if let Err(e) = api.logout().await {
                 eprintln!("logout failed: {e}");

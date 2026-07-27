@@ -1,8 +1,8 @@
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
-    style::{Color, Style},
-    text::Span,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Gauge, Paragraph},
 };
 
@@ -71,4 +71,46 @@ pub fn percent_gauge(title: &str, percent: f64, label: String) -> Gauge<'static>
         .gauge_style(Style::default().fg(percent_color(percent)))
         .ratio((percent / 100.0).clamp(0.0, 1.0))
         .label(label)
+}
+
+/// Reserves a one-line banner at the top of `area` when a tab allows
+/// commands but the user isn't currently logged in, and returns the
+/// remaining `Rect` for the tab's normal content. If no banner is needed
+/// (commands aren't a thing for this tab, or the user is logged in),
+/// `area` is returned unchanged.
+///
+/// Every tab with a `commands_allowed` flag should call this as the very
+/// first line of `render`, then render into the returned area instead of
+/// the original one.
+pub fn command_login_banner(
+    frame: &mut Frame,
+    area: Rect,
+    commands_allowed: bool,
+    logged_in: bool,
+) -> Rect {
+    if !commands_allowed || logged_in {
+        return area;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("🔒 ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                "login required to run commands",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  (Ctrl+L to log in)", Style::default().fg(Color::DarkGray)),
+        ]))
+        .alignment(Alignment::Center),
+        chunks[0],
+    );
+
+    chunks[1]
 }

@@ -19,14 +19,16 @@ pub struct SystemResourcesTab {
     snapshot: Option<SystemSnapshot>,
     cpu_history: VecDeque<u64>,
     mem_history: VecDeque<u64>,
+    commands_allowed: bool,
 }
 
 impl SystemResourcesTab {
-    pub fn new() -> Self {
+    pub fn new(allow_system_resources_commands: bool) -> Self {
         Self {
             snapshot: None,
             cpu_history: VecDeque::with_capacity(HISTORY_LEN),
             mem_history: VecDeque::with_capacity(HISTORY_LEN),
+            commands_allowed: allow_system_resources_commands,
         }
     }
 
@@ -55,7 +57,14 @@ impl super::Tab for SystemResourcesTab {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
+        let area = crate::ui_helpers::command_login_banner(
+            frame,
+            area,
+            self.commands_allowed,
+            logged_in,
+        );
+
         let snapshot = match &self.snapshot {
             Some(s) => s,
             None => {

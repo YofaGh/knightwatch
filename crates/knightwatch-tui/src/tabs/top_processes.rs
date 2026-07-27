@@ -50,10 +50,14 @@ pub struct TopProcessesTab {
     sort_by: ProcessesSortKey,
     limit: Option<usize>,
     poll_config: Arc<Mutex<TopProcessesPollConfig>>,
+    commands_allowed: bool,
 }
 
 impl TopProcessesTab {
-    pub fn new(poll_config: Arc<Mutex<TopProcessesPollConfig>>) -> Self {
+    pub fn new(
+        poll_config: Arc<Mutex<TopProcessesPollConfig>>,
+        allow_process_commands: bool,
+    ) -> Self {
         let cfg = *poll_config.lock().unwrap();
         Self {
             rows: Vec::new(),
@@ -63,6 +67,7 @@ impl TopProcessesTab {
             sort_by: cfg.sort,
             limit: cfg.limit,
             poll_config,
+            commands_allowed: allow_process_commands,
         }
     }
 
@@ -166,7 +171,14 @@ impl super::Tab for TopProcessesTab {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
+        let area = crate::ui_helpers::command_login_banner(
+            frame,
+            area,
+            self.commands_allowed,
+            logged_in,
+        );
+
         if self.rows.is_empty() {
             waiting_placeholder(frame, area, "Top Processes");
             return;

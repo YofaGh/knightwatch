@@ -31,6 +31,7 @@ pub struct ScreenTab {
     /// tagged with the monitor id it represents, so `handle_event` can hit
     /// test mouse clicks against them.
     thumb_hit_rects: Vec<(Rect, u32)>,
+    commands_allowed: bool,
 }
 
 impl super::Tab for ScreenTab {
@@ -69,7 +70,14 @@ impl super::Tab for ScreenTab {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
+        let area = crate::ui_helpers::command_login_banner(
+            frame,
+            area,
+            self.commands_allowed,
+            logged_in,
+        );
+
         if self.screenshots.is_empty() {
             crate::ui_helpers::waiting_placeholder(frame, area, "Screen");
             return;
@@ -145,12 +153,13 @@ impl super::Tab for ScreenTab {
 }
 
 impl ScreenTab {
-    pub fn new(picker: Picker) -> Self {
+    pub fn new(picker: Picker, allow_screen_commands: bool) -> Self {
         Self {
             picker,
             screenshots: Vec::new(),
             primary_monitor_id: None,
             thumb_hit_rects: Vec::new(),
+            commands_allowed: allow_screen_commands,
         }
     }
 

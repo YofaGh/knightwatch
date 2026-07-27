@@ -24,22 +24,18 @@ pub struct ProcessesTab {
     depths: Vec<usize>,
     list: ProcessListState,
     scroll_offset: usize,
-}
-
-impl Default for ProcessesTab {
-    fn default() -> Self {
-        Self::new()
-    }
+    commands_allowed: bool,
 }
 
 impl ProcessesTab {
-    pub fn new() -> Self {
+    pub fn new(allow_process_commands: bool) -> Self {
         Self {
             trees: Vec::new(),
             rows: Vec::new(),
             depths: Vec::new(),
             list: ProcessListState::default(),
             scroll_offset: 0,
+            commands_allowed: allow_process_commands,
         }
     }
 
@@ -98,7 +94,14 @@ impl super::Tab for ProcessesTab {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
+        let area = crate::ui_helpers::command_login_banner(
+            frame,
+            area,
+            self.commands_allowed,
+            logged_in,
+        );
+
         if self.rows.is_empty() {
             waiting_placeholder(frame, area, "Processes");
             return;

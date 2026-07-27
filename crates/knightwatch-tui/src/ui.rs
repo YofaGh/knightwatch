@@ -71,8 +71,12 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     let inner_content = content_block.inner(content_area);
     frame.render_widget(content_block, content_area);
 
+    // No login screen showing => either auth is off, or the user already
+    // has a session. Either way, commands are runnable.
+    let logged_in = app.authenticated;
+
     // ── Route inner rendering to the active tab ──
     if let Some(tab) = app.tabs.get_mut(app.selected_tab) {
-        tab.render(frame, inner_content);
+        tab.render(frame, inner_content, logged_in);
     }
 }

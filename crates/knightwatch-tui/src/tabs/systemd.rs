@@ -26,10 +26,11 @@ pub struct SystemdTab {
     /// Index of the first visible row in the table, kept in sync with the
     /// selection so moving past the bottom/top of the viewport scrolls it.
     scroll_offset: usize,
+    commands_allowed: bool,
 }
 
 impl SystemdTab {
-    pub fn new() -> Self {
+    pub fn new(allow_systemd_commands: bool) -> Self {
         Self {
             units: Vec::new(),
             failed_count: 0,
@@ -38,6 +39,7 @@ impl SystemdTab {
             selected_name: None,
             row_hit_rects: Vec::new(),
             scroll_offset: 0,
+            commands_allowed: allow_systemd_commands,
         }
     }
 
@@ -120,7 +122,14 @@ impl super::Tab for SystemdTab {
         }
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
+        let area = crate::ui_helpers::command_login_banner(
+            frame,
+            area,
+            self.commands_allowed,
+            logged_in,
+        );
+
         if self.units.is_empty() {
             waiting_placeholder(frame, area, "Systemd");
             return;
@@ -161,12 +170,6 @@ impl super::Tab for SystemdTab {
         self.row_hit_rects = hit_rects;
         self.scroll_offset = scroll_offset;
         render_detail(frame, main[1], &self.units[selected_idx]);
-    }
-}
-
-impl Default for SystemdTab {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
