@@ -6,11 +6,12 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Cell, List, ListItem, Paragraph, Row, Table},
 };
+use std::sync::{Arc, Mutex};
 
 use kw_types::docker::{ContainerHealth, ContainerSnapshot, ContainerStatus};
 use kw_utils::format_bytes;
 
-use crate::{events::AppEvent, ui_helpers::*};
+use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::*};
 
 pub struct DockerTab {
     containers: Vec<ContainerSnapshot>,
@@ -21,15 +22,31 @@ pub struct DockerTab {
     /// with the container id they represent, for mouse hit testing.
     row_hit_rects: Vec<(Rect, String)>,
     commands_allowed: bool,
+    poll_panel: PollPanel,
 }
 
 impl DockerTab {
-    pub fn new(allow_docker_commands: bool) -> Self {
+    pub fn new(
+        allow_docker_commands: bool,
+        api: Arc<kw_clients::ApiClient>,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        control: Arc<Mutex<crate::pollers::PollControl>>,
+    ) -> Self {
+        let poll_panel = PollPanel::new(
+            "Docker",
+            control,
+            api,
+            tx,
+            |api| Box::pin(async move { api.docker_poll_pause().await }),
+            |api| Box::pin(async move { api.docker_poll_resume().await }),
+            |api, ms| Box::pin(async move { api.docker_poll_interval(ms).await }),
+        );
         Self {
             containers: Vec::new(),
             selected_id: None,
             row_hit_rects: Vec::new(),
             commands_allowed: allow_docker_commands,
+            poll_panel,
         }
     }
 
@@ -53,7 +70,11 @@ impl super::Tab for DockerTab {
         "Docker"
     }
 
-    fn handle_event(&mut self, event: &Event) -> bool {
+    fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
+            return true;
+        }
+
         match event {
             Event::Mouse(mouse) => {
                 if !matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
@@ -97,17 +118,22 @@ impl super::Tab for DockerTab {
                 self.containers = containers.clone();
                 true
             }
+            AppEvent::CommandResult { label, result, .. } => {
+                self.poll_panel.apply_result(label, result);
+                true
+            }
             _ => false,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
-        let area = crate::ui_helpers::command_login_banner(
-            frame,
-            area,
-            self.commands_allowed,
-            logged_in,
-        );
+        let area = if self.commands_allowed && logged_in {
+            self.poll_panel.render(frame, area)
+        } else {
+            area
+        };
+        let area =
+            crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
         if self.containers.is_empty() {
             waiting_placeholder(frame, area, "Docker");

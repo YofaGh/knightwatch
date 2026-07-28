@@ -6,11 +6,12 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Cell, List, ListItem, Paragraph, Row, Table},
 };
+use std::sync::{Arc, Mutex};
 
 use kw_types::systemd::{UnitActiveState, UnitLoadState, UnitSnapshot};
 use kw_utils::format_bytes;
 
-use crate::{events::AppEvent, ui_helpers::*};
+use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::*};
 
 pub struct SystemdTab {
     units: Vec<UnitSnapshot>,
@@ -27,10 +28,25 @@ pub struct SystemdTab {
     /// selection so moving past the bottom/top of the viewport scrolls it.
     scroll_offset: usize,
     commands_allowed: bool,
+    poll_panel: PollPanel,
 }
 
 impl SystemdTab {
-    pub fn new(allow_systemd_commands: bool) -> Self {
+    pub fn new(
+        allow_systemd_commands: bool,
+        api: Arc<kw_clients::ApiClient>,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        control: Arc<Mutex<crate::pollers::PollControl>>,
+    ) -> Self {
+        let poll_panel = PollPanel::new(
+            "Systemd",
+            control,
+            api,
+            tx,
+            |api| Box::pin(async move { api.systemd_poll_pause().await }),
+            |api| Box::pin(async move { api.systemd_poll_resume().await }),
+            |api, ms| Box::pin(async move { api.systemd_poll_interval(ms).await }),
+        );
         Self {
             units: Vec::new(),
             failed_count: 0,
@@ -40,6 +56,7 @@ impl SystemdTab {
             row_hit_rects: Vec::new(),
             scroll_offset: 0,
             commands_allowed: allow_systemd_commands,
+            poll_panel,
         }
     }
 
@@ -63,7 +80,10 @@ impl super::Tab for SystemdTab {
         "Systemd"
     }
 
-    fn handle_event(&mut self, event: &Event) -> bool {
+    fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
+            return true;
+        }
         match event {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
@@ -118,17 +138,22 @@ impl super::Tab for SystemdTab {
                 self.inactive_count = snapshot.inactive_count;
                 true
             }
+            AppEvent::CommandResult { label, result, .. } => {
+                self.poll_panel.apply_result(label, result);
+                true
+            }
             _ => false,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
-        let area = crate::ui_helpers::command_login_banner(
-            frame,
-            area,
-            self.commands_allowed,
-            logged_in,
-        );
+        let area = if self.commands_allowed && logged_in {
+            self.poll_panel.render(frame, area)
+        } else {
+            area
+        };
+        let area =
+            crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
         if self.units.is_empty() {
             waiting_placeholder(frame, area, "Systemd");

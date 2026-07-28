@@ -12,6 +12,7 @@ use kw_types::process::{ProcessSnapshot, ProcessesSortKey};
 
 use crate::{
     events::AppEvent,
+    poll_panel::PollPanel,
     process_widgets::{ProcessListState, render_process_detail, render_process_table},
     ui_helpers::*,
 };
@@ -51,13 +52,26 @@ pub struct TopProcessesTab {
     limit: Option<usize>,
     poll_config: Arc<Mutex<TopProcessesPollConfig>>,
     commands_allowed: bool,
+    poll_panel: PollPanel,
 }
 
 impl TopProcessesTab {
     pub fn new(
         poll_config: Arc<Mutex<TopProcessesPollConfig>>,
         allow_process_commands: bool,
+        api: Arc<kw_clients::ApiClient>,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        control: Arc<Mutex<crate::pollers::PollControl>>,
     ) -> Self {
+        let poll_panel = PollPanel::new(
+            "Top Processes",
+            control,
+            api,
+            tx,
+            |api| Box::pin(async move { api.process_poll_pause().await }),
+            |api| Box::pin(async move { api.process_poll_resume().await }),
+            |api, ms| Box::pin(async move { api.process_poll_interval(ms).await }),
+        );
         let cfg = *poll_config.lock().unwrap();
         Self {
             rows: Vec::new(),
@@ -68,6 +82,7 @@ impl TopProcessesTab {
             limit: cfg.limit,
             poll_config,
             commands_allowed: allow_process_commands,
+            poll_panel,
         }
     }
 
@@ -123,7 +138,10 @@ impl super::Tab for TopProcessesTab {
         "Top Processes"
     }
 
-    fn handle_event(&mut self, event: &Event) -> bool {
+    fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
+            return true;
+        }
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
                 let new_sort = match key.code {
@@ -167,17 +185,22 @@ impl super::Tab for TopProcessesTab {
                 self.rebuild_rows(processes);
                 true
             }
+            AppEvent::CommandResult { label, result, .. } => {
+                self.poll_panel.apply_result(label, result);
+                true
+            }
             _ => false,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
-        let area = crate::ui_helpers::command_login_banner(
-            frame,
-            area,
-            self.commands_allowed,
-            logged_in,
-        );
+        let area = if self.commands_allowed && logged_in {
+            self.poll_panel.render(frame, area)
+        } else {
+            area
+        };
+        let area =
+            crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
         if self.rows.is_empty() {
             waiting_placeholder(frame, area, "Top Processes");

@@ -5,12 +5,15 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Gauge, List, ListItem, Paragraph, Row, Sparkline, Table},
 };
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 use kw_types::resources::{self, BatteryState, CpuSnapshot, SystemHealth, SystemSnapshot};
 use kw_utils::{format_bytes, format_time};
 
-use crate::{events::AppEvent, ui_helpers::*};
+use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::*};
 
 /// How many samples of CPU/memory history to keep for the sparklines.
 const HISTORY_LEN: usize = 90;
@@ -20,15 +23,31 @@ pub struct SystemResourcesTab {
     cpu_history: VecDeque<u64>,
     mem_history: VecDeque<u64>,
     commands_allowed: bool,
+    poll_panel: PollPanel,
 }
 
 impl SystemResourcesTab {
-    pub fn new(allow_system_resources_commands: bool) -> Self {
+    pub fn new(
+        allow_system_resources_commands: bool,
+        api: Arc<kw_clients::ApiClient>,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        control: Arc<Mutex<crate::pollers::PollControl>>,
+    ) -> Self {
+        let poll_panel = PollPanel::new(
+            "System Resources",
+            control,
+            api,
+            tx,
+            |api| Box::pin(async move { api.systemd_poll_pause().await }),
+            |api| Box::pin(async move { api.systemd_poll_resume().await }),
+            |api, ms| Box::pin(async move { api.systemd_poll_interval(ms).await }),
+        );
         Self {
             snapshot: None,
             cpu_history: VecDeque::with_capacity(HISTORY_LEN),
             mem_history: VecDeque::with_capacity(HISTORY_LEN),
             commands_allowed: allow_system_resources_commands,
+            poll_panel,
         }
     }
 
@@ -45,6 +64,13 @@ impl super::Tab for SystemResourcesTab {
         "System Resources"
     }
 
+    fn handle_event(&mut self, event: &crossterm::event::Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
+            return true;
+        }
+        false
+    }
+
     fn handle_app_event(&mut self, event: &AppEvent) -> bool {
         match event {
             AppEvent::SystemSnapshot(snap) => {
@@ -53,17 +79,22 @@ impl super::Tab for SystemResourcesTab {
                 self.snapshot = Some(snap.clone());
                 true
             }
+            AppEvent::CommandResult { label, result, .. } => {
+                self.poll_panel.apply_result(label, result);
+                true
+            }
             _ => false,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
-        let area = crate::ui_helpers::command_login_banner(
-            frame,
-            area,
-            self.commands_allowed,
-            logged_in,
-        );
+        let area = if self.commands_allowed && logged_in {
+            self.poll_panel.render(frame, area)
+        } else {
+            area
+        };
+        let area =
+            crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
         let snapshot = match &self.snapshot {
             Some(s) => s,

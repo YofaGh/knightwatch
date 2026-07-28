@@ -19,7 +19,7 @@ pub use top_processes::{TopProcessesPollConfig, TopProcessesTab};
 pub trait Tab {
     fn name(&self) -> &'static str;
 
-    fn handle_event(&mut self, _event: &crossterm::event::Event) -> bool {
+    fn handle_event(&mut self, _event: &crossterm::event::Event, _logged_in: bool) -> bool {
         false
     }
 

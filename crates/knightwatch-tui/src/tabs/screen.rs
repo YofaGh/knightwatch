@@ -6,8 +6,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
+use std::sync::{Arc, Mutex};
 
-use crate::events::AppEvent;
+use crate::{events::AppEvent, poll_panel::PollPanel};
 
 /// One decoded, ready-to-render screenshot.
 ///
@@ -32,6 +33,7 @@ pub struct ScreenTab {
     /// test mouse clicks against them.
     thumb_hit_rects: Vec<(Rect, u32)>,
     commands_allowed: bool,
+    poll_panel: PollPanel,
 }
 
 impl super::Tab for ScreenTab {
@@ -39,7 +41,11 @@ impl super::Tab for ScreenTab {
         "Screen"
     }
 
-    fn handle_event(&mut self, event: &Event) -> bool {
+    fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
+            return true;
+        }
+
         let Event::Mouse(mouse) = event else {
             return false;
         };
@@ -66,17 +72,22 @@ impl super::Tab for ScreenTab {
                 self.set_images(screenshots);
                 true
             }
+            AppEvent::CommandResult { label, result, .. } => {
+                self.poll_panel.apply_result(label, result);
+                true
+            }
             _ => false,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
-        let area = crate::ui_helpers::command_login_banner(
-            frame,
-            area,
-            self.commands_allowed,
-            logged_in,
-        );
+        let area = if self.commands_allowed && logged_in {
+            self.poll_panel.render(frame, area)
+        } else {
+            area
+        };
+        let area =
+            crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
         if self.screenshots.is_empty() {
             crate::ui_helpers::waiting_placeholder(frame, area, "Screen");
@@ -153,13 +164,29 @@ impl super::Tab for ScreenTab {
 }
 
 impl ScreenTab {
-    pub fn new(picker: Picker, allow_screen_commands: bool) -> Self {
+    pub fn new(
+        picker: Picker,
+        allow_screen_commands: bool,
+        api: Arc<kw_clients::ApiClient>,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        control: Arc<Mutex<crate::pollers::PollControl>>,
+    ) -> Self {
+        let poll_panel = PollPanel::new(
+            "Screen",
+            control,
+            api,
+            tx,
+            |api| Box::pin(async move { api.screen_capture_poll_pause().await }),
+            |api| Box::pin(async move { api.screen_capture_poll_resume().await }),
+            |api, ms| Box::pin(async move { api.screen_capture_interval(ms).await }),
+        );
         Self {
             picker,
             screenshots: Vec::new(),
             primary_monitor_id: None,
             thumb_hit_rects: Vec::new(),
             commands_allowed: allow_screen_commands,
+            poll_panel,
         }
     }
 

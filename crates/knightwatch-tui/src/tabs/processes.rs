@@ -6,11 +6,13 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use std::sync::{Arc, Mutex};
 
 use kw_types::process::{ProcessSnapshot, ProcessState, ProcessTree};
 
 use crate::{
     events::AppEvent,
+    poll_panel::PollPanel,
     process_widgets::{ProcessListState, render_process_detail, render_process_table},
     ui_helpers::*,
 };
@@ -25,10 +27,25 @@ pub struct ProcessesTab {
     list: ProcessListState,
     scroll_offset: usize,
     commands_allowed: bool,
+    poll_panel: PollPanel,
 }
 
 impl ProcessesTab {
-    pub fn new(allow_process_commands: bool) -> Self {
+    pub fn new(
+        allow_process_commands: bool,
+        api: Arc<kw_clients::ApiClient>,
+        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        control: Arc<Mutex<crate::pollers::PollControl>>,
+    ) -> Self {
+        let poll_panel = PollPanel::new(
+            "Processes",
+            control,
+            api,
+            tx,
+            |api| Box::pin(async move { api.process_poll_pause().await }),
+            |api| Box::pin(async move { api.process_poll_resume().await }),
+            |api, ms| Box::pin(async move { api.process_poll_interval(ms).await }),
+        );
         Self {
             trees: Vec::new(),
             rows: Vec::new(),
@@ -36,6 +53,7 @@ impl ProcessesTab {
             list: ProcessListState::default(),
             scroll_offset: 0,
             commands_allowed: allow_process_commands,
+            poll_panel,
         }
     }
 
@@ -79,7 +97,10 @@ impl super::Tab for ProcessesTab {
         "Processes"
     }
 
-    fn handle_event(&mut self, event: &Event) -> bool {
+    fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
+            return true;
+        }
         self.list.handle_event(event, &self.rows)
     }
 
@@ -90,17 +111,22 @@ impl super::Tab for ProcessesTab {
                 self.rebuild_rows();
                 true
             }
+            AppEvent::CommandResult { label, result, .. } => {
+                self.poll_panel.apply_result(label, result);
+                true
+            }
             _ => false,
         }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, logged_in: bool) {
-        let area = crate::ui_helpers::command_login_banner(
-            frame,
-            area,
-            self.commands_allowed,
-            logged_in,
-        );
+        let area = if self.commands_allowed && logged_in {
+            self.poll_panel.render(frame, area)
+        } else {
+            area
+        };
+        let area =
+            crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
         if self.rows.is_empty() {
             waiting_placeholder(frame, area, "Processes");

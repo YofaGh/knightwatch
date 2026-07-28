@@ -1,9 +1,33 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::sync::mpsc::Sender;
 
 use kw_clients::ApiClient;
 
 use crate::events::AppEvent;
+
+/// Local pacing state for one poller, shared between the poller task and
+/// that tab's polling panel. Flipping either field here takes effect on
+/// the poller's next loop iteration — no restart, no request needed.
+#[derive(Clone, Copy)]
+pub struct PollControl {
+    pub paused: bool,
+    pub interval_ms: u64,
+}
+
+impl PollControl {
+    pub fn new(interval_ms: u64) -> Self {
+        Self {
+            paused: false,
+            interval_ms,
+        }
+    }
+    pub fn new_arc(interval_ms: u64) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::new(interval_ms)))
+    }
+}
 
 /// Spawns a background task that calls `fetch` on a fixed interval and
 /// forwards whatever `AppEvent` it produces into `tx`. This is the whole
@@ -13,15 +37,32 @@ use crate::events::AppEvent;
 /// `fetch` returning `None` means "nothing to report this tick" — a
 /// network error, a 404, a bad decode — the poller just quietly waits for
 /// the next tick rather than retrying in a hot loop.
-fn spawn_poller<F, Fut>(tx: Sender<AppEvent>, interval: Duration, mut fetch: F)
+fn spawn_poller<F, Fut>(tx: Sender<AppEvent>, control: Arc<Mutex<PollControl>>, mut fetch: F)
 where
     F: FnMut() -> Fut + Send + 'static,
     Fut: std::future::Future<Output = Option<AppEvent>> + Send,
 {
     tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(interval);
         loop {
-            ticker.tick().await;
+            let PollControl {
+                paused,
+                interval_ms,
+            } = *control.lock().unwrap();
+
+            if paused {
+                // Short sleep, not a full interval, so resuming is picked
+                // up promptly instead of after a stale wait.
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+
+            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+
+            // Pause could have happened while we were sleeping.
+            if control.lock().unwrap().paused {
+                continue;
+            }
+
             if let Some(event) = fetch().await {
                 if tx.send(event).await.is_err() {
                     break;
@@ -42,8 +83,12 @@ pub fn spawn_input(tx: Sender<AppEvent>) {
     });
 }
 
-pub fn spawn_screen_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
-    spawn_poller(tx, Duration::from_secs(2), move || {
+pub fn spawn_screen_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
             match api.screenshot().await.map(|r| r.screens) {
@@ -54,8 +99,12 @@ pub fn spawn_screen_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
     });
 }
 
-pub fn spawn_system_resources_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
-    spawn_poller(tx, Duration::from_secs(2), move || {
+pub fn spawn_system_resources_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
             match api.system_snapshot().await {
@@ -66,8 +115,12 @@ pub fn spawn_system_resources_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) 
     });
 }
 
-pub fn spawn_docker_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
-    spawn_poller(tx, Duration::from_secs(2), move || {
+pub fn spawn_docker_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
             match api.docker_containers().await {
@@ -78,8 +131,12 @@ pub fn spawn_docker_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
     });
 }
 
-pub fn spawn_systemd_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
-    spawn_poller(tx, Duration::from_secs(2), move || {
+pub fn spawn_systemd_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
             match api.systemd_snapshot().await {
@@ -90,8 +147,12 @@ pub fn spawn_systemd_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
     });
 }
 
-pub fn spawn_process_trees_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
-    spawn_poller(tx, Duration::from_secs(2), move || {
+pub fn spawn_process_trees_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
             match api.process_trees().await {
@@ -106,8 +167,9 @@ pub fn spawn_top_processes_poller(
     tx: Sender<AppEvent>,
     api: Arc<ApiClient>,
     poll_config: Arc<std::sync::Mutex<crate::tabs::TopProcessesPollConfig>>,
+    control: Arc<Mutex<PollControl>>,
 ) {
-    spawn_poller(tx, Duration::from_secs(2), move || {
+    spawn_poller(tx, control, move || {
         let api = api.clone();
         let config = poll_config.clone();
         async move {

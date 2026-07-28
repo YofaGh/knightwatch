@@ -27,4 +27,19 @@ pub enum AppEvent {
 
     /// logout result from the logout action.
     LogoutResult,
+
+    // result of any fire-and-forget command a tab sent (poll
+    // pause/resume/interval, kill, track, ...). `pid` is `None` for
+    // poll-control commands, `Some(pid)` for process actions.
+    CommandResult {
+        tab: &'static str,
+        label: &'static str,
+        result: Result<CommandOutcome, String>,
+    },
+}
+
+/// Payload of a completed command. Most are `Ack`; a few endpoints return
+/// data the tab needs (e.g. kill-tree reports which pids actually died).
+pub enum CommandOutcome {
+    Ack,
 }

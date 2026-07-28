@@ -1,6 +1,8 @@
 mod app;
+mod commands;
 mod events;
 mod login;
+mod poll_panel;
 mod pollers;
 mod process_widgets;
 mod tabs;

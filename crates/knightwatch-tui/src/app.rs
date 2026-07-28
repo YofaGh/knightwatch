@@ -1,11 +1,14 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui_image::picker::Picker;
 use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
+
+use kw_clients::ApiClient;
 
 use crate::{
     events::AppEvent,
     login::{LoginOutcome, LoginState},
-    pollers,
+    pollers::{self, PollControl},
     tabs::{self, Tab},
 };
 
@@ -29,17 +32,17 @@ pub struct App {
     /// tab's command-bool can require login independently of whether the
     /// mandatory startup gate exists.
     pub authenticated: bool,
-    api: Arc<kw_clients::ApiClient>,
-    tx: tokio::sync::mpsc::Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    tx: Sender<AppEvent>,
     auth_enabled: bool,
 }
 
 impl App {
     pub fn new(
         picker: Picker,
-        api: Arc<kw_clients::ApiClient>,
+        api: Arc<ApiClient>,
         info: kw_types::api::InfoResponse,
-        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        tx: Sender<AppEvent>,
     ) -> Self {
         let mut tabs: Vec<Box<dyn Tab>> = vec![];
 
@@ -48,45 +51,77 @@ impl App {
 
         // --- Screen tab ---
         if !info.blind {
-            pollers::spawn_screen_poller(tx.clone(), api.clone());
+            let control = PollControl::new_arc(2000);
+            pollers::spawn_screen_poller(tx.clone(), api.clone(), control.clone());
             tabs.push(Box::new(tabs::ScreenTab::new(
                 picker,
                 info.allow_screen_commands,
+                api.clone(),
+                tx.clone(),
+                control,
             )));
         }
+        let processes_control = PollControl::new_arc(2000);
         // --- Process Trees tab ---
         if !info.pid.is_empty() || info.allow_process_commands {
-            pollers::spawn_process_trees_poller(tx.clone(), api.clone());
+            pollers::spawn_process_trees_poller(tx.clone(), api.clone(), processes_control.clone());
             tabs.push(Box::new(tabs::ProcessesTab::new(
                 info.allow_process_commands,
+                api.clone(),
+                tx.clone(),
+                processes_control.clone(),
             )));
         }
         // --- System Resources tab ---
         if info.system_resources {
-            pollers::spawn_system_resources_poller(tx.clone(), api.clone());
+            let control = PollControl::new_arc(2000);
+            pollers::spawn_system_resources_poller(tx.clone(), api.clone(), control.clone());
             tabs.push(Box::new(tabs::SystemResourcesTab::new(
                 info.allow_system_resources_commands,
+                api.clone(),
+                tx.clone(),
+                control,
             )));
         }
         // --- Systemd tab ---
         if info.systemd {
-            pollers::spawn_systemd_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::SystemdTab::new(info.allow_systemd_commands)));
+            let control = PollControl::new_arc(2000);
+            pollers::spawn_systemd_poller(tx.clone(), api.clone(), control.clone());
+            tabs.push(Box::new(tabs::SystemdTab::new(
+                info.allow_systemd_commands,
+                api.clone(),
+                tx.clone(),
+                control,
+            )));
         }
         // --- Docker tab ---
         if info.docker || info.allow_docker_commands {
-            pollers::spawn_docker_poller(tx.clone(), api.clone());
-            tabs.push(Box::new(tabs::DockerTab::new(info.allow_docker_commands)));
+            let control = PollControl::new_arc(2000);
+            pollers::spawn_docker_poller(tx.clone(), api.clone(), control.clone());
+            tabs.push(Box::new(tabs::DockerTab::new(
+                info.allow_docker_commands,
+                api.clone(),
+                tx.clone(),
+                control.clone(),
+            )));
         }
         // --- Top Processes tab ---
         if info.top_processes {
             let poll_config = Arc::new(std::sync::Mutex::new(
                 tabs::TopProcessesPollConfig::default(),
             ));
-            pollers::spawn_top_processes_poller(tx.clone(), api.clone(), poll_config.clone());
+            pollers::spawn_top_processes_poller(
+                tx.clone(),
+                api.clone(),
+                poll_config.clone(),
+                processes_control.clone(),
+            );
             tabs.push(Box::new(tabs::TopProcessesTab::new(
                 poll_config,
                 info.allow_process_commands,
+                api.clone(),
+                tx.clone(),
+                processes_control.clone(),
             )));
         }
 
@@ -179,6 +214,13 @@ impl App {
                     self.dirty = true;
                 }
             }
+            AppEvent::CommandResult { tab, .. } => {
+                if let Some(t) = self.get_tab_by_name(tab)
+                    && t.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
         }
     }
 
@@ -188,6 +230,12 @@ impl App {
 
     pub fn get_tab_by_name(&mut self, name: &str) -> Option<&mut Box<dyn Tab>> {
         self.tabs.iter_mut().find(|t| t.name() == name)
+    }
+
+    /// True whenever commands can actually run: auth is off entirely, or
+    /// it's on and login has succeeded.
+    pub fn logged_in(&self) -> bool {
+        self.authenticated || !self.auth_enabled
     }
 
     pub fn handle_event(&mut self, event: Event) {
@@ -201,10 +249,11 @@ impl App {
             return;
         }
 
+        let logged_in = self.logged_in();
         let consumed = self
             .tabs
             .get_mut(self.selected_tab)
-            .map(|tab| tab.handle_event(&event))
+            .map(|tab| tab.handle_event(&event, logged_in))
             .unwrap_or(false);
 
         if consumed {
