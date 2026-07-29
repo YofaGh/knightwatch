@@ -25,6 +25,14 @@ pub fn percent_color(p: f64) -> Color {
     }
 }
 
+/// Whether a mouse event's coordinates fall inside `rect`.
+pub fn mouse_hit(mouse: &crossterm::event::MouseEvent, rect: &Rect) -> bool {
+    mouse.column >= rect.x
+        && mouse.column < rect.x + rect.width
+        && mouse.row >= rect.y
+        && mouse.row < rect.y + rect.height
+}
+
 /// Draws the standard dark-gray-bordered, cyan-titled block and returns
 /// the inner content area.
 pub fn bordered_block(frame: &mut Frame, area: Rect, title: &str) -> Rect {

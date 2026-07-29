@@ -42,4 +42,6 @@ pub enum AppEvent {
 /// data the tab needs (e.g. kill-tree reports which pids actually died).
 pub enum CommandOutcome {
     Ack,
+    /// pids that were actually killed, from `kill_process_tree`.
+    KillTree(Vec<u32>),
 }

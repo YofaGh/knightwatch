@@ -13,7 +13,9 @@ use kw_types::process::{ProcessSnapshot, ProcessesSortKey};
 use crate::{
     events::AppEvent,
     poll_panel::PollPanel,
-    process_widgets::{ProcessListState, render_process_detail, render_process_table},
+    process_widgets::{
+        ProcessActionsPanel, ProcessListState, render_process_detail, render_process_table,
+    },
     ui_helpers::*,
 };
 
@@ -53,6 +55,7 @@ pub struct TopProcessesTab {
     poll_config: Arc<Mutex<TopProcessesPollConfig>>,
     commands_allowed: bool,
     poll_panel: PollPanel,
+    actions: ProcessActionsPanel,
 }
 
 impl TopProcessesTab {
@@ -66,12 +69,13 @@ impl TopProcessesTab {
         let poll_panel = PollPanel::new(
             "Top Processes",
             control,
-            api,
-            tx,
+            api.clone(),
+            tx.clone(),
             |api| Box::pin(async move { api.process_poll_pause().await }),
             |api| Box::pin(async move { api.process_poll_resume().await }),
             |api, ms| Box::pin(async move { api.process_poll_interval(ms).await }),
         );
+        let actions = ProcessActionsPanel::new("Top Processes", api, tx);
         let cfg = *poll_config.lock().unwrap();
         Self {
             rows: Vec::new(),
@@ -83,6 +87,7 @@ impl TopProcessesTab {
             poll_config,
             commands_allowed: allow_process_commands,
             poll_panel,
+            actions,
         }
     }
 
@@ -139,9 +144,37 @@ impl super::Tab for TopProcessesTab {
     }
 
     fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
-        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
-            return true;
+        if self.commands_allowed && logged_in {
+            if matches!(event, Event::Mouse(_)) {
+                if self.actions.handle_event(event, self.list.selected_pid) {
+                    return true;
+                }
+                if self.list.handle_event(event, &self.rows) {
+                    self.actions.focused = false;
+                    return true;
+                }
+                return false;
+            }
+
+            if self.actions.focused {
+                return self.actions.handle_event(event, self.list.selected_pid);
+            }
+
+            if self.poll_panel.handle_event(event) {
+                return true;
+            }
+
+            if let Event::Key(key) = event {
+                if key.kind == KeyEventKind::Press
+                    && key.code == KeyCode::Right
+                    && self.list.selected_pid.is_some()
+                {
+                    self.actions.focused = true;
+                    return true;
+                }
+            }
         }
+
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
                 let new_sort = match key.code {
@@ -185,8 +218,14 @@ impl super::Tab for TopProcessesTab {
                 self.rebuild_rows(processes);
                 true
             }
-            AppEvent::CommandResult { label, result, .. } => {
-                self.poll_panel.apply_result(label, result);
+            AppEvent::CommandResult { tab, label, result } => {
+                if *tab != "Top Processes" {
+                    return false;
+                }
+                match *label {
+                    "pause" | "resume" | "interval" => self.poll_panel.apply_result(label, result),
+                    _ => self.actions.apply_result(label, result),
+                }
                 true
             }
             _ => false,
@@ -208,6 +247,9 @@ impl super::Tab for TopProcessesTab {
         }
 
         let selected_idx = self.list.resolve_selected_idx(&self.rows);
+        if selected_idx.is_none() {
+            self.actions.focused = false;
+        }
 
         let outer = Layout::default()
             .direction(Direction::Vertical)
@@ -234,9 +276,25 @@ impl super::Tab for TopProcessesTab {
         self.list.set_hit_rects(hit_rects);
         self.scroll_offset = offset;
 
-        match selected_idx {
-            Some(idx) => render_process_detail(frame, main[1], &self.rows[idx]),
-            None => empty_note(frame, main[1], "no process selected"),
+        if self.commands_allowed && logged_in {
+            let right = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(self.actions.height()),
+                ])
+                .split(main[1]);
+
+            match selected_idx {
+                Some(idx) => render_process_detail(frame, right[0], &self.rows[idx]),
+                None => empty_note(frame, right[0], "no process selected"),
+            }
+            self.actions.render(frame, right[1]);
+        } else {
+            match selected_idx {
+                Some(idx) => render_process_detail(frame, main[1], &self.rows[idx]),
+                None => empty_note(frame, main[1], "no process selected"),
+            }
         }
     }
 }

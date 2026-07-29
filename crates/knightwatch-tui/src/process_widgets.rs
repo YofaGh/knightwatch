@@ -12,11 +12,17 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Cell, List, ListItem, Paragraph, Row, Table},
 };
+use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
 
-use kw_types::process::{ProcessSnapshot, ProcessState};
+use kw_clients::ApiClient;
+use kw_types::process::{ProcessSignal, ProcessSnapshot, ProcessState};
 use kw_utils::format_bytes;
 
-use crate::ui_helpers::*;
+use crate::{
+    events::{AppEvent, CommandOutcome},
+    ui_helpers::*,
+};
 
 /// Selection + mouse-hit-rect bookkeeping shared by any process list tab.
 /// Selection is tracked by pid (not index) so it survives snapshot
@@ -341,5 +347,326 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
             List::new(items).style(Style::default().fg(Color::Gray)),
             rows[idx],
         );
+    }
+}
+
+/// One entry in the actions list: its shortcut key, what it does, and
+/// its display label.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ActionItem {
+    Signal(ProcessSignal),
+    KillTree,
+    Track,
+    Untrack,
+}
+
+impl ActionItem {
+    /// Destructive actions get a confirm step; everything else fires
+    /// immediately on activation.
+    fn is_destructive(&self) -> bool {
+        matches!(
+            self,
+            ActionItem::Signal(ProcessSignal::Kill)
+                | ActionItem::Signal(ProcessSignal::Term)
+                | ActionItem::KillTree
+        )
+    }
+}
+
+const ALL_ACTIONS: &[(char, ActionItem, &str)] = &[
+    (
+        'k',
+        ActionItem::Signal(ProcessSignal::Kill),
+        "Kill (SIGKILL)",
+    ),
+    (
+        't',
+        ActionItem::Signal(ProcessSignal::Term),
+        "Terminate (SIGTERM)",
+    ),
+    (
+        'i',
+        ActionItem::Signal(ProcessSignal::Interrupt),
+        "Interrupt (SIGINT)",
+    ),
+    (
+        's',
+        ActionItem::Signal(ProcessSignal::Stop),
+        "Stop (SIGSTOP)",
+    ),
+    (
+        'c',
+        ActionItem::Signal(ProcessSignal::Continue),
+        "Continue (SIGCONT)",
+    ),
+    ('x', ActionItem::KillTree, "Kill process tree"),
+    ('w', ActionItem::Track, "Track pid"),
+    ('u', ActionItem::Untrack, "Untrack pid"),
+];
+
+/// A persistent, always-visible command list for the currently selected
+/// process — rendered as its own bordered box under the detail panel.
+/// Rows are mouse-clickable at any time; `→` from the process table (or
+/// a click) focuses it for arrow-key navigation, `Enter`/click activates
+/// the highlighted row, and its shortcut letter (`k`/`t`/`i`/... below)
+/// activates a row directly once focused, without needing to navigate to
+/// it. `←`/`Esc` returns focus to the process table.
+pub struct ProcessActionsPanel {
+    tab: &'static str,
+    api: Arc<ApiClient>,
+    tx: Sender<AppEvent>,
+    pub focused: bool,
+    selected: usize,
+    confirm_pending: Option<usize>,
+    hit_rects: Vec<(Rect, usize)>,
+    last_result: Option<(String, bool)>,
+}
+
+impl ProcessActionsPanel {
+    pub fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
+        Self {
+            tab,
+            api,
+            tx,
+            focused: false,
+            selected: 0,
+            confirm_pending: None,
+            hit_rects: Vec::new(),
+            last_result: None,
+        }
+    }
+
+    fn visible_items(&self) -> Vec<(char, ActionItem, &'static str)> {
+        ALL_ACTIONS
+            .iter()
+            .filter(|(_, item, _)| match item {
+                ActionItem::Signal(sig) => sig.is_supported(),
+                _ => true,
+            })
+            .copied()
+            .collect()
+    }
+
+    /// Rows + border + one status line; used by the tab to size the
+    /// layout chunk this panel renders into.
+    pub fn height(&self) -> u16 {
+        self.visible_items().len() as u16 + 1 + 2
+    }
+
+    /// Call from the tab's `handle_event`, only when commands are
+    /// allowed and the user is logged in. `selected_pid` is
+    /// `self.list.selected_pid` from the tab's `ProcessListState`.
+    /// Mouse clicks on a row are handled regardless of focus; keyboard
+    /// navigation only applies once focused (tab is responsible for
+    /// routing `→` to focus this panel — see `focused`).
+    pub fn handle_event(&mut self, event: &Event, selected_pid: Option<u32>) -> bool {
+        let Some(pid) = selected_pid else {
+            return false;
+        };
+
+        if let Event::Mouse(mouse) = event {
+            if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+                for (rect, idx) in &self.hit_rects {
+                    if mouse_hit(mouse, rect) {
+                        self.focused = true;
+                        self.selected = *idx;
+                        self.confirm_pending = None;
+                        self.trigger(pid, *idx);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if !self.focused {
+            return false;
+        }
+
+        let Event::Key(key) = event else { return false };
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+
+        if let Some(idx) = self.confirm_pending {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.confirm_pending = None;
+                    self.fire_confirmed(pid, idx);
+                }
+                _ => self.confirm_pending = None,
+            }
+            return true;
+        }
+
+        let items = self.visible_items();
+        match key.code {
+            KeyCode::Left | KeyCode::Esc => self.focused = false,
+            KeyCode::Up if !items.is_empty() => {
+                self.selected = (self.selected + items.len() - 1) % items.len();
+            }
+            KeyCode::Down if !items.is_empty() => {
+                self.selected = (self.selected + 1) % items.len();
+            }
+            KeyCode::Enter => self.trigger(pid, self.selected),
+            KeyCode::Char(c) => {
+                if let Some(idx) = items.iter().position(|(k, _, _)| *k == c) {
+                    self.selected = idx;
+                    self.trigger(pid, idx);
+                }
+            }
+            _ => {}
+        }
+        true
+    }
+
+    fn trigger(&mut self, pid: u32, idx: usize) {
+        let items = self.visible_items();
+        let Some((_, item, _)) = items.get(idx).copied() else {
+            return;
+        };
+        if item.is_destructive() {
+            self.confirm_pending = Some(idx);
+        } else {
+            self.fire(pid, item);
+        }
+    }
+
+    fn fire_confirmed(&mut self, pid: u32, idx: usize) {
+        let items = self.visible_items();
+        if let Some((_, item, _)) = items.get(idx).copied() {
+            self.fire(pid, item);
+        }
+    }
+
+    fn fire(&mut self, pid: u32, item: ActionItem) {
+        match item {
+            ActionItem::Signal(signal) => self.send_signal(pid, signal),
+            ActionItem::KillTree => self.fire_kill_tree(pid),
+            ActionItem::Track => self.fire_track(pid),
+            ActionItem::Untrack => self.fire_untrack(pid),
+        }
+    }
+
+    fn send_signal(&mut self, pid: u32, signal: ProcessSignal) {
+        let label: &'static str = match signal {
+            ProcessSignal::Kill => "kill",
+            ProcessSignal::Term => "term",
+            ProcessSignal::Interrupt => "interrupt",
+            ProcessSignal::Stop => "stop",
+            ProcessSignal::Continue => "continue",
+        };
+        let api = self.api.clone();
+        let fut = Box::pin(async move { api.kill_process(pid, signal).await });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, label, fut, |_| {
+            CommandOutcome::Ack
+        });
+    }
+
+    fn fire_kill_tree(&mut self, pid: u32) {
+        let api = self.api.clone();
+        let fut = Box::pin(async move { api.kill_process_tree(pid).await });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "kill-tree", fut, |pids| {
+            CommandOutcome::KillTree(pids)
+        });
+    }
+
+    fn fire_track(&mut self, pid: u32) {
+        let api = self.api.clone();
+        let fut = Box::pin(async move { api.track_pid(pid).await });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "track", fut, |_| {
+            CommandOutcome::Ack
+        });
+    }
+
+    fn fire_untrack(&mut self, pid: u32) {
+        let api = self.api.clone();
+        let fut = Box::pin(async move { api.untrack_pid(pid).await });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "untrack", fut, |_| {
+            CommandOutcome::Ack
+        });
+    }
+
+    /// Call from the tab's `handle_app_event` for any `CommandResult`
+    /// whose label isn't one of the poll panel's.
+    pub fn apply_result(&mut self, label: &str, result: &Result<CommandOutcome, String>) {
+        self.last_result = Some(match result {
+            Ok(CommandOutcome::Ack) => (format!("{label}: ok"), false),
+            Ok(CommandOutcome::KillTree(pids)) => (
+                format!("kill-tree: {} process(es) killed", pids.len()),
+                false,
+            ),
+            Err(e) => (format!("{label} failed: {e}"), true),
+        });
+    }
+
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let title = if self.focused {
+            "Actions ●"
+        } else {
+            "Actions"
+        };
+        let inner = bordered_block(frame, area, title);
+
+        let items = self.visible_items();
+        let mut hit_rects = Vec::with_capacity(items.len());
+
+        for (i, (key, _, label)) in items.iter().enumerate() {
+            let y = inner.y + i as u16;
+            if y >= inner.y + inner.height {
+                break;
+            }
+            let rect = Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            };
+
+            let is_confirming = self.confirm_pending == Some(i);
+            let is_selected = self.focused && self.selected == i;
+
+            let (text, style) = if is_confirming {
+                (
+                    format!("  {label} — confirm? [Enter] / [Esc]"),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                let marker = if is_selected { ">" } else { " " };
+                let style = if is_selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                (format!("{marker} [{key}] {label}"), style)
+            };
+
+            frame.render_widget(Paragraph::new(text).style(style), rect);
+            hit_rects.push((rect, i));
+        }
+
+        if let Some(status_y) = (inner.y + items.len() as u16..inner.y + inner.height).next() {
+            if let Some((msg, is_err)) = &self.last_result {
+                let rect = Rect {
+                    x: inner.x,
+                    y: status_y,
+                    width: inner.width,
+                    height: 1,
+                };
+                frame.render_widget(
+                    Paragraph::new(msg.clone()).style(Style::default().fg(if *is_err {
+                        Color::Red
+                    } else {
+                        Color::Green
+                    })),
+                    rect,
+                );
+            }
+        }
+
+        self.hit_rects = hit_rects;
     }
 }
