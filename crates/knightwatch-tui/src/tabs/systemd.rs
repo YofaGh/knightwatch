@@ -88,11 +88,7 @@ impl super::Tab for SystemdTab {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     for (rect, name) in &self.row_hit_rects {
-                        let hit = mouse.column >= rect.x
-                            && mouse.column < rect.x + rect.width
-                            && mouse.row >= rect.y
-                            && mouse.row < rect.y + rect.height;
-                        if hit {
+                        if mouse_hit(mouse, rect) {
                             self.selected_name = Some(name.clone());
                             return true;
                         }

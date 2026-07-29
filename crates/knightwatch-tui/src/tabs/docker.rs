@@ -81,11 +81,7 @@ impl super::Tab for DockerTab {
                     return false;
                 }
                 for (rect, id) in &self.row_hit_rects {
-                    let hit = mouse.column >= rect.x
-                        && mouse.column < rect.x + rect.width
-                        && mouse.row >= rect.y
-                        && mouse.row < rect.y + rect.height;
-                    if hit {
+                    if mouse_hit(mouse, rect) {
                         self.selected_id = Some(id.clone());
                         return true;
                     }

@@ -8,7 +8,7 @@ use ratatui::{
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::sync::{Arc, Mutex};
 
-use crate::{events::AppEvent, poll_panel::PollPanel};
+use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::mouse_hit};
 
 /// One decoded, ready-to-render screenshot.
 ///
@@ -54,11 +54,7 @@ impl super::Tab for ScreenTab {
         }
 
         for (rect, monitor_id) in &self.thumb_hit_rects {
-            let hit = mouse.column >= rect.x
-                && mouse.column < rect.x + rect.width
-                && mouse.row >= rect.y
-                && mouse.row < rect.y + rect.height;
-            if hit {
+            if mouse_hit(mouse, rect) {
                 self.primary_monitor_id = Some(*monitor_id);
                 return true;
             }

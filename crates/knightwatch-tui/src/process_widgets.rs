@@ -40,11 +40,7 @@ impl ProcessListState {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     for (rect, pid) in &self.row_hit_rects {
-                        let hit = mouse.column >= rect.x
-                            && mouse.column < rect.x + rect.width
-                            && mouse.row >= rect.y
-                            && mouse.row < rect.y + rect.height;
-                        if hit {
+                        if mouse_hit(mouse, rect) {
                             self.selected_pid = Some(*pid);
                             return true;
                         }
