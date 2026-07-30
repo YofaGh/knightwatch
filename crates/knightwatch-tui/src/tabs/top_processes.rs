@@ -75,7 +75,7 @@ impl TopProcessesTab {
             |api| Box::pin(async move { api.process_poll_resume().await }),
             |api, ms| Box::pin(async move { api.process_poll_interval(ms).await }),
         );
-        let actions = ProcessActionsPanel::new("Top Processes", api, tx);
+        let actions = ProcessActionsPanel::new("Top Processes", api, tx, true, false);
         let cfg = *poll_config.lock().unwrap();
         Self {
             rows: Vec::new(),
@@ -192,12 +192,15 @@ impl super::Tab for TopProcessesTab {
                     return true;
                 }
 
+                // Limit shortcuts use `]`/`[` rather than `+`/`-`, since
+                // `+`/`-` are reserved for the pull (poll interval)
+                // section's shortcuts — see PollPanel::handle_event.
                 match key.code {
-                    KeyCode::Char('+') | KeyCode::Char('=') => {
+                    KeyCode::Char(']') => {
                         self.increase_limit();
                         return true;
                     }
-                    KeyCode::Char('-') => {
+                    KeyCode::Char('[') => {
                         self.decrease_limit();
                         return true;
                     }
@@ -312,7 +315,7 @@ fn render_summary(
         None => "all".to_string(),
     };
     let spans = vec![Span::raw(format!(
-        "{count} processes  ·  sorted by {}  ·  limit {limit_str}  ·  [c]pu [m]em [d]isk  ·  [+/-] limit  ·  [0] all",
+        "{count} processes  ·  sorted by {}  ·  limit {limit_str}  ·  [c]pu [m]em [d]isk  ·  ] incr / [ decr limit  ·  [0] all",
         sort_by.to_string()
     ))];
     frame.render_widget(Paragraph::new(Line::from(spans)), inner);

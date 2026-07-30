@@ -49,7 +49,7 @@ impl ProcessesTab {
             |api| Box::pin(async move { api.process_poll_resume().await }),
             |api, ms| Box::pin(async move { api.process_poll_interval(ms).await }),
         );
-        let actions = ProcessActionsPanel::new("Processes", api, tx);
+        let actions = ProcessActionsPanel::new("Processes", api, tx, false, true);
         Self {
             trees: Vec::new(),
             rows: Vec::new(),

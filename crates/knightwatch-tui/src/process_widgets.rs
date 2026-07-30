@@ -1,7 +1,7 @@
 // Shared building blocks for any tab that renders a list of
-// `ProcessSnapshot`s: a selectable/scrollable table (with mouse hit
-// testing, mirroring how `DockerTab`/`SystemdTab` do it) and a detail
-// panel. `ProcessesTab` (tree view) and `TopProcessesTab` (flat, sorted
+// `ProcessSnapshot`s: a selectable/scrollable table (with mouse hit)
+// testing and a detail panel. 
+// `ProcessesTab` (tree view) and `TopProcessesTab` (flat, sorted
 // view) both build on this.
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
@@ -416,10 +416,22 @@ pub struct ProcessActionsPanel {
     confirm_pending: Option<usize>,
     hit_rects: Vec<(Rect, usize)>,
     last_result: Option<(String, bool)>,
+    /// Whether to show the "Track pid" action. Tabs whose processes are
+    /// already all tracked (e.g. Processes) should pass `false`.
+    show_track: bool,
+    /// Whether to show the "Untrack pid" action. Tabs that don't care
+    /// about tracking state (e.g. Top Processes) should pass `false`.
+    show_untrack: bool,
 }
 
 impl ProcessActionsPanel {
-    pub fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
+    pub fn new(
+        tab: &'static str,
+        api: Arc<ApiClient>,
+        tx: Sender<AppEvent>,
+        show_track: bool,
+        show_untrack: bool,
+    ) -> Self {
         Self {
             tab,
             api,
@@ -429,6 +441,8 @@ impl ProcessActionsPanel {
             confirm_pending: None,
             hit_rects: Vec::new(),
             last_result: None,
+            show_track,
+            show_untrack,
         }
     }
 
@@ -437,6 +451,8 @@ impl ProcessActionsPanel {
             .iter()
             .filter(|(_, item, _)| match item {
                 ActionItem::Signal(sig) => sig.is_supported(),
+                ActionItem::Track => self.show_track,
+                ActionItem::Untrack => self.show_untrack,
                 _ => true,
             })
             .copied()
@@ -497,23 +513,32 @@ impl ProcessActionsPanel {
 
         let items = self.visible_items();
         match key.code {
-            KeyCode::Left | KeyCode::Esc => self.focused = false,
+            KeyCode::Left | KeyCode::Esc => {
+                self.focused = false;
+                true
+            }
+            KeyCode::Right => false,
             KeyCode::Up if !items.is_empty() => {
                 self.selected = (self.selected + items.len() - 1) % items.len();
+                true
             }
             KeyCode::Down if !items.is_empty() => {
                 self.selected = (self.selected + 1) % items.len();
+                true
             }
-            KeyCode::Enter => self.trigger(pid, self.selected),
+            KeyCode::Enter => {
+                self.trigger(pid, self.selected);
+                true
+            }
             KeyCode::Char(c) => {
                 if let Some(idx) = items.iter().position(|(k, _, _)| *k == c) {
                     self.selected = idx;
                     self.trigger(pid, idx);
                 }
+                true
             }
-            _ => {}
+            _ => true,
         }
-        true
     }
 
     fn trigger(&mut self, pid: u32, idx: usize) {
