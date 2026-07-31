@@ -7,11 +7,17 @@ use ratatui::{
     widgets::{Cell, List, ListItem, Paragraph, Row, Table},
 };
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc::Sender;
 
+use kw_clients::ApiClient;
 use kw_types::docker::{ContainerHealth, ContainerSnapshot, ContainerStatus};
 use kw_utils::format_bytes;
 
-use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::*};
+use crate::{
+    events::{AppEvent, CommandOutcome},
+    poll_panel::PollPanel,
+    ui_helpers::*,
+};
 
 pub struct DockerTab {
     containers: Vec<ContainerSnapshot>,
@@ -23,30 +29,33 @@ pub struct DockerTab {
     row_hit_rects: Vec<(Rect, String)>,
     commands_allowed: bool,
     poll_panel: PollPanel,
+    actions: ContainerActionsPanel,
 }
 
 impl DockerTab {
     pub fn new(
         allow_docker_commands: bool,
-        api: Arc<kw_clients::ApiClient>,
-        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        api: Arc<ApiClient>,
+        tx: Sender<AppEvent>,
         control: Arc<Mutex<crate::pollers::PollControl>>,
     ) -> Self {
         let poll_panel = PollPanel::new(
             "Docker",
             control,
-            api,
-            tx,
+            api.clone(),
+            tx.clone(),
             |api| Box::pin(async move { api.docker_poll_pause().await }),
             |api| Box::pin(async move { api.docker_poll_resume().await }),
             |api, ms| Box::pin(async move { api.docker_poll_interval(ms).await }),
         );
+        let actions = ContainerActionsPanel::new("Docker", api, tx);
         Self {
             containers: Vec::new(),
             selected_id: None,
             row_hit_rects: Vec::new(),
             commands_allowed: allow_docker_commands,
             poll_panel,
+            actions,
         }
     }
 
@@ -71,8 +80,32 @@ impl super::Tab for DockerTab {
     }
 
     fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
-        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
-            return true;
+        if self.commands_allowed && logged_in {
+            if matches!(event, Event::Mouse(_)) {
+                if self
+                    .actions
+                    .handle_event(event, self.selected_id.as_deref())
+                {
+                    return true;
+                }
+                // fall through: mouse missed the actions panel, let it
+                // hit the container table below.
+            } else if self.actions.focused {
+                // Keyboard: while focused, the actions panel owns all key input.
+                return self
+                    .actions
+                    .handle_event(event, self.selected_id.as_deref());
+            } else if self.poll_panel.handle_event(event) {
+                return true;
+            } else if let Event::Key(key) = event {
+                if key.kind == KeyEventKind::Press
+                    && key.code == KeyCode::Right
+                    && self.selected_id.is_some()
+                {
+                    self.actions.focused = true;
+                    return true;
+                }
+            }
         }
 
         match event {
@@ -83,6 +116,7 @@ impl super::Tab for DockerTab {
                 for (rect, id) in &self.row_hit_rects {
                     if mouse_hit(mouse, rect) {
                         self.selected_id = Some(id.clone());
+                        self.actions.focused = false;
                         return true;
                     }
                 }
@@ -114,8 +148,14 @@ impl super::Tab for DockerTab {
                 self.containers = containers.clone();
                 true
             }
-            AppEvent::CommandResult { label, result, .. } => {
-                self.poll_panel.apply_result(label, result);
+            AppEvent::CommandResult { tab, label, result } => {
+                if *tab != "Docker" {
+                    return false;
+                }
+                match *label {
+                    "pause" | "resume" | "interval" => self.poll_panel.apply_result(label, result),
+                    _ => self.actions.apply_result(label, result),
+                }
                 true
             }
             _ => false,
@@ -158,10 +198,23 @@ impl super::Tab for DockerTab {
             .split(outer[1]);
 
         self.row_hit_rects = render_table(frame, main[0], &self.containers, selected_idx);
-        render_detail(frame, main[1], &self.containers[selected_idx]);
+
+        if self.commands_allowed && logged_in {
+            let right = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(self.actions.height()),
+                ])
+                .split(main[1]);
+
+            render_detail(frame, right[0], &self.containers[selected_idx]);
+            self.actions.render(frame, right[1]);
+        } else {
+            render_detail(frame, main[1], &self.containers[selected_idx]);
+        }
     }
 }
-
 fn status_color(status: &ContainerStatus) -> Color {
     match status {
         ContainerStatus::Running => Color::Green,
@@ -419,5 +472,296 @@ fn render_detail(frame: &mut Frame, area: Rect, container: &ContainerSnapshot) {
                 "no stats available (container not running?)",
             );
         }
+    }
+}
+
+/// One entry in the actions list: its shortcut key and what it does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ContainerActionItem {
+    Stop,
+    Kill,
+    Restart,
+    Start,
+    Pause,
+    Unpause,
+}
+
+impl ContainerActionItem {
+    /// Actions that interrupt a running container get a confirm step.
+    fn is_destructive(&self) -> bool {
+        matches!(
+            self,
+            ContainerActionItem::Stop | ContainerActionItem::Kill | ContainerActionItem::Restart
+        )
+    }
+}
+
+const ALL_CONTAINER_ACTIONS: &[(char, ContainerActionItem, &str)] = &[
+    ('s', ContainerActionItem::Stop, "Stop"),
+    ('k', ContainerActionItem::Kill, "Kill"),
+    ('r', ContainerActionItem::Restart, "Restart"),
+    ('a', ContainerActionItem::Start, "Start"),
+    ('p', ContainerActionItem::Pause, "Pause"),
+    ('u', ContainerActionItem::Unpause, "Unpause"),
+];
+
+/// Persistent, always-visible command list for the currently selected
+/// container — mirrors `ProcessActionsPanel` in `process_widgets.rs`,
+/// but keyed by container id (String) instead of pid (u32).
+pub struct ContainerActionsPanel {
+    tab: &'static str,
+    api: Arc<ApiClient>,
+    tx: Sender<AppEvent>,
+    pub focused: bool,
+    selected: usize,
+    confirm_pending: Option<usize>,
+    hit_rects: Vec<(Rect, usize)>,
+    last_result: Option<(String, bool)>,
+}
+
+impl ContainerActionsPanel {
+    pub fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
+        Self {
+            tab,
+            api,
+            tx,
+            focused: false,
+            selected: 0,
+            confirm_pending: None,
+            hit_rects: Vec::new(),
+            last_result: None,
+        }
+    }
+
+    /// Rows + border + one status line; used by the tab to size the
+    /// layout chunk this panel renders into.
+    pub fn height(&self) -> u16 {
+        ALL_CONTAINER_ACTIONS.len() as u16 + 1 + 2
+    }
+
+    /// Call from the tab's `handle_event`, only when commands are
+    /// allowed and the user is logged in. `selected_id` is the
+    /// currently-selected container id.
+    pub fn handle_event(&mut self, event: &Event, selected_id: Option<&str>) -> bool {
+        let Some(id) = selected_id else {
+            return false;
+        };
+
+        if let Event::Mouse(mouse) = event {
+            if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+                for (rect, idx) in &self.hit_rects {
+                    if mouse_hit(mouse, rect) {
+                        self.focused = true;
+                        self.selected = *idx;
+                        self.confirm_pending = None;
+                        self.trigger(id, *idx);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if !self.focused {
+            return false;
+        }
+
+        let Event::Key(key) = event else { return false };
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+
+        if let Some(idx) = self.confirm_pending {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.confirm_pending = None;
+                    self.fire_confirmed(id, idx);
+                }
+                _ => self.confirm_pending = None,
+            }
+            return true;
+        }
+
+        let len = ALL_CONTAINER_ACTIONS.len();
+        match key.code {
+            KeyCode::Left | KeyCode::Esc => {
+                self.focused = false;
+                true
+            }
+            KeyCode::Right => false,
+            KeyCode::Up if len > 0 => {
+                self.selected = (self.selected + len - 1) % len;
+                true
+            }
+            KeyCode::Down if len > 0 => {
+                self.selected = (self.selected + 1) % len;
+                true
+            }
+            KeyCode::Enter => {
+                self.trigger(id, self.selected);
+                true
+            }
+            KeyCode::Char(c) => {
+                if let Some(idx) = ALL_CONTAINER_ACTIONS.iter().position(|(k, _, _)| *k == c) {
+                    self.selected = idx;
+                    self.trigger(id, idx);
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+
+    fn trigger(&mut self, id: &str, idx: usize) {
+        let Some((_, item, _)) = ALL_CONTAINER_ACTIONS.get(idx).copied() else {
+            return;
+        };
+        if item.is_destructive() {
+            self.confirm_pending = Some(idx);
+        } else {
+            self.fire(id, item);
+        }
+    }
+
+    fn fire_confirmed(&mut self, id: &str, idx: usize) {
+        if let Some((_, item, _)) = ALL_CONTAINER_ACTIONS.get(idx).copied() {
+            self.fire(id, item);
+        }
+    }
+
+    fn fire(&mut self, id: &str, item: ContainerActionItem) {
+        let id = id.to_string();
+        match item {
+            ContainerActionItem::Stop => {
+                let api = self.api.clone();
+                let fut = Box::pin(async move { api.stop_container(&id, None).await });
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "stop", fut, |_| {
+                    CommandOutcome::Ack
+                });
+            }
+            ContainerActionItem::Kill => {
+                let api = self.api.clone();
+                let fut = Box::pin(async move { api.kill_container(&id, None).await });
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "kill", fut, |_| {
+                    CommandOutcome::Ack
+                });
+            }
+            ContainerActionItem::Restart => {
+                let api = self.api.clone();
+                let fut = Box::pin(async move { api.restart_container(&id, None).await });
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "restart", fut, |_| {
+                    CommandOutcome::Ack
+                });
+            }
+            ContainerActionItem::Start => {
+                let api = self.api.clone();
+                let fut = Box::pin(async move { api.start_container(&id).await });
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "start", fut, |_| {
+                    CommandOutcome::Ack
+                });
+            }
+            ContainerActionItem::Pause => {
+                let api = self.api.clone();
+                let fut = Box::pin(async move { api.pause_container(&id).await });
+                crate::commands::spawn_command(
+                    self.tx.clone(),
+                    self.tab,
+                    "pause-container",
+                    fut,
+                    |_| CommandOutcome::Ack,
+                );
+            }
+            ContainerActionItem::Unpause => {
+                let api = self.api.clone();
+                let fut = Box::pin(async move { api.unpause_container(&id).await });
+                crate::commands::spawn_command(
+                    self.tx.clone(),
+                    self.tab,
+                    "unpause-container",
+                    fut,
+                    |_| CommandOutcome::Ack,
+                );
+            }
+        }
+    }
+
+    /// Call from the tab's `handle_app_event` for any `CommandResult`
+    /// whose label isn't one of the poll panel's.
+    pub fn apply_result(&mut self, label: &str, result: &Result<CommandOutcome, String>) {
+        self.last_result = Some(match result {
+            Ok(_) => (format!("{label}: ok"), false),
+            Err(e) => (format!("{label} failed: {e}"), true),
+        });
+    }
+
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let title = if self.focused {
+            "Actions ●"
+        } else {
+            "Actions"
+        };
+        let inner = bordered_block(frame, area, title);
+
+        let mut hit_rects = Vec::with_capacity(ALL_CONTAINER_ACTIONS.len());
+
+        for (i, (key, _, label)) in ALL_CONTAINER_ACTIONS.iter().enumerate() {
+            let y = inner.y + i as u16;
+            if y >= inner.y + inner.height {
+                break;
+            }
+            let rect = Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            };
+
+            let is_confirming = self.confirm_pending == Some(i);
+            let is_selected = self.focused && self.selected == i;
+
+            let (text, style) = if is_confirming {
+                (
+                    format!("  {label} — confirm? [Enter] / [Esc]"),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                let marker = if is_selected { ">" } else { " " };
+                let style = if is_selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                (format!("{marker} [{key}] {label}"), style)
+            };
+
+            frame.render_widget(Paragraph::new(text).style(style), rect);
+            hit_rects.push((rect, i));
+        }
+
+        if let Some(status_y) =
+            (inner.y + ALL_CONTAINER_ACTIONS.len() as u16..inner.y + inner.height).next()
+        {
+            if let Some((msg, is_err)) = &self.last_result {
+                let rect = Rect {
+                    x: inner.x,
+                    y: status_y,
+                    width: inner.width,
+                    height: 1,
+                };
+                frame.render_widget(
+                    Paragraph::new(msg.clone()).style(Style::default().fg(if *is_err {
+                        Color::Red
+                    } else {
+                        Color::Green
+                    })),
+                    rect,
+                );
+            }
+        }
+
+        self.hit_rects = hit_rects;
     }
 }
