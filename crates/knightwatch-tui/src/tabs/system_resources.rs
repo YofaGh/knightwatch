@@ -1,3 +1,4 @@
+use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -9,11 +10,19 @@ use std::{
     collections::VecDeque,
     sync::{Arc, Mutex},
 };
+use tokio::sync::mpsc::Sender;
 
-use kw_types::resources::{self, BatteryState, CpuSnapshot, SystemHealth, SystemSnapshot};
+use kw_clients::ApiClient;
+use kw_types::resources::{
+    self, BatteryState, CpuSnapshot, RefreshMask, SystemHealth, SystemSnapshot, Thresholds,
+};
 use kw_utils::{format_bytes, format_time};
 
-use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::*};
+use crate::{
+    events::{AppEvent, CommandOutcome},
+    poll_panel::PollPanel,
+    ui_helpers::*,
+};
 
 /// How many samples of CPU/memory history to keep for the sparklines.
 const HISTORY_LEN: usize = 90;
@@ -24,6 +33,7 @@ pub struct SystemResourcesTab {
     mem_history: VecDeque<u64>,
     commands_allowed: bool,
     poll_panel: PollPanel,
+    settings: ResourceSettingsPanel,
 }
 
 impl SystemResourcesTab {
@@ -36,18 +46,20 @@ impl SystemResourcesTab {
         let poll_panel = PollPanel::new(
             "System Resources",
             control,
-            api,
-            tx,
+            api.clone(),
+            tx.clone(),
             |api| Box::pin(async move { api.systemd_poll_pause().await }),
             |api| Box::pin(async move { api.systemd_poll_resume().await }),
             |api, ms| Box::pin(async move { api.systemd_poll_interval(ms).await }),
         );
+        let settings = ResourceSettingsPanel::new("System Resources", api, tx);
         Self {
             snapshot: None,
             cpu_history: VecDeque::with_capacity(HISTORY_LEN),
             mem_history: VecDeque::with_capacity(HISTORY_LEN),
             commands_allowed: allow_system_resources_commands,
             poll_panel,
+            settings,
         }
     }
 
@@ -64,9 +76,33 @@ impl super::Tab for SystemResourcesTab {
         "System Resources"
     }
 
-    fn handle_event(&mut self, event: &crossterm::event::Event, logged_in: bool) -> bool {
-        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
-            return true;
+    fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
+        if self.commands_allowed && logged_in {
+            if matches!(event, Event::Mouse(_)) {
+                if self.settings.handle_event(event) {
+                    return true;
+                }
+                return false;
+            }
+
+            // Keyboard: while focused, the settings panel owns all key input.
+            if self.settings.focused {
+                return self.settings.handle_event(event);
+            }
+
+            if self.poll_panel.handle_event(event) {
+                return true;
+            }
+
+            // No natural "selected row" to arrow in from here (unlike
+            // Processes/Docker), so Tab is the dedicated key to focus
+            // the settings panel.
+            if let Event::Key(key) = event {
+                if key.kind == KeyEventKind::Press && key.code == KeyCode::Tab {
+                    self.settings.focused = true;
+                    return true;
+                }
+            }
         }
         false
     }
@@ -79,8 +115,14 @@ impl super::Tab for SystemResourcesTab {
                 self.snapshot = Some(snap.clone());
                 true
             }
-            AppEvent::CommandResult { label, result, .. } => {
-                self.poll_panel.apply_result(label, result);
+            AppEvent::CommandResult { tab, label, result } => {
+                if *tab != "System Resources" {
+                    return false;
+                }
+                match *label {
+                    "pause" | "resume" | "interval" => self.poll_panel.apply_result(label, result),
+                    _ => self.settings.apply_result(label, result),
+                }
                 true
             }
             _ => false,
@@ -104,14 +146,19 @@ impl super::Tab for SystemResourcesTab {
             }
         };
 
+        let show_settings = self.commands_allowed && logged_in;
+        let mut constraints = vec![
+            Constraint::Length(3),      // host banner
+            Constraint::Percentage(35), // cpu | memory
+            Constraint::Percentage(30), // disks | networks
+            Constraint::Min(8),         // gpus | battery+temps
+        ];
+        if show_settings {
+            constraints.push(Constraint::Length(self.settings.height()));
+        }
         let outer = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),      // host banner
-                Constraint::Percentage(35), // cpu | memory
-                Constraint::Percentage(30), // disks | networks
-                Constraint::Min(8),         // gpus | battery+temps
-            ])
+            .constraints(constraints)
             .split(area);
 
         render_host(frame, outer[0], snapshot);
@@ -141,6 +188,9 @@ impl super::Tab for SystemResourcesTab {
             snapshot.battery.as_ref(),
             &snapshot.temperatures,
         );
+        if show_settings {
+            self.settings.render(frame, outer[4]);
+        }
     }
 }
 
@@ -563,4 +613,345 @@ fn render_battery_temps(
         })
         .collect();
     frame.render_widget(List::new(items), temps_inner);
+}
+
+/// Row 0-3 = thresholds (editable %), row 4-9 = refresh-mask toggles.
+const THRESHOLD_LABELS: &[&str] = &["CPU warn", "Memory warn", "Disk warn", "Battery low"];
+const MASK_LABELS: &[&str] = &["CPU", "Memory", "Disks", "Networks", "Temperatures", "GPUs"];
+const THRESHOLD_ROWS: usize = 4;
+const MASK_ROWS: usize = 6;
+const TOTAL_ROWS: usize = THRESHOLD_ROWS + MASK_ROWS;
+
+pub struct ResourceSettingsPanel {
+    tab: &'static str,
+    api: Arc<ApiClient>,
+    tx: Sender<AppEvent>,
+    pub focused: bool,
+    selected: usize,
+    /// Digit-entry buffer while editing the currently-selected threshold row.
+    editing: Option<String>,
+    thresholds: Thresholds,
+    mask: RefreshMask,
+    hit_rects: Vec<(Rect, usize)>,
+    last_result: Option<(String, bool)>,
+}
+
+impl ResourceSettingsPanel {
+    pub fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
+        Self {
+            tab,
+            api,
+            tx,
+            focused: false,
+            selected: 0,
+            editing: None,
+            thresholds: Thresholds::default(),
+            mask: RefreshMask::default(),
+            hit_rects: Vec::new(),
+            last_result: None,
+        }
+    }
+
+    pub fn height(&self) -> u16 {
+        if self.focused {
+            1 + THRESHOLD_ROWS as u16 + 1 + 1 + MASK_ROWS as u16 + 1 + 1 + 2
+        } else {
+            3
+        }
+    }
+
+    fn threshold_value(&self, row: usize) -> f32 {
+        match row {
+            0 => self.thresholds.cpu_warn,
+            1 => self.thresholds.memory_warn,
+            2 => self.thresholds.disk_warn,
+            _ => self.thresholds.battery_low,
+        }
+    }
+
+    fn set_threshold_value(&mut self, row: usize, value: f32) {
+        match row {
+            0 => self.thresholds.cpu_warn = value,
+            1 => self.thresholds.memory_warn = value,
+            2 => self.thresholds.disk_warn = value,
+            _ => self.thresholds.battery_low = value,
+        }
+    }
+
+    fn mask_value(&self, idx: usize) -> bool {
+        match idx {
+            0 => self.mask.cpu,
+            1 => self.mask.memory,
+            2 => self.mask.disks,
+            3 => self.mask.networks,
+            4 => self.mask.temperatures,
+            _ => self.mask.gpus,
+        }
+    }
+
+    fn toggle_mask(&mut self, idx: usize) {
+        match idx {
+            0 => self.mask.cpu = !self.mask.cpu,
+            1 => self.mask.memory = !self.mask.memory,
+            2 => self.mask.disks = !self.mask.disks,
+            3 => self.mask.networks = !self.mask.networks,
+            4 => self.mask.temperatures = !self.mask.temperatures,
+            _ => self.mask.gpus = !self.mask.gpus,
+        }
+    }
+
+    pub fn handle_event(&mut self, event: &Event) -> bool {
+        if let Event::Mouse(mouse) = event {
+            if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+                for (rect, idx) in &self.hit_rects {
+                    if mouse_hit(mouse, rect) {
+                        if !self.focused {
+                            self.focused = true;
+                            return true;
+                        }
+                        self.selected = *idx;
+                        self.editing = None;
+                        self.activate(*idx);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if !self.focused {
+            return false;
+        }
+
+        let Event::Key(key) = event else { return false };
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+
+        if let Some(buf) = &mut self.editing {
+            match key.code {
+                KeyCode::Enter => {
+                    if let Ok(value) = buf.parse::<f32>() {
+                        self.set_threshold_value(self.selected, value.clamp(0.0, 100.0));
+                        self.fire_thresholds();
+                    }
+                    self.editing = None;
+                }
+                KeyCode::Esc => self.editing = None,
+                KeyCode::Backspace => {
+                    buf.pop();
+                }
+                KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
+                    buf.push(c);
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        match key.code {
+            KeyCode::Left | KeyCode::Esc => {
+                self.focused = false;
+                true
+            }
+            KeyCode::Up => {
+                self.selected = (self.selected + TOTAL_ROWS - 1) % TOTAL_ROWS;
+                true
+            }
+            KeyCode::Down => {
+                self.selected = (self.selected + 1) % TOTAL_ROWS;
+                true
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                self.activate(self.selected);
+                true
+            }
+            _ => true,
+        }
+    }
+
+    fn activate(&mut self, row: usize) {
+        if row < THRESHOLD_ROWS {
+            self.editing = Some(format!("{:.0}", self.threshold_value(row)));
+        } else {
+            self.toggle_mask(row - THRESHOLD_ROWS);
+            self.fire_mask();
+        }
+    }
+
+    fn fire_thresholds(&mut self) {
+        let t = self.thresholds.clone();
+        let api = self.api.clone();
+        let fut = Box::pin(async move {
+            api.set_thresholds(t.cpu_warn, t.memory_warn, t.disk_warn, t.battery_low)
+                .await
+        });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "thresholds", fut, |_| {
+            CommandOutcome::Ack
+        });
+    }
+
+    fn fire_mask(&mut self) {
+        let m = self.mask.clone();
+        let api = self.api.clone();
+        let fut = Box::pin(async move {
+            api.set_refresh_mask(m.cpu, m.memory, m.disks, m.networks, m.temperatures, m.gpus)
+                .await
+        });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "refresh-mask", fut, |_| {
+            CommandOutcome::Ack
+        });
+    }
+
+    /// Call from the tab's `handle_app_event` for `CommandResult`s
+    /// labeled "thresholds" or "refresh-mask".
+    pub fn apply_result(&mut self, label: &str, result: &Result<CommandOutcome, String>) {
+        self.last_result = Some(match result {
+            Ok(_) => (format!("{label}: ok"), false),
+            Err(e) => (format!("{label} failed: {e}"), true),
+        });
+    }
+
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let title = if self.focused {
+            "Settings ●"
+        } else {
+            "Settings (Tab to edit)"
+        };
+        let inner = bordered_block(frame, area, title);
+
+        if !self.focused {
+            let mask_on = [
+                ("CPU", self.mask.cpu),
+                ("Mem", self.mask.memory),
+                ("Disks", self.mask.disks),
+                ("Net", self.mask.networks),
+                ("Temp", self.mask.temperatures),
+                ("GPU", self.mask.gpus),
+            ]
+            .iter()
+            .filter(|(_, on)| *on)
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(",");
+
+            let summary = format!(
+                "cpu {:.0}%  mem {:.0}%  disk {:.0}%  batt {:.0}%   ·   refresh: {}",
+                self.thresholds.cpu_warn,
+                self.thresholds.memory_warn,
+                self.thresholds.disk_warn,
+                self.thresholds.battery_low,
+                if mask_on.is_empty() { "none" } else { &mask_on }
+            );
+            frame.render_widget(
+                Paragraph::new(summary).style(Style::default().fg(Color::Gray)),
+                inner,
+            );
+            self.hit_rects = vec![(inner, 0)]; // whole strip focuses the panel
+            return;
+        }
+
+        let mut hit_rects = Vec::with_capacity(TOTAL_ROWS);
+        let mut y = inner.y;
+        let bottom = inner.y + inner.height;
+
+        macro_rules! line {
+            ($text:expr, $style:expr) => {
+                if y < bottom {
+                    frame.render_widget(
+                        Paragraph::new($text).style($style),
+                        Rect {
+                            x: inner.x,
+                            y,
+                            width: inner.width,
+                            height: 1,
+                        },
+                    );
+                }
+            };
+        }
+
+        line!(
+            "Thresholds (%)".to_string(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        );
+        y += 1;
+
+        for row in 0..THRESHOLD_ROWS {
+            let is_selected = self.selected == row;
+            let is_editing = is_selected && self.editing.is_some();
+            let marker = if is_selected { ">" } else { " " };
+            let value_text = match &self.editing {
+                Some(buf) if is_selected => format!("{buf}_"),
+                _ => format!("{:.0}", self.threshold_value(row)),
+            };
+            let text = format!("{marker} {:<14} {value_text}%", THRESHOLD_LABELS[row]);
+            let style = if is_editing {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            if y < bottom {
+                let rect = Rect {
+                    x: inner.x,
+                    y,
+                    width: inner.width,
+                    height: 1,
+                };
+                frame.render_widget(Paragraph::new(text).style(style), rect);
+                hit_rects.push((rect, row));
+            }
+            y += 1;
+        }
+
+        y += 1;
+        line!(
+            "Refresh Mask".to_string(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        );
+        y += 1;
+
+        for idx in 0..MASK_ROWS {
+            let row = THRESHOLD_ROWS + idx;
+            let is_selected = self.selected == row;
+            let marker = if is_selected { ">" } else { " " };
+            let check = if self.mask_value(idx) { "[x]" } else { "[ ]" };
+            let text = format!("{marker} {check} {}", MASK_LABELS[idx]);
+            let style = if is_selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+            if y < bottom {
+                let rect = Rect {
+                    x: inner.x,
+                    y,
+                    width: inner.width,
+                    height: 1,
+                };
+                frame.render_widget(Paragraph::new(text).style(style), rect);
+                hit_rects.push((rect, row));
+            }
+            y += 1;
+        }
+
+        y += 1;
+        if let Some((msg, is_err)) = &self.last_result {
+            line!(
+                msg.clone(),
+                Style::default().fg(if *is_err { Color::Red } else { Color::Green })
+            );
+        }
+
+        self.hit_rects = hit_rects;
+    }
 }
