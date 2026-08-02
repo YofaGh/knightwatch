@@ -1,4 +1,5 @@
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
+use ratatui::layout::Rect;
 use ratatui_image::picker::Picker;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
@@ -6,6 +7,7 @@ use tokio::sync::mpsc::Sender;
 use kw_clients::ApiClient;
 
 use crate::{
+    confirm::{ConfirmOutcome, ConfirmState},
     events::AppEvent,
     login::{LoginOutcome, LoginState},
     pollers::{self, PollControl},
@@ -35,6 +37,14 @@ pub struct App {
     api: Arc<ApiClient>,
     tx: Sender<AppEvent>,
     auth_enabled: bool,
+    /// `Some` while the shutdown confirmation modal is open.
+    pub confirm_shutdown: Option<ConfirmState>,
+    /// Whether the server reports its Telegram bot as active. Pure
+    /// display info, set once from `/info` and never changes at runtime.
+    pub telegram_bot: bool,
+    /// Screen-space rect of the shutdown button, recomputed every render
+    /// so mouse clicks can be matched against it.
+    pub shutdown_hit_rect: Option<Rect>,
 }
 
 impl App {
@@ -143,6 +153,9 @@ impl App {
             tx,
             auth_enabled: info.auth_enabled,
             authenticated: false,
+            confirm_shutdown: None,
+            telegram_bot: info.telegram_bot,
+            shutdown_hit_rect: None,
         }
     }
 
@@ -170,6 +183,18 @@ impl App {
             AppEvent::LogoutResult => {
                 // login screen is already showing (set synchronously in
                 // spawn_logout); nothing to do here besides redraw.
+                self.dirty = true;
+            }
+            AppEvent::ShutdownResult(result) => {
+                match result {
+                    // Server is going down — nothing left to poll or show.
+                    Ok(()) => self.should_quit = true,
+                    Err(message) => {
+                        if let Some(confirm) = &mut self.confirm_shutdown {
+                            confirm.fail(message);
+                        }
+                    }
+                }
                 self.dirty = true;
             }
             AppEvent::ScreenImages(_) => {
@@ -249,6 +274,16 @@ impl App {
             return;
         }
 
+        // Shutdown confirmation, when present, owns all input.
+        if let Some(confirm) = &mut self.confirm_shutdown {
+            match confirm.handle_event(&event) {
+                ConfirmOutcome::Confirm => self.spawn_shutdown(),
+                ConfirmOutcome::Cancel => self.confirm_shutdown = None,
+                ConfirmOutcome::None => {}
+            }
+            return;
+        }
+
         let logged_in = self.logged_in();
         let consumed = self
             .tabs
@@ -272,6 +307,9 @@ impl App {
                 KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.spawn_logout();
                 }
+                KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.open_shutdown_confirm();
+                }
                 KeyCode::Tab | KeyCode::Right => self.next_tab(),
                 KeyCode::BackTab | KeyCode::Left => self.prev_tab(),
                 KeyCode::Char(c) if ('1'..='9').contains(&c) => {
@@ -284,6 +322,12 @@ impl App {
             },
             Event::Mouse(mouse) => {
                 if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
+                    if let Some(rect) = self.shutdown_hit_rect
+                        && crate::ui_helpers::mouse_hit(&mouse, &rect)
+                    {
+                        self.open_shutdown_confirm();
+                        return;
+                    }
                     if mouse.row < 3 {
                         for (i, &(x0, x1)) in self.tab_hit_rects.iter().enumerate() {
                             if mouse.column >= x0 && mouse.column < x1 {
@@ -324,6 +368,22 @@ impl App {
                 eprintln!("logout failed: {e}");
             }
             let _ = tx.send(AppEvent::LogoutResult).await;
+        });
+    }
+
+    fn open_shutdown_confirm(&mut self) {
+        self.confirm_shutdown = Some(ConfirmState::new(
+            "Shutdown Server",
+            "Stop the knightwatch server?\nAll tabs will stop working.",
+        ));
+    }
+
+    fn spawn_shutdown(&self) {
+        let api = self.api.clone();
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let result = api.shutdown().await.map(|_| ()).map_err(|e| e.to_string());
+            let _ = tx.send(AppEvent::ShutdownResult(result)).await;
         });
     }
 

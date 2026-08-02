@@ -36,6 +36,9 @@ pub enum AppEvent {
         label: &'static str,
         result: Result<CommandOutcome, String>,
     },
+
+    /// result of the shutdown request.
+    ShutdownResult(Result<(), String>),
 }
 
 /// Payload of a completed command. Most are `Ack`; a few endpoints return

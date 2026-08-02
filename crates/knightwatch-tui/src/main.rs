@@ -1,5 +1,6 @@
 mod app;
 mod commands;
+mod confirm;
 mod events;
 mod login;
 mod poll_panel;

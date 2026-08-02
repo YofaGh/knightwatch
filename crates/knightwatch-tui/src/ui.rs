@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
@@ -10,6 +10,11 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
 
     if let Some(login) = &app.login {
         login.render(frame, area);
+        return;
+    }
+
+    if let Some(confirm) = &app.confirm_shutdown {
+        confirm.render(frame, area);
         return;
     }
 
@@ -35,9 +40,24 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     let inner_nav_area = nav_block.inner(nav_area);
     frame.render_widget(nav_block, nav_area);
 
+    // Right-hand cluster: telegram status (only when active) + shutdown.
+    let shutdown_label = " ⏻ Shutdown ";
+    let telegram_label = " 🤖 Telegram ";
+    let mut right_width = shutdown_label.chars().count() as u16;
+    if app.telegram_bot {
+        right_width += telegram_label.chars().count() as u16;
+    }
+
+    let nav_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(right_width)])
+        .split(inner_nav_area);
+    let tabs_area = nav_cols[0];
+    let right_area = nav_cols[1];
+
     let mut spans = Vec::new();
     app.tab_hit_rects.clear();
-    let mut current_x = inner_nav_area.x;
+    let mut current_x = tabs_area.x;
 
     let titles = app.tab_titles();
     let last = titles.len().saturating_sub(1);
@@ -62,7 +82,38 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
             current_x += 1;
         }
     }
-    frame.render_widget(Paragraph::new(Line::from(spans)), inner_nav_area);
+    frame.render_widget(Paragraph::new(Line::from(spans)), tabs_area);
+
+    let mut right_spans = Vec::new();
+    if app.telegram_bot {
+        right_spans.push(Span::styled(
+            telegram_label,
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    right_spans.push(Span::styled(
+        shutdown_label,
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Red)
+            .add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(
+        Paragraph::new(Line::from(right_spans)).alignment(Alignment::Right),
+        right_area,
+    );
+
+    if app.logged_in() {
+        let shutdown_width = shutdown_label.chars().count() as u16;
+        app.shutdown_hit_rect = Some(Rect {
+            x: right_area.x + right_area.width.saturating_sub(shutdown_width),
+            y: right_area.y,
+            width: shutdown_width.min(right_area.width),
+            height: 1,
+        });
+    }
 
     // ── Content shell ──
     let content_block = Block::default()
