@@ -63,10 +63,10 @@ where
                 continue;
             }
 
-            if let Some(event) = fetch().await {
-                if tx.send(event).await.is_err() {
-                    break;
-                }
+            if let Some(event) = fetch().await
+                && tx.send(event).await.is_err()
+            {
+                break;
             }
         }
     });
@@ -108,7 +108,7 @@ pub fn spawn_system_resources_poller(
         let api = api.clone();
         async move {
             match api.system_snapshot().await {
-                Ok(snapshot) => Some(AppEvent::SystemSnapshot(snapshot)),
+                Ok(snapshot) => Some(AppEvent::SystemSnapshot(Box::new(snapshot))),
                 Err(_) => None,
             }
         }

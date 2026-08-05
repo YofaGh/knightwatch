@@ -22,10 +22,9 @@ use crate::{
     ui_helpers::{icon, theme},
 };
 
-type PollAction =
-    fn(Arc<ApiClient>) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + Send>>;
-type IntervalAction =
-    fn(Arc<ApiClient>, u64) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + Send>>;
+type ActionResult = Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + Send>>;
+type PollAction = fn(Arc<ApiClient>) -> ActionResult;
+type IntervalAction = fn(Arc<ApiClient>, u64) -> ActionResult;
 
 /// Right-side panel offering pause/resume/interval controls for one tab's
 /// poller. Every tab that polls the server embeds one of these; only the
@@ -102,11 +101,7 @@ impl PollPanel {
         self.fire("interval", (self.interval)(self.api.clone(), new_ms));
     }
 
-    fn fire(
-        &self,
-        label: &'static str,
-        request: Pin<Box<dyn Future<Output = Result<(), Box<dyn Error>>> + Send>>,
-    ) {
+    fn fire(&self, label: &'static str, request: ActionResult) {
         crate::commands::spawn_command(self.tx.clone(), self.tab, label, request, |_| {
             CommandOutcome::Ack
         });

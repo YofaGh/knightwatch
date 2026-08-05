@@ -165,52 +165,51 @@ impl super::Tab for TopProcessesTab {
                 return true;
             }
 
-            if let Event::Key(key) = event {
-                if key.kind == KeyEventKind::Press
-                    && key.code == KeyCode::Right
-                    && self.list.selected_pid.is_some()
-                {
-                    self.actions.focused = true;
-                    return true;
-                }
+            if let Event::Key(key) = event
+                && key.kind == KeyEventKind::Press
+                && key.code == KeyCode::Right
+                && self.list.selected_pid.is_some()
+            {
+                self.actions.focused = true;
+                return true;
             }
         }
 
-        if let Event::Key(key) = event {
-            if key.kind == KeyEventKind::Press {
-                let new_sort = match key.code {
-                    KeyCode::Char('c') => Some(ProcessesSortKey::Cpu),
-                    KeyCode::Char('m') => Some(ProcessesSortKey::Memory),
-                    KeyCode::Char('d') => Some(ProcessesSortKey::Disk),
-                    _ => None,
-                };
-                if let Some(sort) = new_sort {
-                    if sort != self.sort_by {
-                        self.sort_by = sort;
-                        self.sort_rows();
-                        self.push_config();
-                    }
+        if let Event::Key(key) = event
+            && key.kind == KeyEventKind::Press
+        {
+            let new_sort = match key.code {
+                KeyCode::Char('c') => Some(ProcessesSortKey::Cpu),
+                KeyCode::Char('m') => Some(ProcessesSortKey::Memory),
+                KeyCode::Char('d') => Some(ProcessesSortKey::Disk),
+                _ => None,
+            };
+            if let Some(sort) = new_sort {
+                if sort != self.sort_by {
+                    self.sort_by = sort;
+                    self.sort_rows();
+                    self.push_config();
+                }
+                return true;
+            }
+
+            // Limit shortcuts use `]`/`[` rather than `+`/`-`, since
+            // `+`/`-` are reserved for the pull (poll interval)
+            // section's shortcuts — see PollPanel::handle_event.
+            match key.code {
+                KeyCode::Char(']') => {
+                    self.increase_limit();
                     return true;
                 }
-
-                // Limit shortcuts use `]`/`[` rather than `+`/`-`, since
-                // `+`/`-` are reserved for the pull (poll interval)
-                // section's shortcuts — see PollPanel::handle_event.
-                match key.code {
-                    KeyCode::Char(']') => {
-                        self.increase_limit();
-                        return true;
-                    }
-                    KeyCode::Char('[') => {
-                        self.decrease_limit();
-                        return true;
-                    }
-                    KeyCode::Char('0') => {
-                        self.clear_limit();
-                        return true;
-                    }
-                    _ => {}
+                KeyCode::Char('[') => {
+                    self.decrease_limit();
+                    return true;
                 }
+                KeyCode::Char('0') => {
+                    self.clear_limit();
+                    return true;
+                }
+                _ => {}
             }
         }
         self.list.handle_event(event, &self.rows)
@@ -267,7 +266,7 @@ impl super::Tab for TopProcessesTab {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(outer[1]);
 
-        let title = format!("Top Processes (sorted by {})", self.sort_by.to_string());
+        let title = format!("Top Processes (sorted by {})", self.sort_by);
         let (hit_rects, offset) = render_process_table(
             frame,
             main[0],

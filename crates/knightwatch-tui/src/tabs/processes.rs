@@ -124,14 +124,13 @@ impl super::Tab for ProcessesTab {
                 return true;
             }
 
-            if let Event::Key(key) = event {
-                if key.kind == KeyEventKind::Press
-                    && key.code == KeyCode::Right
-                    && self.list.selected_pid.is_some()
-                {
-                    self.actions.focused = true;
-                    return true;
-                }
+            if let Event::Key(key) = event
+                && key.kind == KeyEventKind::Press
+                && key.code == KeyCode::Right
+                && self.list.selected_pid.is_some()
+            {
+                self.actions.focused = true;
+                return true;
             }
         }
         self.list.handle_event(event, &self.rows)

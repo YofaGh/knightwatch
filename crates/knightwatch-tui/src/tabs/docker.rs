@@ -97,14 +97,13 @@ impl super::Tab for DockerTab {
                     .handle_event(event, self.selected_id.as_deref());
             } else if self.poll_panel.handle_event(event) {
                 return true;
-            } else if let Event::Key(key) = event {
-                if key.kind == KeyEventKind::Press
-                    && key.code == KeyCode::Right
-                    && self.selected_id.is_some()
-                {
-                    self.actions.focused = true;
-                    return true;
-                }
+            } else if let Event::Key(key) = event
+                && key.kind == KeyEventKind::Press
+                && key.code == KeyCode::Right
+                && self.selected_id.is_some()
+            {
+                self.actions.focused = true;
+                return true;
             }
         }
 
@@ -468,7 +467,7 @@ fn render_detail(frame: &mut Frame, area: Rect, container: &ContainerSnapshot) {
                     format_bytes(stats.memory_limit_bytes)
                 )
             } else {
-                format!("{}", format_bytes(stats.memory_bytes))
+                stats.memory_bytes.to_string()
             };
             let mem_gauge = percent_gauge("Memory", mem_pct, mem_label);
             frame.render_widget(mem_gauge, rows[6]);
@@ -771,16 +770,15 @@ impl ContainerActionsPanel {
 
         if let Some(status_y) =
             (inner.y + ALL_CONTAINER_ACTIONS.len() as u16..inner.y + inner.height).next()
+            && let Some((msg, is_err)) = &self.last_result
         {
-            if let Some((msg, is_err)) = &self.last_result {
-                let rect = Rect {
-                    x: inner.x,
-                    y: status_y,
-                    width: inner.width,
-                    height: 1,
-                };
-                frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
-            }
+            let rect = Rect {
+                x: inner.x,
+                y: status_y,
+                width: inner.width,
+                height: 1,
+            };
+            frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
         }
 
         self.hit_rects = hit_rects;

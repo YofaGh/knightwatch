@@ -677,16 +677,16 @@ impl ProcessActionsPanel {
             hit_rects.push((rect, i));
         }
 
-        if let Some(status_y) = (inner.y + items.len() as u16..inner.y + inner.height).next() {
-            if let Some((msg, is_err)) = &self.last_result {
-                let rect = Rect {
-                    x: inner.x,
-                    y: status_y,
-                    width: inner.width,
-                    height: 1,
-                };
-                frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
-            }
+        if let Some(status_y) = (inner.y + items.len() as u16..inner.y + inner.height).next()
+            && let Some((msg, is_err)) = &self.last_result
+        {
+            let rect = Rect {
+                x: inner.x,
+                y: status_y,
+                width: inner.width,
+                height: 1,
+            };
+            frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
         }
 
         self.hit_rects = hit_rects;

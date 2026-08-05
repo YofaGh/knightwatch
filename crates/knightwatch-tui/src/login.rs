@@ -113,7 +113,12 @@ impl LoginState {
         let box_height = 13u16.min(area.height.saturating_sub(2)).max(11);
         let x = area.x + (area.width.saturating_sub(box_width)) / 2;
         let y = area.y + (area.height.saturating_sub(box_height)) / 2;
-        let box_area = Rect { x, y, width: box_width, height: box_height };
+        let box_area = Rect {
+            x,
+            y,
+            width: box_width,
+            height: box_height,
+        };
 
         // dim the background behind the dialog so it reads as a modal
         frame.render_widget(
@@ -128,7 +133,9 @@ impl LoginState {
             .title(
                 Line::from(Span::styled(
                     " ◈ Knightwatch ",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .alignment(Alignment::Center),
             );
@@ -166,17 +173,38 @@ impl LoginState {
             rows[0],
         );
 
-        self.render_field(frame, rows[2], rows[3], "USERNAME", &self.username, false, Field::Username);
-        self.render_field(frame, rows[5], rows[6], "PASSWORD", &self.password, true, Field::Password);
+        self.render_field(
+            frame,
+            rows[2],
+            rows[3],
+            "USERNAME",
+            &self.username,
+            false,
+            Field::Username,
+        );
+        self.render_field(
+            frame,
+            rows[5],
+            rows[6],
+            "PASSWORD",
+            &self.password,
+            true,
+            Field::Password,
+        );
 
         let status = if self.submitting {
             Line::from(Span::styled(
                 "⏳ logging in…",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::ITALIC),
             ))
         } else if let Some(err) = &self.error {
             Line::from(vec![
-                Span::styled("✗ ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "✗ ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(err.clone(), Style::default().fg(Color::Red)),
             ])
         } else if self.cancellable {
@@ -199,6 +227,7 @@ impl LoginState {
         frame.render_widget(Paragraph::new(status), rows[8]);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_field(
         &self,
         frame: &mut Frame,
@@ -213,7 +242,9 @@ impl LoginState {
 
         let marker = if focused { "▸ " } else { "  " };
         let label_style = if focused {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::DarkGray)
         };
@@ -222,28 +253,33 @@ impl LoginState {
             label_area,
         );
 
-        let display = if mask { "•".repeat(value.chars().count()) } else { value.to_string() };
+        let display = if mask {
+            "•".repeat(value.chars().count())
+        } else {
+            value.to_string()
+        };
         let show_cursor = focused && !self.submitting;
 
         let base_style = if focused {
-            Style::default().fg(Color::White).add_modifier(Modifier::UNDERLINED)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::UNDERLINED)
         } else {
             Style::default().fg(Color::Gray)
         };
 
         let mut spans = vec![Span::styled("  ", Style::default())];
         if display.is_empty() && !show_cursor {
-            spans.push(Span::styled(
-                if mask { "" } else { "" },
-                Style::default().fg(Color::DarkGray),
-            ));
+            spans.push(Span::styled("", Style::default().fg(Color::DarkGray)));
         } else {
             spans.push(Span::styled(display, base_style));
         }
         if show_cursor {
             spans.push(Span::styled(
                 "▏",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::SLOW_BLINK),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::SLOW_BLINK),
             ));
         }
 

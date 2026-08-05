@@ -97,11 +97,12 @@ impl super::Tab for SystemResourcesTab {
             // No natural "selected row" to arrow in from here (unlike
             // Processes/Docker), so Tab is the dedicated key to focus
             // the settings panel.
-            if let Event::Key(key) = event {
-                if key.kind == KeyEventKind::Press && key.code == KeyCode::Tab {
-                    self.settings.focused = true;
-                    return true;
-                }
+            if let Event::Key(key) = event
+                && key.kind == KeyEventKind::Press
+                && key.code == KeyCode::Tab
+            {
+                self.settings.focused = true;
+                return true;
             }
         }
         false
@@ -112,7 +113,7 @@ impl super::Tab for SystemResourcesTab {
             AppEvent::SystemSnapshot(snap) => {
                 Self::push_history(&mut self.cpu_history, snap.cpu.usage_percent);
                 Self::push_history(&mut self.mem_history, snap.memory.used_percent);
-                self.snapshot = Some(snap.clone());
+                self.snapshot = Some(*snap.clone());
                 true
             }
             AppEvent::CommandResult { tab, label, result } => {
@@ -881,7 +882,7 @@ impl ResourceSettingsPanel {
         );
         y += 1;
 
-        for row in 0..THRESHOLD_ROWS {
+        for (row, threshold) in THRESHOLD_LABELS.iter().enumerate().take(THRESHOLD_ROWS) {
             let is_selected = self.selected == row;
             let is_editing = is_selected && self.editing.is_some();
             let marker = if is_selected { icon::CURSOR } else { " " };
@@ -889,7 +890,7 @@ impl ResourceSettingsPanel {
                 Some(buf) if is_selected => format!("{buf}_"),
                 _ => format!("{:.0}", self.threshold_value(row)),
             };
-            let text = format!("{marker} {:<14} {value_text}%", THRESHOLD_LABELS[row]);
+            let text = format!("{marker} {:<14} {value_text}%", threshold);
             let style = if is_editing {
                 Style::default()
                     .fg(Color::Black)
@@ -924,12 +925,12 @@ impl ResourceSettingsPanel {
         );
         y += 1;
 
-        for idx in 0..MASK_ROWS {
+        for (idx, max_label) in MASK_LABELS.iter().enumerate().take(MASK_ROWS) {
             let row = THRESHOLD_ROWS + idx;
             let is_selected = self.selected == row;
             let marker = if is_selected { icon::CURSOR } else { " " };
             let check = if self.mask_value(idx) { "[x]" } else { "[ ]" };
-            let text = format!("{marker} {check} {}", MASK_LABELS[idx]);
+            let text = format!("{marker} {check} {}", max_label);
             let style = if is_selected {
                 Style::default()
                     .fg(theme::ACCENT)

@@ -63,9 +63,10 @@ async fn main() -> io::Result<()> {
     let token = std::env::var("KW_TOKEN").ok();
     let api = std::sync::Arc::new(kw_clients::ApiClient::new(base_url.clone(), token));
 
-    let info = api.info().await.expect(&format!(
-        "Failed to connect to knightwatch server at: {base_url}"
-    ));
+    let info = api
+        .info()
+        .await
+        .unwrap_or_else(|_| panic!("Failed to connect to knightwatch server at: {base_url}"));
 
     // Single channel, single event enum, one receiver in the main loop.
     // Every producer below just sends into a clone of `tx`.
