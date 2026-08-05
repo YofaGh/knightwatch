@@ -215,25 +215,39 @@ impl super::Tab for DockerTab {
         }
     }
 }
-fn status_color(status: &ContainerStatus) -> Color {
+
+fn status_icon(status: &ContainerStatus) -> &'static str {
     match status {
-        ContainerStatus::Running => Color::Green,
+        ContainerStatus::Running => icon::DOT_ON,
         ContainerStatus::Paused
         | ContainerStatus::Restarting
         | ContainerStatus::Stopping
-        | ContainerStatus::Removing => Color::Yellow,
-        ContainerStatus::Created => Color::Cyan,
-        ContainerStatus::Dead => Color::Red,
-        ContainerStatus::Exited | ContainerStatus::Unknown(_) => Color::DarkGray,
+        | ContainerStatus::Removing => icon::DOT_ON,
+        ContainerStatus::Created => icon::DOT_OFF,
+        ContainerStatus::Dead => icon::ERR,
+        ContainerStatus::Exited | ContainerStatus::Unknown(_) => icon::DOT_OFF,
+    }
+}
+
+fn status_color(status: &ContainerStatus) -> Color {
+    match status {
+        ContainerStatus::Running => theme::SUCCESS,
+        ContainerStatus::Paused
+        | ContainerStatus::Restarting
+        | ContainerStatus::Stopping
+        | ContainerStatus::Removing => theme::WARNING,
+        ContainerStatus::Created => theme::ACCENT,
+        ContainerStatus::Dead => theme::DANGER,
+        ContainerStatus::Exited | ContainerStatus::Unknown(_) => theme::TEXT_MUTED,
     }
 }
 
 fn health_color(health: &ContainerHealth) -> Color {
     match health {
-        ContainerHealth::Healthy => Color::Green,
-        ContainerHealth::Unhealthy => Color::Red,
-        ContainerHealth::Starting => Color::Yellow,
-        ContainerHealth::None | ContainerHealth::Unknown => Color::DarkGray,
+        ContainerHealth::Healthy => theme::SUCCESS,
+        ContainerHealth::Unhealthy => theme::DANGER,
+        ContainerHealth::Starting => theme::WARNING,
+        ContainerHealth::None | ContainerHealth::Unknown => theme::TEXT_MUTED,
     }
 }
 
@@ -261,16 +275,22 @@ fn render_summary(frame: &mut Frame, area: Rect, containers: &[ContainerSnapshot
         .map(|s| s.memory_bytes)
         .sum();
 
-    let mut spans = vec![Span::raw(format!(
-        "{running}/{total} running  ·  cpu {total_cpu:.1}%  ·  mem {}  ",
-        format_bytes(total_mem)
-    ))];
+    let mut spans = vec![
+        Span::styled(
+            format!("{} ", icon::DOT_ON),
+            Style::default().fg(theme::SUCCESS),
+        ),
+        Span::raw(format!(
+            "{running}/{total} running   cpu {total_cpu:.1}%   mem {}  ",
+            format_bytes(total_mem)
+        )),
+    ];
     if unhealthy > 0 {
         spans.push(Span::styled(
-            format!(" {unhealthy} unhealthy "),
+            format!(" {} {unhealthy} unhealthy ", icon::WARNING),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(theme::TEXT)
+                .bg(theme::DANGER)
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -292,7 +312,7 @@ fn render_table(
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let marker = if i == selected_idx { ">" } else { " " };
+            let marker = if i == selected_idx { icon::CURSOR } else { " " };
             let (cpu_cell, mem_cell) = match &c.stats {
                 Some(stats) => {
                     let mem_pct = stats.memory_percent.unwrap_or(0.0) * 100.0;
@@ -308,22 +328,24 @@ fn render_table(
                     )
                 }
                 None => (
-                    Cell::from("--").style(Style::default().fg(Color::DarkGray)),
-                    Cell::from("--").style(Style::default().fg(Color::DarkGray)),
+                    Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
+                    Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
                 ),
             };
 
             let row_style = if i == selected_idx {
-                Style::default().add_modifier(Modifier::REVERSED)
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
 
             Row::new(vec![
-                Cell::from(marker),
+                Cell::from(marker).style(Style::default().fg(theme::ACCENT)),
                 Cell::from(c.name.clone()),
-                Cell::from(c.image.clone()),
-                Cell::from(c.status.to_string())
+                Cell::from(c.image.clone()).style(Style::default().fg(theme::TEXT_DIM)),
+                Cell::from(format!("{} {}", status_icon(&c.status), c.status))
                     .style(Style::default().fg(status_color(&c.status))),
                 Cell::from(c.health.to_string())
                     .style(Style::default().fg(health_color(&c.health))),
@@ -338,7 +360,7 @@ fn render_table(
         Constraint::Length(1),
         Constraint::Length(18),
         Constraint::Length(20),
-        Constraint::Length(11),
+        Constraint::Length(13),
         Constraint::Length(9),
         Constraint::Length(15),
         Constraint::Min(22),
@@ -397,25 +419,29 @@ fn render_detail(frame: &mut Frame, area: Rect, container: &ContainerSnapshot) {
         .split(inner);
 
     frame.render_widget(
-        Paragraph::new(container.name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
+        Paragraph::new(container.name.clone()).style(
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
+        ),
         rows[0],
     );
     frame.render_widget(
-        Paragraph::new(container.image.clone()).style(Style::default().fg(Color::Gray)),
+        Paragraph::new(container.image.clone()).style(Style::default().fg(theme::TEXT_DIM)),
         rows[1],
     );
     frame.render_widget(
         Paragraph::new(format!("id: {}", container.short_id))
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(Style::default().fg(theme::TEXT_MUTED)),
         rows[2],
     );
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
-                container.status.to_string(),
+                format!("{} {}", status_icon(&container.status), container.status),
                 Style::default().fg(status_color(&container.status)),
             ),
-            Span::raw("  ·  "),
+            Span::styled("   ", Style::default()),
             Span::styled(
                 container.health.to_string(),
                 Style::default().fg(health_color(&container.health)),
@@ -461,7 +487,7 @@ fn render_detail(frame: &mut Frame, area: Rect, container: &ContainerSnapshot) {
                 ListItem::new(format!("pids  {}", stats.pid_count)),
             ];
             frame.render_widget(
-                List::new(items).style(Style::default().fg(Color::Gray)),
+                List::new(items).style(Style::default().fg(theme::TEXT_DIM)),
                 rows[7],
             );
         }
@@ -696,11 +722,11 @@ impl ContainerActionsPanel {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let title = if self.focused {
-            "Actions ●"
+            format!("{} Actions", icon::CURSOR)
         } else {
-            "Actions"
+            "Actions".to_string()
         };
-        let inner = bordered_block(frame, area, title);
+        let inner = bordered_block_focused(frame, area, &title, self.focused);
 
         let mut hit_rects = Vec::with_capacity(ALL_CONTAINER_ACTIONS.len());
 
@@ -721,18 +747,20 @@ impl ContainerActionsPanel {
 
             let (text, style) = if is_confirming {
                 (
-                    format!("  {label} — confirm? [Enter] / [Esc]"),
+                    format!(" {} {label} — confirm? [Enter] / [Esc]", icon::WARNING),
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Red)
+                        .fg(theme::TEXT)
+                        .bg(theme::DANGER)
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
-                let marker = if is_selected { ">" } else { " " };
+                let marker = if is_selected { icon::CURSOR } else { " " };
                 let style = if is_selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
+                    Style::default()
+                        .fg(theme::ACCENT)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::Gray)
+                    Style::default().fg(theme::TEXT_DIM)
                 };
                 (format!("{marker} [{key}] {label}"), style)
             };
@@ -751,14 +779,7 @@ impl ContainerActionsPanel {
                     width: inner.width,
                     height: 1,
                 };
-                frame.render_widget(
-                    Paragraph::new(msg.clone()).style(Style::default().fg(if *is_err {
-                        Color::Red
-                    } else {
-                        Color::Green
-                    })),
-                    rect,
-                );
+                frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
             }
         }
 

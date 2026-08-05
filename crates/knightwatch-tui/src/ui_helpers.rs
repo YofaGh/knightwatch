@@ -1,10 +1,40 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, Paragraph},
+    widgets::{Block, BorderType, Borders, Gauge, Paragraph},
 };
+
+/// every part should pull its colors from here instead of hardcoding `Color::Cyan`.
+pub mod theme {
+    use ratatui::style::Color;
+
+    pub const ACCENT: Color = Color::Cyan;
+    pub const ACCENT_MUTED: Color = Color::DarkGray;
+    pub const DANGER: Color = Color::Red;
+    pub const SUCCESS: Color = Color::Green;
+    pub const WARNING: Color = Color::Yellow;
+    pub const TEXT: Color = Color::White;
+    pub const TEXT_DIM: Color = Color::Gray;
+    pub const TEXT_MUTED: Color = Color::DarkGray;
+}
+
+/// Small, consistent symbol set used across screens instead of each tab
+/// picking its own emoji/glyphs ad hoc.
+pub mod icon {
+    pub const APP: &str = "◈";
+    pub const LOCK: &str = "🔒";
+    pub const POWER: &str = "⏻";
+    pub const BOT: &str = "🤖";
+    pub const WARNING: &str = "⚠";
+    pub const OK: &str = "✓";
+    pub const ERR: &str = "✗";
+    pub const PENDING: &str = "⏳";
+    pub const DOT_ON: &str = "●";
+    pub const DOT_OFF: &str = "○";
+    pub const CURSOR: &str = "▸";
+}
 
 /// Unicode-block progress bar, e.g. "████░░░░".
 pub fn bar(percent: f64, width: usize) -> String {
@@ -15,13 +45,13 @@ pub fn bar(percent: f64, width: usize) -> String {
 }
 
 /// Standard red/yellow/green threshold coloring used across tabs.
-pub fn percent_color(p: f64) -> Color {
+pub fn percent_color(p: f64) -> ratatui::style::Color {
     if p >= 90.0 {
-        Color::Red
+        theme::DANGER
     } else if p >= 70.0 {
-        Color::Yellow
+        theme::WARNING
     } else {
-        Color::Green
+        theme::SUCCESS
     }
 }
 
@@ -33,16 +63,34 @@ pub fn mouse_hit(mouse: &crossterm::event::MouseEvent, rect: &Rect) -> bool {
         && mouse.row < rect.y + rect.height
 }
 
-/// Draws the standard dark-gray-bordered, cyan-titled block and returns
-/// the inner content area.
+/// Draws the standard rounded, accent-titled block and returns the inner content area.
 pub fn bordered_block(frame: &mut Frame, area: Rect, title: &str) -> Rect {
+    bordered_block_styled(frame, area, title, false)
+}
+
+pub fn bordered_block_focused(frame: &mut Frame, area: Rect, title: &str, focused: bool) -> Rect {
+    bordered_block_styled(frame, area, title, focused)
+}
+
+fn bordered_block_styled(frame: &mut Frame, area: Rect, title: &str, active: bool) -> Rect {
+    let border_color = if active {
+        theme::ACCENT
+    } else {
+        theme::ACCENT_MUTED
+    };
+    let title_style = if active {
+        Style::default()
+            .fg(theme::ACCENT)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme::ACCENT)
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray))
-        .title(Span::styled(
-            format!(" {title} "),
-            Style::default().fg(Color::Cyan),
-        ));
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(border_color))
+        .title(Span::styled(format!(" {title} "), title_style));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     inner
@@ -57,9 +105,12 @@ pub fn waiting_placeholder(frame: &mut Frame, area: Rect, label: &str) {
         ..area
     };
     frame.render_widget(
-        Paragraph::new(format!("[ {label}: waiting for first snapshot... ]"))
-            .style(Style::default().fg(Color::DarkGray))
-            .alignment(Alignment::Center),
+        Paragraph::new(format!(
+            "{} {label}: waiting for first snapshot… ",
+            icon::PENDING
+        ))
+        .style(Style::default().fg(theme::TEXT_MUTED))
+        .alignment(Alignment::Center),
         centered,
     );
 }
@@ -67,7 +118,7 @@ pub fn waiting_placeholder(frame: &mut Frame, area: Rect, label: &str) {
 /// Dimmed one-line "no X reported" message.
 pub fn empty_note(frame: &mut Frame, area: Rect, msg: &str) {
     frame.render_widget(
-        Paragraph::new(msg.to_string()).style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(msg.to_string()).style(Style::default().fg(theme::TEXT_MUTED)),
         area,
     );
 }
@@ -79,6 +130,26 @@ pub fn percent_gauge(title: &str, percent: f64, label: String) -> Gauge<'static>
         .gauge_style(Style::default().fg(percent_color(percent)))
         .ratio((percent / 100.0).clamp(0.0, 1.0))
         .label(label)
+}
+
+/// One-line status/result readout shared by poll panels and action
+/// panels: "label: ok" in success color, "label failed: msg" in danger
+/// color, or nothing if there's no result yet. Centralizing this keeps
+/// every panel's last-command feedback looking identical.
+pub fn result_line(label: &str, is_err: bool) -> Line<'static> {
+    let icon = if is_err { icon::ERR } else { icon::OK };
+    let color = if is_err {
+        theme::DANGER
+    } else {
+        theme::SUCCESS
+    };
+    Line::from(vec![
+        Span::styled(
+            format!("{icon} "),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(label.to_string(), Style::default().fg(color)),
+    ])
 }
 
 /// Reserves a one-line banner at the top of `area` when a tab allows
@@ -107,14 +178,20 @@ pub fn command_login_banner(
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("🔒 ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format!("{} ", icon::LOCK),
+                Style::default().fg(theme::WARNING),
+            ),
             Span::styled(
                 "login required to run commands",
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(theme::WARNING)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled("  (Ctrl+L to log in)", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "  (Ctrl+L to log in)",
+                Style::default().fg(theme::TEXT_MUTED),
+            ),
         ]))
         .alignment(Alignment::Center),
         chunks[0],

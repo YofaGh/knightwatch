@@ -200,9 +200,9 @@ impl super::Tab for SystemResourcesTab {
 
 fn health_color(h: &SystemHealth) -> Color {
     match h {
-        SystemHealth::Healthy => Color::Green,
-        SystemHealth::Warning => Color::Yellow,
-        SystemHealth::Critical => Color::Red,
+        SystemHealth::Healthy => theme::SUCCESS,
+        SystemHealth::Warning => theme::WARNING,
+        SystemHealth::Critical => theme::DANGER,
     }
 }
 
@@ -224,7 +224,7 @@ fn render_host(frame: &mut Frame, area: Rect, snap: &SystemSnapshot) {
     let health_label = format!(" {} ", snap.health);
     let line = Line::from(vec![
         Span::raw(format!(
-            "{}  ·  {}  ·  kernel {}  ·  {}  ·  up {}  ·  {} procs  ",
+            "{}   {}   kernel {}   {}   up {}   {} procs  ",
             host.hostname.as_deref().unwrap_or("?"),
             host.os_name.as_deref().unwrap_or("?"),
             host.kernel_version.as_deref().unwrap_or("?"),
@@ -258,7 +258,7 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
     let cpu = &snap.cpu;
     let load = load_avg_line(cpu);
     let info_line = format!(
-        "{}  ·  {} MHz  ·  {} physical cores{}",
+        "{}   {} MHz   {} physical cores{}",
         cpu.brand,
         cpu.frequency_mhz,
         cpu.physical_core_count
@@ -267,11 +267,11 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         if load.is_empty() {
             String::new()
         } else {
-            format!("  ·  {load}")
+            format!("   {load}")
         },
     );
     frame.render_widget(
-        Paragraph::new(info_line).style(Style::default().fg(Color::Gray)),
+        Paragraph::new(info_line).style(Style::default().fg(theme::TEXT_DIM)),
         rows[0],
     );
 
@@ -292,11 +292,11 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         .block(
             Block::default()
                 .borders(Borders::LEFT)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(theme::ACCENT_MUTED)),
         )
         .data(&data)
         .max(100)
-        .style(Style::default().fg(Color::Cyan));
+        .style(Style::default().fg(theme::ACCENT));
     frame.render_widget(sparkline, gauge_sparkline[1]);
 
     let items: Vec<ListItem> = cpu
@@ -348,7 +348,7 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
             format_bytes(mem.available_bytes),
             format_bytes(mem.free_bytes)
         ))
-        .style(Style::default().fg(Color::DarkGray)),
+        .style(Style::default().fg(theme::TEXT_MUTED)),
         rows[1],
     );
 
@@ -367,7 +367,7 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
         frame.render_widget(swap_gauge, rows[2]);
     } else {
         frame.render_widget(
-            Paragraph::new("Swap: none").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("Swap: none").style(Style::default().fg(theme::TEXT_MUTED)),
             rows[2],
         );
     }
@@ -377,7 +377,7 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
         .block(
             Block::default()
                 .title("history")
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(theme::ACCENT_MUTED)),
         )
         .data(&data)
         .max(100)
@@ -454,9 +454,9 @@ fn render_networks(frame: &mut Frame, area: Rect, nets: &[resources::NetworkSnap
         .map(|n| {
             let errs = n.rx_errors + n.tx_errors;
             let err_style = if errs > 0 {
-                Style::default().fg(Color::Red)
+                Style::default().fg(theme::DANGER)
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(theme::TEXT_MUTED)
             };
             Row::new(vec![
                 Cell::from(n.interface.clone()),
@@ -494,7 +494,9 @@ fn render_gpus(frame: &mut Frame, area: Rect, gpus: &[resources::GpuSnapshot]) {
     for g in gpus {
         let mut parts = vec![Span::styled(
             g.name.clone(),
-            Style::default().add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
         )];
         if let Some(u) = g.usage_percent {
             parts.push(Span::raw(format!("  {} {:>5.1}%", bar(u as f64, 12), u)));
@@ -530,7 +532,7 @@ fn render_gpus(frame: &mut Frame, area: Rect, gpus: &[resources::GpuSnapshot]) {
         if !detail.is_empty() {
             lines.push(Line::from(Span::styled(
                 format!("    {}", detail.join("  ·  ")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(theme::TEXT_MUTED),
             )));
         }
     }
@@ -554,11 +556,11 @@ fn render_battery_temps(
     match battery {
         Some(b) => {
             let color = if b.charge_percent <= 15.0 {
-                Color::Red
+                theme::DANGER
             } else if b.charge_percent <= 30.0 {
-                Color::Yellow
+                theme::WARNING
             } else {
-                Color::Green
+                theme::SUCCESS
             };
             let extra = match b.state {
                 BatteryState::Discharging => b
@@ -594,9 +596,9 @@ fn render_battery_temps(
         .map(|t| {
             let temp = t.temperature_celsius.unwrap_or(0.0);
             let color = match t.temperature_critical_celsius {
-                Some(crit) if temp >= crit * 0.9 => Color::Red,
-                Some(crit) if temp >= crit * 0.75 => Color::Yellow,
-                _ => Color::Green,
+                Some(crit) if temp >= crit * 0.9 => theme::DANGER,
+                Some(crit) if temp >= crit * 0.75 => theme::WARNING,
+                _ => theme::SUCCESS,
             };
             let line = format!(
                 "{:<28} {:>5.0}°C   (max {:>6}  crit {:>6})",
@@ -814,11 +816,11 @@ impl ResourceSettingsPanel {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let title = if self.focused {
-            "Settings ●"
+            format!("{} Settings", icon::CURSOR)
         } else {
-            "Settings (Tab to edit)"
+            "Settings (Tab to edit)".to_string()
         };
-        let inner = bordered_block(frame, area, title);
+        let inner = bordered_block_focused(frame, area, &title, self.focused);
 
         if !self.focused {
             let mask_on = [
@@ -844,7 +846,7 @@ impl ResourceSettingsPanel {
                 if mask_on.is_empty() { "none" } else { &mask_on }
             );
             frame.render_widget(
-                Paragraph::new(summary).style(Style::default().fg(Color::Gray)),
+                Paragraph::new(summary).style(Style::default().fg(theme::TEXT_DIM)),
                 inner,
             );
             self.hit_rects = vec![(inner, 0)]; // whole strip focuses the panel
@@ -874,7 +876,7 @@ impl ResourceSettingsPanel {
         line!(
             "Thresholds (%)".to_string(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD)
         );
         y += 1;
@@ -882,7 +884,7 @@ impl ResourceSettingsPanel {
         for row in 0..THRESHOLD_ROWS {
             let is_selected = self.selected == row;
             let is_editing = is_selected && self.editing.is_some();
-            let marker = if is_selected { ">" } else { " " };
+            let marker = if is_selected { icon::CURSOR } else { " " };
             let value_text = match &self.editing {
                 Some(buf) if is_selected => format!("{buf}_"),
                 _ => format!("{:.0}", self.threshold_value(row)),
@@ -891,12 +893,14 @@ impl ResourceSettingsPanel {
             let style = if is_editing {
                 Style::default()
                     .fg(Color::Black)
-                    .bg(Color::Yellow)
+                    .bg(theme::WARNING)
                     .add_modifier(Modifier::BOLD)
             } else if is_selected {
-                Style::default().add_modifier(Modifier::REVERSED)
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(theme::TEXT_DIM)
             };
             if y < bottom {
                 let rect = Rect {
@@ -915,7 +919,7 @@ impl ResourceSettingsPanel {
         line!(
             "Refresh Mask".to_string(),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD)
         );
         y += 1;
@@ -923,13 +927,15 @@ impl ResourceSettingsPanel {
         for idx in 0..MASK_ROWS {
             let row = THRESHOLD_ROWS + idx;
             let is_selected = self.selected == row;
-            let marker = if is_selected { ">" } else { " " };
+            let marker = if is_selected { icon::CURSOR } else { " " };
             let check = if self.mask_value(idx) { "[x]" } else { "[ ]" };
             let text = format!("{marker} {check} {}", MASK_LABELS[idx]);
             let style = if is_selected {
-                Style::default().add_modifier(Modifier::REVERSED)
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(theme::TEXT_DIM)
             };
             if y < bottom {
                 let rect = Rect {
@@ -946,10 +952,7 @@ impl ResourceSettingsPanel {
 
         y += 1;
         if let Some((msg, is_err)) = &self.last_result {
-            line!(
-                msg.clone(),
-                Style::default().fg(if *is_err { Color::Red } else { Color::Green })
-            );
+            line!(result_line(msg, *is_err), Style::default());
         }
 
         self.hit_rects = hit_rects;

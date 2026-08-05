@@ -2,13 +2,17 @@ use crossterm::event::{Event, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     widgets::Paragraph,
 };
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::sync::{Arc, Mutex};
 
-use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::mouse_hit};
+use crate::{
+    events::AppEvent,
+    poll_panel::PollPanel,
+    ui_helpers::{mouse_hit, theme},
+};
 
 /// One decoded, ready-to-render screenshot.
 ///
@@ -144,7 +148,7 @@ impl super::Tab for ScreenTab {
                 let monitor_id = self.screenshots[idx].monitor_id;
                 frame.render_widget(
                     Paragraph::new(self.screenshots[idx].monitor_name.clone())
-                        .style(Style::default().fg(Color::DarkGray)),
+                        .style(Style::default().fg(theme::ACCENT)),
                     label_area,
                 );
                 frame.render_stateful_widget(

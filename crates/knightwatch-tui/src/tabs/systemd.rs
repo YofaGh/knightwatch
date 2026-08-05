@@ -194,23 +194,34 @@ impl super::Tab for SystemdTab {
     }
 }
 
-fn active_state_color(state: &UnitActiveState) -> Color {
+fn active_state_icon(state: &UnitActiveState) -> &'static str {
     match state {
-        UnitActiveState::Active => Color::Green,
+        UnitActiveState::Active => icon::DOT_ON,
         UnitActiveState::Reloading
         | UnitActiveState::Activating
-        | UnitActiveState::Deactivating => Color::Yellow,
-        UnitActiveState::Inactive => Color::DarkGray,
-        UnitActiveState::Failed => Color::Red,
+        | UnitActiveState::Deactivating => icon::DOT_ON,
+        UnitActiveState::Inactive => icon::DOT_OFF,
+        UnitActiveState::Failed => icon::ERR,
+    }
+}
+
+fn active_state_color(state: &UnitActiveState) -> Color {
+    match state {
+        UnitActiveState::Active => theme::SUCCESS,
+        UnitActiveState::Reloading
+        | UnitActiveState::Activating
+        | UnitActiveState::Deactivating => theme::WARNING,
+        UnitActiveState::Inactive => theme::TEXT_MUTED,
+        UnitActiveState::Failed => theme::DANGER,
     }
 }
 
 fn load_state_color(state: &UnitLoadState) -> Color {
     match state {
-        UnitLoadState::Loaded => Color::Green,
-        UnitLoadState::NotFound => Color::DarkGray,
-        UnitLoadState::BadSetting | UnitLoadState::Error => Color::Red,
-        UnitLoadState::Masked => Color::Yellow,
+        UnitLoadState::Loaded => theme::SUCCESS,
+        UnitLoadState::NotFound => theme::TEXT_MUTED,
+        UnitLoadState::BadSetting | UnitLoadState::Error => theme::DANGER,
+        UnitLoadState::Masked => theme::WARNING,
     }
 }
 
@@ -232,15 +243,21 @@ fn render_summary(
 ) {
     let inner = bordered_block(frame, area, "Systemd");
 
-    let mut spans = vec![Span::raw(format!(
-        "{active_count} active  ·  {inactive_count} inactive  "
-    ))];
+    let mut spans = vec![
+        Span::styled(
+            format!("{} ", icon::DOT_ON),
+            Style::default().fg(theme::SUCCESS),
+        ),
+        Span::raw(format!(
+            "{active_count} active   {inactive_count} inactive  "
+        )),
+    ];
     if failed_count > 0 {
         spans.push(Span::styled(
-            format!(" {failed_count} failed "),
+            format!(" {} {failed_count} failed ", icon::ERR),
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
+                .fg(theme::TEXT)
+                .bg(theme::DANGER)
                 .add_modifier(Modifier::BOLD),
         ));
     }
@@ -279,27 +296,34 @@ fn render_table(
         .enumerate()
         .map(|(visible_i, u)| {
             let i = offset + visible_i;
-            let marker = if i == selected_idx { ">" } else { " " };
+            let is_selected = i == selected_idx;
+            let marker = if is_selected { icon::CURSOR } else { " " };
 
-            let row_style = if i == selected_idx {
-                Style::default().add_modifier(Modifier::REVERSED)
+            let row_style = if is_selected {
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
 
             let mem_cell = match u.memory_bytes {
                 Some(bytes) => Cell::from(format_bytes(bytes)),
-                None => Cell::from("--").style(Style::default().fg(Color::DarkGray)),
+                None => Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
             };
 
             Row::new(vec![
-                Cell::from(marker),
+                Cell::from(marker).style(Style::default().fg(theme::ACCENT)),
                 Cell::from(u.unit_name.clone()),
                 Cell::from(u.unit_type.to_string()),
                 Cell::from(u.load_state.to_string())
                     .style(Style::default().fg(load_state_color(&u.load_state))),
-                Cell::from(u.active_state.as_str())
-                    .style(Style::default().fg(active_state_color(&u.active_state))),
+                Cell::from(format!(
+                    "{} {}",
+                    active_state_icon(&u.active_state),
+                    u.active_state.as_str()
+                ))
+                .style(Style::default().fg(active_state_color(&u.active_state))),
                 Cell::from(u.sub_state.clone()),
                 mem_cell,
             ])
@@ -312,7 +336,7 @@ fn render_table(
         Constraint::Length(32),
         Constraint::Length(8),
         Constraint::Length(11),
-        Constraint::Length(11),
+        Constraint::Length(13),
         Constraint::Length(11),
         Constraint::Min(10),
     ];
@@ -365,16 +389,20 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
         .split(inner);
 
     frame.render_widget(
-        Paragraph::new(unit.unit_name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
+        Paragraph::new(unit.unit_name.clone()).style(
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
+        ),
         rows[0],
     );
     frame.render_widget(
-        Paragraph::new(unit.description.clone()).style(Style::default().fg(Color::Gray)),
+        Paragraph::new(unit.description.clone()).style(Style::default().fg(theme::TEXT_DIM)),
         rows[1],
     );
     frame.render_widget(
         Paragraph::new(format!("type: {}", unit.unit_type))
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(Style::default().fg(theme::TEXT_MUTED)),
         rows[2],
     );
     frame.render_widget(
@@ -385,7 +413,11 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
             ),
             Span::raw("  ·  "),
             Span::styled(
-                unit.active_state.as_str(),
+                format!(
+                    "{} {}",
+                    active_state_icon(&unit.active_state),
+                    unit.active_state.as_str()
+                ),
                 Style::default().fg(active_state_color(&unit.active_state)),
             ),
             Span::raw("  ·  "),
@@ -397,7 +429,7 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
     match unit.main_pid {
         Some(pid) => frame.render_widget(Paragraph::new(format!("pid: {pid}")), rows[5]),
         None => frame.render_widget(
-            Paragraph::new("pid: --").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("pid: --").style(Style::default().fg(theme::TEXT_MUTED)),
             rows[5],
         ),
     }
@@ -408,7 +440,7 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
             rows[6],
         ),
         None => frame.render_widget(
-            Paragraph::new("memory: --").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("memory: --").style(Style::default().fg(theme::TEXT_MUTED)),
             rows[6],
         ),
     }
@@ -419,7 +451,7 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
             rows[7],
         ),
         None => frame.render_widget(
-            Paragraph::new("cpu time: --").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("cpu time: --").style(Style::default().fg(theme::TEXT_MUTED)),
             rows[7],
         ),
     }
@@ -427,7 +459,7 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
     match unit.restart_count {
         Some(count) => {
             let style = if count > 0 {
-                Style::default().fg(Color::Yellow)
+                Style::default().fg(theme::WARNING)
             } else {
                 Style::default()
             };
@@ -437,18 +469,18 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
             );
         }
         None => frame.render_widget(
-            Paragraph::new("restarts: --").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("restarts: --").style(Style::default().fg(theme::TEXT_MUTED)),
             rows[8],
         ),
     }
 
     match &unit.since {
         Some(since) => frame.render_widget(
-            Paragraph::new(format!("since: {since}")).style(Style::default().fg(Color::Gray)),
+            Paragraph::new(format!("since: {since}")).style(Style::default().fg(theme::TEXT_DIM)),
             rows[9],
         ),
         None => frame.render_widget(
-            Paragraph::new("since: --").style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new("since: --").style(Style::default().fg(theme::TEXT_MUTED)),
             rows[9],
         ),
     }
@@ -457,7 +489,7 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
         Some(path) => {
             let items = vec![ListItem::new(format!("fragment: {path}"))];
             frame.render_widget(
-                List::new(items).style(Style::default().fg(Color::DarkGray)),
+                List::new(items).style(Style::default().fg(theme::TEXT_MUTED)),
                 rows[11],
             );
         }

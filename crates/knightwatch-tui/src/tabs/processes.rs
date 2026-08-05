@@ -232,15 +232,15 @@ fn render_summary(frame: &mut Frame, area: Rect, trees: &[ProcessTree]) {
     let exited_roots = trees.iter().filter(|t| t.root.is_none()).count();
 
     let mut spans = vec![Span::raw(format!(
-        "{} trees  ·  {total_children} children  ",
+        "{} trees   {total_children} children  ",
         trees.len()
     ))];
     if exited_roots > 0 {
         spans.push(Span::styled(
-            format!(" {exited_roots} root exited "),
+            format!(" {} {exited_roots} root exited ", icon::WARNING),
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Yellow)
+                .bg(theme::WARNING)
                 .add_modifier(Modifier::BOLD),
         ));
     }

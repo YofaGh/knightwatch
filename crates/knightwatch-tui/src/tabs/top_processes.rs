@@ -4,6 +4,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -314,9 +315,17 @@ fn render_summary(
         Some(n) => n.to_string(),
         None => "all".to_string(),
     };
-    let spans = vec![Span::raw(format!(
-        "{count} processes  ·  sorted by {}  ·  limit {limit_str}  ·  [c]pu [m]em [d]isk  ·  ] incr / [ decr limit  ·  [0] all",
-        sort_by.to_string()
-    ))];
+    let spans = vec![
+        Span::raw(format!("{count} processes   sorted by ")),
+        Span::styled(
+            sort_by.to_string(),
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "   limit {limit_str}   [c]pu [m]em [d]isk   ] incr / [ decr limit   [0] all"
+        )),
+    ];
     frame.render_widget(Paragraph::new(Line::from(spans)), inner);
 }

@@ -1,6 +1,6 @@
 // Shared building blocks for any tab that renders a list of
 // `ProcessSnapshot`s: a selectable/scrollable table (with mouse hit)
-// testing and a detail panel. 
+// testing and a detail panel.
 // `ProcessesTab` (tree view) and `TopProcessesTab` (flat, sorted
 // view) both build on this.
 
@@ -116,10 +116,10 @@ impl ProcessListState {
 
 pub fn state_color(state: &ProcessState) -> Color {
     match state {
-        ProcessState::Running => Color::Green,
-        ProcessState::Sleeping => Color::DarkGray,
-        ProcessState::Other(_) => Color::Yellow,
-        ProcessState::Gone => Color::Red,
+        ProcessState::Running => theme::SUCCESS,
+        ProcessState::Sleeping => theme::TEXT_MUTED,
+        ProcessState::Other(_) => theme::WARNING,
+        ProcessState::Gone => theme::DANGER,
     }
 }
 
@@ -166,16 +166,18 @@ pub fn render_process_table(
         .map(|(visible_i, (p, depth))| {
             let i = offset + visible_i;
             let is_selected = selected_idx == Some(i);
-            let marker = if is_selected { ">" } else { " " };
+            let marker = if is_selected { icon::CURSOR } else { " " };
             let row_style = if is_selected {
-                Style::default().add_modifier(Modifier::REVERSED)
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
             let indent = "  ".repeat(*depth);
 
             Row::new(vec![
-                Cell::from(marker),
+                Cell::from(marker).style(Style::default().fg(theme::ACCENT)),
                 Cell::from(p.pid.to_string()),
                 Cell::from(format!("{indent}{}", p.name)),
                 Cell::from(p.state.to_string()).style(Style::default().fg(state_color(&p.state))),
@@ -260,7 +262,11 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
 
     let mut idx = 0;
     frame.render_widget(
-        Paragraph::new(process.name.clone()).style(Style::default().add_modifier(Modifier::BOLD)),
+        Paragraph::new(process.name.clone()).style(
+            Style::default()
+                .fg(theme::TEXT)
+                .add_modifier(Modifier::BOLD),
+        ),
         rows[idx],
     );
     idx += 1;
@@ -292,7 +298,7 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
 
     frame.render_widget(
         Paragraph::new(format!("disk: {}", format_bytes(process.disk_usage)))
-            .style(Style::default().fg(Color::Gray)),
+            .style(Style::default().fg(theme::TEXT_DIM)),
         rows[idx],
     );
     idx += 1;
@@ -301,7 +307,7 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
 
     if let Some(cwd) = &process.cwd {
         frame.render_widget(
-            Paragraph::new(format!("cwd: {cwd}")).style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(format!("cwd: {cwd}")).style(Style::default().fg(theme::TEXT_MUTED)),
             rows[idx],
         );
         idx += 1;
@@ -310,7 +316,7 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
     if !process.cmdline.is_empty() {
         frame.render_widget(
             Paragraph::new(format!("cmd: {}", process.cmdline.join(" ")))
-                .style(Style::default().fg(Color::DarkGray)),
+                .style(Style::default().fg(theme::TEXT_MUTED)),
             rows[idx],
         );
         idx += 1;
@@ -325,7 +331,7 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
                 format_bytes(io.write_bytes),
                 format_bytes(io.write_chars),
             ))
-            .style(Style::default().fg(Color::Gray)),
+            .style(Style::default().fg(theme::TEXT_DIM)),
             rows[idx],
         );
         idx += 1;
@@ -340,7 +346,7 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
             .map(|fd| ListItem::new(format!("{:<4} {:<7} {}", fd.fd, fd.fd_type, fd.target)))
             .collect();
         frame.render_widget(
-            List::new(items).style(Style::default().fg(Color::Gray)),
+            List::new(items).style(Style::default().fg(theme::TEXT_DIM)),
             rows[idx],
         );
     }
@@ -623,11 +629,11 @@ impl ProcessActionsPanel {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let title = if self.focused {
-            "Actions ●"
+            format!("{} Actions", icon::CURSOR)
         } else {
-            "Actions"
+            "Actions".to_string()
         };
-        let inner = bordered_block(frame, area, title);
+        let inner = bordered_block_focused(frame, area, &title, self.focused);
 
         let items = self.visible_items();
         let mut hit_rects = Vec::with_capacity(items.len());
@@ -649,18 +655,20 @@ impl ProcessActionsPanel {
 
             let (text, style) = if is_confirming {
                 (
-                    format!("  {label} — confirm? [Enter] / [Esc]"),
+                    format!(" {} {label} — confirm? [Enter] / [Esc]", icon::WARNING),
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Red)
+                        .fg(theme::TEXT)
+                        .bg(theme::DANGER)
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
-                let marker = if is_selected { ">" } else { " " };
+                let marker = if is_selected { icon::CURSOR } else { " " };
                 let style = if is_selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
+                    Style::default()
+                        .fg(theme::ACCENT)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::Gray)
+                    Style::default().fg(theme::TEXT_DIM)
                 };
                 (format!("{marker} [{key}] {label}"), style)
             };
@@ -677,14 +685,7 @@ impl ProcessActionsPanel {
                     width: inner.width,
                     height: 1,
                 };
-                frame.render_widget(
-                    Paragraph::new(msg.clone()).style(Style::default().fg(if *is_err {
-                        Color::Red
-                    } else {
-                        Color::Green
-                    })),
-                    rect,
-                );
+                frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
             }
         }
 

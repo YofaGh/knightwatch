@@ -2,7 +2,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -19,6 +19,7 @@ use kw_clients::ApiClient;
 use crate::{
     events::{AppEvent, CommandOutcome},
     pollers::PollControl,
+    ui_helpers::{icon, theme},
 };
 
 type PollAction =
@@ -131,27 +132,38 @@ impl PollPanel {
 
         let ctrl = *self.control.lock().unwrap();
         let status = if ctrl.paused {
-            Span::styled("PAUSED", Style::default().fg(Color::Yellow))
+            Span::styled(
+                format!("{} paused", icon::DOT_OFF),
+                Style::default().fg(theme::WARNING),
+            )
         } else {
-            Span::styled("polling", Style::default().fg(Color::Green))
+            Span::styled(
+                format!("{} live", icon::DOT_ON),
+                Style::default().fg(theme::SUCCESS),
+            )
         };
 
         let mut spans = vec![
-            Span::raw("Poll: "),
+            Span::raw("Poll  "),
             status,
-            Span::raw(format!("  {}ms  ", ctrl.interval_ms)),
+            Span::styled(
+                format!("  {}ms  ", ctrl.interval_ms),
+                Style::default().fg(theme::TEXT_DIM),
+            ),
             Span::styled(
                 "[p] pause  [r] resume  [+/-] interval",
-                Style::default().fg(Color::Cyan),
+                Style::default().fg(theme::ACCENT),
             ),
         ];
 
         if let Some((msg, is_err)) = &self.last_result {
             spans.push(Span::raw("   "));
-            spans.push(Span::styled(
-                msg.clone(),
-                Style::default().fg(if *is_err { Color::Red } else { Color::Green }),
-            ));
+            let color = if *is_err {
+                theme::DANGER
+            } else {
+                theme::SUCCESS
+            };
+            spans.push(Span::styled(msg.clone(), Style::default().fg(color)));
         }
 
         frame.render_widget(Paragraph::new(Line::from(spans)), chunks[0]);
