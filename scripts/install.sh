@@ -51,6 +51,8 @@ resolve_bin_name() {
   case "$1" in
     knightwatch-cli) echo "kwctl" ;;
     kwctl) echo "kwctl" ;;
+    knightwatch-tui) echo "kwtui" ;;
+    kwtui) echo "kwtui" ;;
     *) echo "$1" ;;
   esac
 }
@@ -62,6 +64,7 @@ resolve_bin_name() {
 resolve_crate_name() {
   case "$1" in
     kwctl) echo "knightwatch-cli" ;;
+    kwtui) echo "knightwatch-tui" ;;
     *) echo "$1" ;;
   esac
 }

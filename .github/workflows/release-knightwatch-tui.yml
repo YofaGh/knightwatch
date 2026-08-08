@@ -1,0 +1,23 @@
+name: Release knightwatch-tui
+
+on:
+  push:
+    tags:
+      - 'knightwatch-tui/[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/_release.yml
+    with:
+      package: knightwatch-tui
+      bin_name: kwtui
+      linux_extra_deps: ""
+      build_msi: true
+      build_headless: false
+      homebrew_class: KnightwatchTui
+      homebrew_desc: "Terminal user interface for knightwatch"
+      latest: false
+    secrets: inherit

@@ -44,6 +44,8 @@ function Resolve-BinName {
     switch ($Package) {
         "knightwatch-cli" { return "kwctl" }
         "kwctl"           { return "kwctl" }
+        "knightwatch-tui" { return "kwtui" }
+        "kwtui"           { return "kwtui" }
         default           { return $Package }
     }
 }
@@ -55,6 +57,7 @@ function Resolve-CrateName {
     param([string]$Package)
     switch ($Package) {
         "kwctl"  { return "knightwatch-cli" }
+        "kwtui"  { return "knightwatch-tui" }
         default  { return $Package }
     }
 }
