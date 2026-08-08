@@ -4,6 +4,9 @@ use std::fmt;
 #[cfg(feature = "server")]
 use bollard::config::ContainerSummaryStateEnum;
 
+#[cfg(feature = "server")]
+use kw_utils::conv;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerSnapshot {
     pub id: String,
@@ -41,15 +44,14 @@ impl fmt::Display for ContainerSnapshot {
 
 #[cfg(feature = "server")]
 impl ContainerSnapshot {
+    #[must_use]
     pub fn from_summary(c: &bollard::models::ContainerSummary) -> Option<Self> {
         let id = c.id.clone()?;
         let short_id: String = id.chars().take(12).collect();
-        let name = c
-            .names
-            .as_deref()
-            .and_then(|n| n.first())
-            .map(|n| n.trim_start_matches('/').to_owned())
-            .unwrap_or_else(|| short_id.clone());
+        let name = c.names.as_deref().and_then(|n| n.first()).map_or_else(
+            || short_id.clone(),
+            |n| n.trim_start_matches('/').to_owned(),
+        );
         let image = c.image.clone().unwrap_or_default();
         let status = ContainerStatus::from_state_enum(c.state.as_ref());
         let health = ContainerHealth::from_status_str(c.status.as_deref().unwrap_or(""));
@@ -67,7 +69,7 @@ impl ContainerSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContainerStats {
-    /// CPU usage as a percentage of all available cores (0.0–100.0 * num_cpus).
+    /// CPU usage as a percentage of all available cores (0.0–100.0 * `num_cpus`).
     pub cpu_percent: f64,
     /// Current RSS-equivalent memory usage in bytes.
     pub memory_bytes: u64,
@@ -83,14 +85,15 @@ pub struct ContainerStats {
     pub block_read_bytes: u64,
     /// Cumulative bytes written to block devices.
     pub block_write_bytes: u64,
-    /// Number of processes/threads inside the container (from pids_stats).
+    /// Number of processes/threads inside the container (from `pids_stats`).
     pub pid_count: u64,
 }
 
 #[cfg(feature = "server")]
 impl ContainerStats {
     /// Calculate CPU % from two consecutive raw stat frames.
-    /// Docker's own formula: (cpu_delta / system_delta) * num_cpus * 100.
+    /// Docker's own formula: (`cpu_delta` / `system_delta`) * `num_cpus` * 100.
+    #[must_use]
     pub fn from_bollard(stats: &bollard::config::ContainerStatsResponse) -> Self {
         let cpu_percent = compute_cpu_percent(stats);
 
@@ -104,31 +107,25 @@ impl ContainerStats {
             .as_ref()
             .and_then(|m| m.limit)
             .unwrap_or(0);
-        let memory_percent = if memory_limit_bytes > 0 {
-            Some(memory_bytes as f64 / memory_limit_bytes as f64)
-        } else {
-            None
-        };
+        let memory_percent =
+            (memory_limit_bytes > 0).then(|| conv::u64_ratio_f64(memory_bytes, memory_limit_bytes));
 
-        let (net_rx_bytes, net_tx_bytes) = stats
-            .networks
-            .as_ref()
-            .map(|nets| {
-                nets.values().fold((0, 0), |(rx, tx), iface| {
+        let (net_bytes_received, net_bytes_sent) =
+            stats.networks.as_ref().map_or((0u64, 0u64), |nets| {
+                nets.values().fold((0u64, 0u64), |(rx, tx), iface| {
                     (
-                        rx + iface.rx_bytes.unwrap_or(0),
-                        tx + iface.tx_bytes.unwrap_or(0),
+                        rx.saturating_add(iface.rx_bytes.unwrap_or(0)),
+                        tx.saturating_add(iface.tx_bytes.unwrap_or(0)),
                     )
                 })
-            })
-            .unwrap_or((0, 0));
+            });
 
         let (block_read_bytes, block_write_bytes) = stats
             .blkio_stats
             .as_ref()
             .and_then(|blkio| blkio.io_service_bytes_recursive.as_ref())
-            .map(|entries| {
-                entries.iter().fold((0, 0), |(r, w), entry| {
+            .map_or((0u64, 0u64), |entries| {
+                entries.iter().fold((0u64, 0u64), |(r, w), entry| {
                     match entry
                         .op
                         .as_deref()
@@ -136,13 +133,12 @@ impl ContainerStats {
                         .to_lowercase()
                         .as_str()
                     {
-                        "read" => (r + entry.value.unwrap_or(0), w),
-                        "write" => (r, w + entry.value.unwrap_or(0)),
+                        "read" => (r.saturating_add(entry.value.unwrap_or(0)), w),
+                        "write" => (r, w.saturating_add(entry.value.unwrap_or(0))),
                         _ => (r, w),
                     }
                 })
-            })
-            .unwrap_or((0, 0));
+            });
 
         let pid_count = stats
             .pids_stats
@@ -155,8 +151,8 @@ impl ContainerStats {
             memory_bytes,
             memory_limit_bytes,
             memory_percent,
-            net_rx_bytes,
-            net_tx_bytes,
+            net_rx_bytes: net_bytes_received,
+            net_tx_bytes: net_bytes_sent,
             block_read_bytes,
             block_write_bytes,
             pid_count,
@@ -164,7 +160,7 @@ impl ContainerStats {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContainerStatus {
     Created,
@@ -180,6 +176,7 @@ pub enum ContainerStatus {
 
 #[cfg(feature = "server")]
 impl ContainerStatus {
+    #[must_use]
     pub fn from_state_enum(state: Option<&ContainerSummaryStateEnum>) -> Self {
         match state {
             Some(ContainerSummaryStateEnum::CREATED) => Self::Created,
@@ -211,7 +208,7 @@ impl fmt::Display for ContainerStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContainerHealth {
     /// No HEALTHCHECK defined in the image.
@@ -226,6 +223,7 @@ pub enum ContainerHealth {
 impl ContainerHealth {
     /// Parse from the `Status` string in `ContainerSummary.status`, which looks
     /// like `"Up 3 hours (healthy)"` or `"Up 5 minutes (unhealthy)"`.
+    #[must_use]
     pub fn from_status_str(status: &str) -> Self {
         let lower = status.to_lowercase();
         if lower.contains("(healthy)") {
@@ -252,7 +250,7 @@ impl fmt::Display for ContainerHealth {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DockerSortKey {
     Cpu,
@@ -281,6 +279,7 @@ impl fmt::Display for DockerSortKey {
 }
 
 #[cfg(feature = "server")]
+#[must_use]
 pub fn compute_cpu_percent(stats: &bollard::config::ContainerStatsResponse) -> f64 {
     let cpu = &stats.cpu_stats;
     let precpu = &stats.precpu_stats;
@@ -325,9 +324,8 @@ pub fn compute_cpu_percent(stats: &bollard::config::ContainerStatsResponse) -> f
             cpu.as_ref()
                 .and_then(|cpu| cpu.cpu_usage.as_ref())
                 .and_then(|cpu_usage| cpu_usage.percpu_usage.as_ref())
-                .map(|v| v.len() as u32)
-                .unwrap_or(1)
+                .map_or(1, |v| u32::try_from(v.len()).unwrap_or(u32::MAX))
         });
 
-    (cpu_delta as f64 / system_delta as f64) * num_cpus as f64 * 100.0
+    conv::u64_ratio_percent_f64(cpu_delta, system_delta) * f64::from(num_cpus)
 }

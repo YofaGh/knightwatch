@@ -3,13 +3,7 @@ use std::sync::{OnceLock, RwLock};
 static SESSIONS: OnceLock<RwLock<Sessions>> = OnceLock::new();
 
 pub fn get_sessions() -> &'static RwLock<Sessions> {
-    SESSIONS.get().expect("Sessions not initialized")
-}
-
-pub fn init_sessions() {
-    SESSIONS
-        .set(RwLock::new(Sessions::default()))
-        .expect("Sessions already initialized");
+    SESSIONS.get_or_init(|| RwLock::new(Sessions::default()))
 }
 
 #[derive(Debug)]

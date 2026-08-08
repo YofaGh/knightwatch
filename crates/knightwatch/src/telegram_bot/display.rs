@@ -5,7 +5,7 @@ use crate::{docker_tracker, process_tracker, systemd};
 
 pub struct TelegramDisplay<'a, T>(pub &'a T);
 
-impl<'a> std::fmt::Display for TelegramDisplay<'a, process_tracker::ProcessSnapshot> {
+impl std::fmt::Display for TelegramDisplay<'_, process_tracker::ProcessSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = self.0;
         write!(
@@ -41,7 +41,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, process_tracker::ProcessSnaps
     }
 }
 
-impl<'a> std::fmt::Display for TelegramDisplay<'a, process_tracker::ProcessTree> {
+impl std::fmt::Display for TelegramDisplay<'_, process_tracker::ProcessTree> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let t = self.0; // Header
         let status_icon = if t.work_done { "✅" } else { "⏳" };
@@ -67,7 +67,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, process_tracker::ProcessTree>
     }
 }
 
-impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::SystemSnapshot> {
+impl std::fmt::Display for TelegramDisplay<'_, crate::system_resources::SystemSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = self.0;
 
@@ -127,14 +127,14 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::Syst
             stotal = escape_mdv2(&format_bytes(s.memory.swap_total_bytes)),
         )?;
         if let Some(swap_pct) = s.memory.swap_used_percent {
-            write!(f, " \\(`{:.1}%`\\)", swap_pct)?;
+            write!(f, " \\(`{swap_pct:.1}%`\\)")?;
         }
         writeln!(f)?;
 
         // ── Disks ───────────────────────────────────────────────────────────
         if !s.disks.is_empty() {
             write!(f, "\n💾 *Disks*\n")?;
-            let last = s.disks.len() - 1;
+            let last = s.disks.len().saturating_sub(1);
             for (i, disk) in s.disks.iter().enumerate() {
                 let connector = if i == last { "└" } else { "├" };
                 writeln!(
@@ -156,7 +156,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::Syst
         // ── Networks ────────────────────────────────────────────────────────
         if !s.networks.is_empty() {
             writeln!(f, "\n🌐 *Network*")?;
-            let last = s.networks.len() - 1;
+            let last = s.networks.len().saturating_sub(1);
             for (i, net) in s.networks.iter().enumerate() {
                 let connector = if i == last { "└" } else { "├" };
                 writeln!(
@@ -173,7 +173,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::Syst
         // ── GPUs ────────────────────────────────────────────────────────────
         if !s.gpus.is_empty() {
             writeln!(f, "\n🎮 *GPU*")?;
-            let last = s.gpus.len() - 1;
+            let last = s.gpus.len().saturating_sub(1);
             for (i, gpu) in s.gpus.iter().enumerate() {
                 let connector = if i == last { "└" } else { "├" };
                 writeln!(f, "{connector} *{}*", escape_mdv2(&gpu.name))?;
@@ -249,13 +249,12 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::Syst
         // ── Thermals ────────────────────────────────────────────────────────
         if !s.temperatures.is_empty() {
             writeln!(f, "\n🌡️ *Thermals*")?;
-            let last = s.temperatures.len() - 1;
+            let last = s.temperatures.len().saturating_sub(1);
             for (i, t) in s.temperatures.iter().enumerate() {
                 let connector = if i == last { "└" } else { "├" };
                 let temp_str = t
                     .temperature_celsius
-                    .map(|v| format!("`{v:.1}°C`"))
-                    .unwrap_or_else(|| "`n/a`".into());
+                    .map_or_else(|| "`n/a`".into(), |v| format!("`{v:.1}°C`"));
                 let crit_str = t
                     .temperature_critical_celsius
                     .map(|v| format!(" \\(crit `{v:.1}°C`\\)"))
@@ -282,7 +281,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::system_resources::Syst
     }
 }
 
-impl<'a> std::fmt::Display for TelegramDisplay<'a, systemd::UnitSnapshot> {
+impl std::fmt::Display for TelegramDisplay<'_, systemd::UnitSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let u = self.0;
         let emoji = super::utils::unit_state_emoji(&u.active_state);
@@ -303,7 +302,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, systemd::UnitSnapshot> {
             writeln!(f, "   ├ Mem: `{}`", escape_mdv2(&format_bytes(mem)))?;
         }
         if let Some(cpu_ns) = u.cpu_usage_ns {
-            let cpu_secs = cpu_ns as f64 / 1_000_000_000.0;
+            let cpu_secs = std::time::Duration::from_nanos(cpu_ns).as_secs_f64();
             writeln!(f, "   ├ CPU time: `{cpu_secs:.2}s`")?;
         }
         if let Some(restarts) = u.restart_count {
@@ -320,11 +319,11 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, systemd::UnitSnapshot> {
     }
 }
 
-impl<'a> std::fmt::Display for TelegramDisplay<'a, systemd::SystemdSnapshot> {
+impl std::fmt::Display for TelegramDisplay<'_, systemd::SystemdSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = self.0;
 
-        writeln!(f, "🔧 *Systemd* — `{ts}`", ts = escape_mdv2(&s.timestamp),)?;
+        writeln!(f, "🔧 *Systemd* — `{ts}`", ts = escape_mdv2(&s.timestamp))?;
         writeln!(
             f,
             "├ 🟢 Active: `{active}`\n\
@@ -357,7 +356,7 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, systemd::SystemdSnapshot> {
     }
 }
 
-impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::docker_tracker::ContainerSnapshot> {
+impl std::fmt::Display for TelegramDisplay<'_, crate::docker_tracker::ContainerSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let c = self.0;
         let status_emoji = super::utils::container_status_emoji(&c.status);
@@ -391,16 +390,17 @@ impl<'a> std::fmt::Display for TelegramDisplay<'a, crate::docker_tracker::Contai
             Some(s) => {
                 writeln!(f, "   ├ CPU: `{:.1}%`", s.cpu_percent)?;
 
-                let mem_str = if let Some(pct) = s.memory_percent {
-                    format!(
-                        "`{}` / `{}` \\(`{:.1}%`\\)",
-                        escape_mdv2(&format_bytes(s.memory_bytes)),
-                        escape_mdv2(&format_bytes(s.memory_limit_bytes)),
-                        pct * 100.0,
-                    )
-                } else {
-                    format!("`{}`", escape_mdv2(&format_bytes(s.memory_bytes)))
-                };
+                let mem_str = s.memory_percent.map_or_else(
+                    || format!("`{}`", escape_mdv2(&format_bytes(s.memory_bytes))),
+                    |pct| {
+                        format!(
+                            "`{}` / `{}` \\(`{:.1}%`\\)",
+                            escape_mdv2(&format_bytes(s.memory_bytes)),
+                            escape_mdv2(&format_bytes(s.memory_limit_bytes)),
+                            pct * 100.0,
+                        )
+                    },
+                );
                 writeln!(f, "   ├ Mem: {mem_str}")?;
 
                 writeln!(

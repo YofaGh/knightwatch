@@ -18,7 +18,7 @@ pub struct PollControl {
 }
 
 impl PollControl {
-    pub fn new(interval_ms: u64) -> Self {
+    pub const fn new(interval_ms: u64) -> Self {
         Self {
             paused: false,
             interval_ms,
@@ -47,7 +47,9 @@ where
             let PollControl {
                 paused,
                 interval_ms,
-            } = *control.lock().unwrap();
+            } = *control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             if paused {
                 // Short sleep, not a full interval, so resuming is picked
@@ -59,7 +61,11 @@ where
             tokio::time::sleep(Duration::from_millis(interval_ms)).await;
 
             // Pause could have happened while we were sleeping.
-            if control.lock().unwrap().paused {
+            if control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .paused
+            {
                 continue;
             }
 
@@ -91,10 +97,12 @@ pub fn spawn_screen_poller(
     spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
-            match api.screenshot().await.map(|r| r.screens) {
-                Ok(screenshots) => Some(AppEvent::ScreenImages(screenshots)),
-                Err(_) => None,
-            }
+            api.screenshot()
+                .await
+                .map(|r| r.screens)
+                .map_or(None, |screenshots| {
+                    Some(AppEvent::ScreenImages(screenshots))
+                })
         }
     });
 }
@@ -107,10 +115,9 @@ pub fn spawn_system_resources_poller(
     spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
-            match api.system_snapshot().await {
-                Ok(snapshot) => Some(AppEvent::SystemSnapshot(Box::new(snapshot))),
-                Err(_) => None,
-            }
+            api.system_snapshot().await.map_or(None, |snapshot| {
+                Some(AppEvent::SystemSnapshot(Box::new(snapshot)))
+            })
         }
     });
 }
@@ -123,10 +130,9 @@ pub fn spawn_docker_poller(
     spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
-            match api.docker_containers().await {
-                Ok(snapshot) => Some(AppEvent::DockerContainers(snapshot)),
-                Err(_) => None,
-            }
+            api.docker_containers()
+                .await
+                .map_or(None, |snapshot| Some(AppEvent::DockerContainers(snapshot)))
         }
     });
 }
@@ -139,10 +145,9 @@ pub fn spawn_systemd_poller(
     spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
-            match api.systemd_snapshot().await {
-                Ok(snapshot) => Some(AppEvent::SystemdSnapshot(snapshot)),
-                Err(_) => None,
-            }
+            api.systemd_snapshot()
+                .await
+                .map_or(None, |snapshot| Some(AppEvent::SystemdSnapshot(snapshot)))
         }
     });
 }
@@ -155,10 +160,9 @@ pub fn spawn_process_trees_poller(
     spawn_poller(tx, control, move || {
         let api = api.clone();
         async move {
-            match api.process_trees().await {
-                Ok(process_trees) => Some(AppEvent::ProcessTrees(process_trees)),
-                Err(_) => None,
-            }
+            api.process_trees().await.map_or(None, |process_trees| {
+                Some(AppEvent::ProcessTrees(process_trees))
+            })
         }
     });
 }
@@ -173,11 +177,14 @@ pub fn spawn_top_processes_poller(
         let api = api.clone();
         let config = poll_config.clone();
         async move {
-            let cfg = *config.lock().unwrap(); // Copy, so this is instant, no await while holding the lock
-            match api.top_processes(cfg.sort, cfg.limit).await {
-                Ok(top_processes) => Some(AppEvent::TopProcesses(top_processes)),
-                Err(_) => None,
-            }
+            let cfg = *config
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            api.top_processes(cfg.sort, cfg.limit)
+                .await
+                .map_or(None, |top_processes| {
+                    Some(AppEvent::TopProcesses(top_processes))
+                })
         }
     });
 }

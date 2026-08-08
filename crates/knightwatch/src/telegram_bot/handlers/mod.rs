@@ -66,12 +66,9 @@ pub async fn handle_help(bot: Bot, msg: Message) -> Result<()> {
 }
 
 pub async fn handle_stop(bot: Bot, msg: Message, cancel_token: CancellationToken) -> Result<()> {
-    if !crate::prelude::get_config().args.enable_shutdown {
-        bot.send_message(
-            msg.chat.id,
-            "🛑 Stopping Knight Watch is disabled.",
-        )
-        .await?;
+    if !get_config().args.enable_shutdown {
+        bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch is disabled.")
+            .await?;
         return Ok(());
     }
     bot.send_message(msg.chat.id, "🛑 Stopping Knight Watch…")
@@ -88,9 +85,8 @@ pub async fn handle_plain_message(
     state: State,
 ) -> Result<()> {
     let msg_clone = msg.clone();
-    let text = match msg_clone.text() {
-        Some(t) => t,
-        None => return Ok(()),
+    let Some(text) = msg_clone.text() else {
+        return Ok(());
     };
     let chat_state = state.get_chat_state(msg.chat.id);
     if chat_state == ChatState::AwaitingUnitName && text != "❌ Cancel" {
@@ -105,89 +101,26 @@ pub async fn handle_plain_message(
         return handle_poll_interval_input(bot, msg, state, subsystem, text.to_string()).await;
     }
 
+    if dispatch_core_menu(&bot, &msg, &state, text).await? {
+        return Ok(());
+    }
+    if dispatch_systemd_menu(&bot, &msg, &state, text).await? {
+        return Ok(());
+    }
+    if dispatch_docker_menu(&bot, &msg, &state, text).await? {
+        return Ok(());
+    }
+    if dispatch_polling_menu(&bot, &msg, &state, text).await? {
+        return Ok(());
+    }
+    if dispatch_polling_pause_resume(&bot, &msg, &state, text).await? {
+        return Ok(());
+    }
+    if dispatch_polling_interval(&bot, &msg, &state, text).await? {
+        return Ok(());
+    }
+
     match text {
-        "📋 Help" => handle_help(bot, msg).await?,
-        "🖼️ Screenshot" => handle_screenshot(bot, msg, state).await?,
-        "🖥️ System Resources" => handle_system_resources(bot, msg, state).await?,
-        "📊 Process" => handle_process(bot, msg, state).await?,
-        "📊 Top Processes" => handle_top_processes_menu(bot, msg, state).await?,
-        "🔥 By CPU" => handle_top_processes_by(bot, msg, ProcessesSortKey::Cpu).await?,
-        "🧠 By Memory" => handle_top_processes_by(bot, msg, ProcessesSortKey::Memory).await?,
-        "💾 By Disk" => handle_top_processes_by(bot, msg, ProcessesSortKey::Disk).await?,
-        "🔧 Systemd" => handle_systemd_menu(bot, msg, state).await?,
-        "📋 Systemd Overview" => handle_systemd_overview(bot, msg).await?,
-        "🔴 Failed Units" => handle_systemd_failed(bot, msg).await?,
-        "🔍 Unit Status" => handle_systemd_unit_prompt(bot, msg, state).await?,
-        "🐳 Docker" => handle_docker_menu(bot, msg, state).await?,
-        "📋 Docker Containers" => handle_docker_list(bot, msg, state).await?,
-        "🔥 By CPU (Docker)" => handle_docker_top(bot, msg, state, DockerSortKey::Cpu).await?,
-        "🧠 By Memory (Docker)" => {
-            handle_docker_top(bot, msg, state, DockerSortKey::Memory).await?
-        }
-        "⚙️ Settings" => handle_settings_menu(bot, msg, state).await?,
-        "⏱️ Polling" => handle_polling_menu(bot, msg, state).await?,
-        // Subsystem polling pickers
-        "⏱️ Process Tracker Polling" => {
-            handle_subsystem_polling_menu(bot, msg, state, Subsystem::ProcessTracker).await?
-        }
-        "⏱️ Screen Capture Polling" => {
-            handle_subsystem_polling_menu(bot, msg, state, Subsystem::ScreenCapture).await?
-        }
-        "⏱️ System Resources Polling" => {
-            handle_subsystem_polling_menu(bot, msg, state, Subsystem::SystemResources).await?
-        }
-        "⏱️ Systemd Polling" => {
-            handle_subsystem_polling_menu(bot, msg, state, Subsystem::Systemd).await?
-        }
-        "⏱️ Docker Tracker Polling" => {
-            handle_subsystem_polling_menu(bot, msg, state, Subsystem::DockerTracker).await?
-        }
-        // Per-subsystem pause
-        "⏸️ Pause Process Tracker" => {
-            handle_pause_polling(bot, msg, state, Subsystem::ProcessTracker).await?
-        }
-        "⏸️ Pause Screen Capture" => {
-            handle_pause_polling(bot, msg, state, Subsystem::ScreenCapture).await?
-        }
-        "⏸️ Pause System Resources" => {
-            handle_pause_polling(bot, msg, state, Subsystem::SystemResources).await?
-        }
-        "⏸️ Pause Systemd" => handle_pause_polling(bot, msg, state, Subsystem::Systemd).await?,
-        "⏸️ Pause Docker Tracker" => {
-            handle_pause_polling(bot, msg, state, Subsystem::DockerTracker).await?
-        }
-        // Per-subsystem resume
-        "▶️ Resume Process Tracker" => {
-            handle_resume_polling(bot, msg, state, Subsystem::ProcessTracker).await?
-        }
-        "▶️ Resume Screen Capture" => {
-            handle_resume_polling(bot, msg, state, Subsystem::ScreenCapture).await?
-        }
-        "▶️ Resume System Resources" => {
-            handle_resume_polling(bot, msg, state, Subsystem::SystemResources).await?
-        }
-        "▶️ Resume Systemd" => {
-            handle_resume_polling(bot, msg, state, Subsystem::Systemd).await?
-        }
-        "▶️ Resume Docker Tracker" => {
-            handle_resume_polling(bot, msg, state, Subsystem::DockerTracker).await?
-        }
-        // Per-subsystem set interval
-        "🕐 Set Process Tracker Interval" => {
-            handle_poll_interval_prompt(bot, msg, state, Subsystem::ProcessTracker).await?
-        }
-        "🕐 Set Screen Capture Interval" => {
-            handle_poll_interval_prompt(bot, msg, state, Subsystem::ScreenCapture).await?
-        }
-        "🕐 Set System Resources Interval" => {
-            handle_poll_interval_prompt(bot, msg, state, Subsystem::SystemResources).await?
-        }
-        "🕐 Set Systemd Interval" => {
-            handle_poll_interval_prompt(bot, msg, state, Subsystem::Systemd).await?
-        }
-        "🕐 Set Docker Tracker Interval" => {
-            handle_poll_interval_prompt(bot, msg, state, Subsystem::DockerTracker).await?
-        }
         "🔑 Authenticate" => handle_auth_prompt(bot, msg, state).await?,
         "❌ Cancel" => {
             state.set_chat_state_idle(msg.chat.id);
@@ -207,4 +140,296 @@ pub async fn handle_plain_message(
         }
     }
     Ok(())
+}
+
+async fn dispatch_core_menu(bot: &Bot, msg: &Message, state: &State, text: &str) -> Result<bool> {
+    match text {
+        "📋 Help" => {
+            handle_help(bot.clone(), msg.clone()).await?;
+        }
+        "🖼️ Screenshot" => {
+            handle_screenshot(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "🖥️ System Resources" => {
+            handle_system_resources(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "📊 Process" => {
+            handle_process(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "📊 Top Processes" => {
+            handle_top_processes_menu(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "🔥 By CPU" => {
+            handle_top_processes_by(bot.clone(), msg.clone(), ProcessesSortKey::Cpu).await?;
+        }
+        "🧠 By Memory" => {
+            handle_top_processes_by(bot.clone(), msg.clone(), ProcessesSortKey::Memory).await?;
+        }
+        "💾 By Disk" => {
+            handle_top_processes_by(bot.clone(), msg.clone(), ProcessesSortKey::Disk).await?;
+        }
+        "⚙️ Settings" => {
+            handle_settings_menu(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+async fn dispatch_systemd_menu(
+    bot: &Bot,
+    msg: &Message,
+    state: &State,
+    text: &str,
+) -> Result<bool> {
+    match text {
+        "🔧 Systemd" => {
+            handle_systemd_menu(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "📋 Systemd Overview" => {
+            handle_systemd_overview(bot.clone(), msg.clone()).await?;
+        }
+        "🔴 Failed Units" => {
+            handle_systemd_failed(bot.clone(), msg.clone()).await?;
+        }
+        "🔍 Unit Status" => {
+            handle_systemd_unit_prompt(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+async fn dispatch_docker_menu(bot: &Bot, msg: &Message, state: &State, text: &str) -> Result<bool> {
+    match text {
+        "🐳 Docker" => {
+            handle_docker_menu(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "📋 Docker Containers" => {
+            handle_docker_list(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "🔥 By CPU (Docker)" => {
+            handle_docker_top(bot.clone(), msg.clone(), state.clone(), DockerSortKey::Cpu).await?;
+        }
+        "🧠 By Memory (Docker)" => {
+            handle_docker_top(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                DockerSortKey::Memory,
+            )
+            .await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+async fn dispatch_polling_menu(
+    bot: &Bot,
+    msg: &Message,
+    state: &State,
+    text: &str,
+) -> Result<bool> {
+    match text {
+        "⏱️ Polling" => {
+            handle_polling_menu(bot.clone(), msg.clone(), state.clone()).await?;
+        }
+        "⏱️ Process Tracker Polling" => {
+            handle_subsystem_polling_menu(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ProcessTracker,
+            )
+            .await?;
+        }
+        "⏱️ Screen Capture Polling" => {
+            handle_subsystem_polling_menu(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ScreenCapture,
+            )
+            .await?;
+        }
+        "⏱️ System Resources Polling" => {
+            handle_subsystem_polling_menu(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::SystemResources,
+            )
+            .await?;
+        }
+        "⏱️ Systemd Polling" => {
+            handle_subsystem_polling_menu(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::Systemd,
+            )
+            .await?;
+        }
+        "⏱️ Docker Tracker Polling" => {
+            handle_subsystem_polling_menu(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::DockerTracker,
+            )
+            .await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+async fn dispatch_polling_pause_resume(
+    bot: &Bot,
+    msg: &Message,
+    state: &State,
+    text: &str,
+) -> Result<bool> {
+    match text {
+        "⏸️ Pause Process Tracker" => {
+            handle_pause_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ProcessTracker,
+            )
+            .await?;
+        }
+        "⏸️ Pause Screen Capture" => {
+            handle_pause_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ScreenCapture,
+            )
+            .await?;
+        }
+        "⏸️ Pause System Resources" => {
+            handle_pause_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::SystemResources,
+            )
+            .await?;
+        }
+        "⏸️ Pause Systemd" => {
+            handle_pause_polling(bot.clone(), msg.clone(), state.clone(), Subsystem::Systemd)
+                .await?;
+        }
+        "⏸️ Pause Docker Tracker" => {
+            handle_pause_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::DockerTracker,
+            )
+            .await?;
+        }
+        "▶️ Resume Process Tracker" => {
+            handle_resume_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ProcessTracker,
+            )
+            .await?;
+        }
+        "▶️ Resume Screen Capture" => {
+            handle_resume_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ScreenCapture,
+            )
+            .await?;
+        }
+        "▶️ Resume System Resources" => {
+            handle_resume_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::SystemResources,
+            )
+            .await?;
+        }
+        "▶️ Resume Systemd" => {
+            handle_resume_polling(bot.clone(), msg.clone(), state.clone(), Subsystem::Systemd)
+                .await?;
+        }
+        "▶️ Resume Docker Tracker" => {
+            handle_resume_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::DockerTracker,
+            )
+            .await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+async fn dispatch_polling_interval(
+    bot: &Bot,
+    msg: &Message,
+    state: &State,
+    text: &str,
+) -> Result<bool> {
+    match text {
+        "🕐 Set Process Tracker Interval" => {
+            handle_poll_interval_prompt(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ProcessTracker,
+            )
+            .await?;
+        }
+        "🕐 Set Screen Capture Interval" => {
+            handle_poll_interval_prompt(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::ScreenCapture,
+            )
+            .await?;
+        }
+        "🕐 Set System Resources Interval" => {
+            handle_poll_interval_prompt(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::SystemResources,
+            )
+            .await?;
+        }
+        "🕐 Set Systemd Interval" => {
+            handle_poll_interval_prompt(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::Systemd,
+            )
+            .await?;
+        }
+        "🕐 Set Docker Tracker Interval" => {
+            handle_poll_interval_prompt(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::DockerTracker,
+            )
+            .await?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
 }

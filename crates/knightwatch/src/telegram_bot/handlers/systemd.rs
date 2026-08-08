@@ -22,10 +22,10 @@ pub async fn handle_systemd_menu(bot: Bot, msg: Message, state: State) -> Result
 
 pub async fn handle_systemd_overview(bot: Bot, msg: Message) -> Result<()> {
     let snapshot = systemd::get_snapshot().await;
-    let message = match snapshot {
-        Some(snap) => TelegramDisplay(&snap).to_string(),
-        None => escape_mdv2("⚠️ No systemd snapshot available."),
-    };
+    let message = snapshot.map_or_else(
+        || escape_mdv2("⚠️ No systemd snapshot available."),
+        |snap| TelegramDisplay(&snap).to_string(),
+    );
     bot.send_message(msg.chat.id, message)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ReplyMarkup::Keyboard(systemd_keyboard()))
@@ -68,10 +68,10 @@ pub async fn handle_systemd_unit_lookup(
 ) -> Result<()> {
     state.set_chat_state_idle(msg.chat.id);
     let unit = systemd::get_unit(unit_name.clone()).await;
-    let message = match unit {
-        Some(u) => TelegramDisplay(&u).to_string(),
-        None => format!("❓ Unit `{}` not found\\.", escape_mdv2(&unit_name)),
-    };
+    let message = unit.map_or_else(
+        || format!("❓ Unit `{}` not found\\.", escape_mdv2(&unit_name)),
+        |u| TelegramDisplay(&u).to_string(),
+    );
     bot.send_message(msg.chat.id, message)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ReplyMarkup::Keyboard(systemd_keyboard()))

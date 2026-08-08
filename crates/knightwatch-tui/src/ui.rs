@@ -5,6 +5,8 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
 };
 
+use kw_utils::conv::usize_to_u16_saturating;
+
 use crate::ui_helpers::{icon, theme};
 
 pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
@@ -25,8 +27,11 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
 
-    let nav_area = chunks[0];
-    let content_area = chunks[1];
+    let [nav_area, content_area] = chunks.as_ref() else {
+        return;
+    };
+    let nav_area = *nav_area;
+    let content_area = *content_area;
 
     // ── Nav bar ── same rounded/cyan/◈ language as the login dialog, so
     // the app doesn't visually "change products" once you're past it.
@@ -47,17 +52,21 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     // Right-hand cluster: telegram status (only when active) + shutdown.
     let shutdown_label = format!(" {} Shutdown ", icon::POWER);
     let telegram_label = format!(" {} Telegram ", icon::BOT);
-    let mut right_width = shutdown_label.chars().count() as u16;
+    let mut right_width = usize_to_u16_saturating(shutdown_label.chars().count());
     if app.telegram_bot {
-        right_width += telegram_label.chars().count() as u16;
+        right_width =
+            right_width.saturating_add(usize_to_u16_saturating(telegram_label.chars().count()));
     }
 
     let nav_cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(0), Constraint::Length(right_width)])
         .split(inner_nav_area);
-    let tabs_area = nav_cols[0];
-    let right_area = nav_cols[1];
+    let [tabs_area, right_area] = nav_cols.as_ref() else {
+        return;
+    };
+    let tabs_area = *tabs_area;
+    let right_area = *right_area;
 
     let mut spans = Vec::new();
     app.tab_hit_rects.clear();
@@ -71,9 +80,10 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
         // Reserve the same width whether or not the cursor glyph shows,
         // so hit-testing lines up with what's drawn either way.
         let label = format!(" {title} ");
-        let width = label.chars().count() as u16;
-        app.tab_hit_rects.push((current_x, current_x + width));
-        current_x += width;
+        let width = usize_to_u16_saturating(label.chars().count());
+        app.tab_hit_rects
+            .push((current_x, current_x.saturating_add(width)));
+        current_x = current_x.saturating_add(width);
 
         let style = if is_selected {
             Style::default()
@@ -87,7 +97,7 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
 
         if i < last {
             spans.push(Span::styled("│", Style::default().fg(theme::ACCENT_MUTED)));
-            current_x += 1;
+            current_x = current_x.saturating_add(1);
         }
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), tabs_area);
@@ -114,9 +124,11 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     );
 
     if app.logged_in() {
-        let shutdown_width = shutdown_label.chars().count() as u16;
+        let shutdown_width = usize_to_u16_saturating(shutdown_label.chars().count());
         app.shutdown_hit_rect = Some(Rect {
-            x: right_area.x + right_area.width.saturating_sub(shutdown_width),
+            x: right_area
+                .x
+                .saturating_add(right_area.width.saturating_sub(shutdown_width)),
             y: right_area.y,
             width: shutdown_width.min(right_area.width),
             height: 1,

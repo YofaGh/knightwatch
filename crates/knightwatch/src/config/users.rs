@@ -19,7 +19,7 @@ pub struct Users {
 
 impl JsonStore for Users {
     const NAME: &'static str = "users";
-    fn path() -> std::path::PathBuf {
+    fn path() -> Option<std::path::PathBuf> {
         super::paths::data_file_path("users.json")
     }
 }
@@ -34,7 +34,10 @@ impl Users {
     }
 
     pub fn get_telegram_chat_ids(&self) -> Vec<i64> {
-        self.users.iter().filter_map(|u| u.telegram_chat_id).collect()
+        self.users
+            .iter()
+            .filter_map(|u| u.telegram_chat_id)
+            .collect()
     }
 
     pub fn add(&mut self, user: User) -> Result<()> {
@@ -50,7 +53,7 @@ impl Users {
 
     pub fn remove(&mut self, username: &str) -> Result<()> {
         if self.find(username).is_none() {
-            return Err(Error::Config(format!("User '{}' not found", username)));
+            return Err(Error::Config(format!("User '{username}' not found")));
         }
         self.users.retain(|u| u.username != username);
         Ok(())
@@ -78,8 +81,8 @@ pub fn hash_password(password: &str) -> Result<String> {
 
 static USERS: OnceLock<Users> = OnceLock::new();
 
-pub fn get_users() -> &'static Users {
-    USERS.get().expect("Users not initialized")
+pub fn get_users() -> Option<&'static Users> {
+    USERS.get()
 }
 
 pub fn load_users() -> Result<()> {
@@ -90,9 +93,9 @@ pub fn load_users() -> Result<()> {
     Ok(())
 }
 
-pub fn set_user_chat_id(token: String, chat_id: i64) -> Result<bool> {
+pub fn set_user_chat_id(token: &str, chat_id: i64) -> Result<bool> {
     let mut users = Users::load()?;
-    if let Some(user) = users.find_by_telegram_token_mut(&token) {
+    if let Some(user) = users.find_by_telegram_token_mut(token) {
         user.telegram_chat_id = Some(chat_id);
         users.save()?;
         Ok(true)

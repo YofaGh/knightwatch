@@ -11,15 +11,18 @@ use std::sync::{Arc, Mutex};
 use kw_types::systemd::{UnitActiveState, UnitLoadState, UnitSnapshot};
 use kw_utils::format_bytes;
 
-use crate::{events::AppEvent, poll_panel::PollPanel, ui_helpers::*};
+use crate::{
+    events::AppEvent,
+    poll_panel::PollPanel,
+    ui_helpers::{bordered_block, empty_note, icon, mouse_hit, theme, waiting_placeholder},
+};
 
 pub struct SystemdTab {
     units: Vec<UnitSnapshot>,
     failed_count: u32,
     active_count: u32,
     inactive_count: u32,
-    /// Persists the user's selection (by unit name) across snapshot
-    /// updates, mirroring how `DockerTab` keeps `selected_id` sticky.
+    /// Persists the user's selection (by unit name) across snapshot updates.
     selected_name: Option<String>,
     /// Screen-space rects of the table rows from the last render, tagged
     /// with the unit name they represent, for mouse hit testing.
@@ -69,9 +72,17 @@ impl SystemdTab {
             .as_ref()
             .and_then(|name| self.units.iter().position(|u| &u.unit_name == name))
             .unwrap_or(0);
-        let len = self.units.len() as i32;
-        let next = (current as i32 + delta).rem_euclid(len) as usize;
-        self.selected_name = Some(self.units[next].unit_name.clone());
+
+        let len = i64::try_from(self.units.len()).unwrap_or(i64::MAX);
+        let current = i64::try_from(current).unwrap_or(0);
+        let next = current
+            .checked_add(i64::from(delta))
+            .unwrap_or(current)
+            .rem_euclid(len);
+        let next = usize::try_from(next).unwrap_or(0);
+        if let Some(unit) = self.units.get(next) {
+            self.selected_name = Some(unit.unit_name.clone());
+        }
     }
 }
 
@@ -88,7 +99,7 @@ impl super::Tab for SystemdTab {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     for (rect, name) in &self.row_hit_rects {
-                        if mouse_hit(mouse, rect) {
+                        if mouse_hit(*mouse, *rect) {
                             self.selected_name = Some(name.clone());
                             return true;
                         }
@@ -128,7 +139,7 @@ impl super::Tab for SystemdTab {
     fn handle_app_event(&mut self, event: &AppEvent) -> bool {
         match event {
             AppEvent::SystemdSnapshot(snapshot) => {
-                self.units = snapshot.units.clone();
+                self.units.clone_from(&snapshot.units);
                 self.failed_count = snapshot.failed_count;
                 self.active_count = snapshot.active_count;
                 self.inactive_count = snapshot.inactive_count;
@@ -161,12 +172,19 @@ impl super::Tab for SystemdTab {
             .as_ref()
             .and_then(|name| self.units.iter().position(|u| &u.unit_name == name))
             .unwrap_or(0);
-        self.selected_name = Some(self.units[selected_idx].unit_name.clone());
+        let Some(selected_unit_name) = self.units.get(selected_idx).map(|u| u.unit_name.clone())
+        else {
+            return;
+        };
+        self.selected_name = Some(selected_unit_name);
 
         let outer = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area);
+        let Ok(outer): Result<[Rect; 2], _> = outer.as_ref().try_into() else {
+            return;
+        };
 
         render_summary(
             frame,
@@ -180,6 +198,9 @@ impl super::Tab for SystemdTab {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(outer[1]);
+        let Ok(main): Result<[Rect; 2], _> = main.as_ref().try_into() else {
+            return;
+        };
 
         let (hit_rects, scroll_offset) = render_table(
             frame,
@@ -190,14 +211,18 @@ impl super::Tab for SystemdTab {
         );
         self.row_hit_rects = hit_rects;
         self.scroll_offset = scroll_offset;
-        render_detail(frame, main[1], &self.units[selected_idx]);
+
+        let Some(selected_unit) = self.units.get(selected_idx) else {
+            return;
+        };
+        render_detail(frame, main[1], selected_unit);
     }
 }
 
-fn active_state_icon(state: &UnitActiveState) -> &'static str {
+const fn active_state_icon(state: &UnitActiveState) -> &'static str {
     match state {
-        UnitActiveState::Active => icon::DOT_ON,
-        UnitActiveState::Reloading
+        UnitActiveState::Active
+        | UnitActiveState::Reloading
         | UnitActiveState::Activating
         | UnitActiveState::Deactivating => icon::DOT_ON,
         UnitActiveState::Inactive => icon::DOT_OFF,
@@ -205,7 +230,7 @@ fn active_state_icon(state: &UnitActiveState) -> &'static str {
     }
 }
 
-fn active_state_color(state: &UnitActiveState) -> Color {
+const fn active_state_color(state: &UnitActiveState) -> Color {
     match state {
         UnitActiveState::Active => theme::SUCCESS,
         UnitActiveState::Reloading
@@ -216,7 +241,7 @@ fn active_state_color(state: &UnitActiveState) -> Color {
     }
 }
 
-fn load_state_color(state: &UnitLoadState) -> Color {
+const fn load_state_color(state: &UnitLoadState) -> Color {
     match state {
         UnitLoadState::Loaded => theme::SUCCESS,
         UnitLoadState::NotFound => theme::TEXT_MUTED,
@@ -226,7 +251,7 @@ fn load_state_color(state: &UnitLoadState) -> Color {
 }
 
 fn format_cpu_ns(ns: u64) -> String {
-    let secs = ns as f64 / 1_000_000_000.0;
+    let secs = kw_utils::conv::u64_to_f64_lossy(ns) / 1_000_000_000.0;
     if secs >= 1.0 {
         format!("{secs:.2}s")
     } else {
@@ -274,19 +299,19 @@ fn render_table(
     selected_idx: usize,
     scroll_offset: usize,
 ) -> (Vec<(Rect, String)>, usize) {
-    let title = format!("Units ({}/{})", selected_idx + 1, units.len());
+    let title = format!("Units ({}/{})", selected_idx.saturating_add(1), units.len());
     let inner = bordered_block(frame, area, &title);
-    let visible_rows = inner.height.saturating_sub(1) as usize;
+    let visible_rows = usize::from(inner.height.saturating_sub(1));
     let max_offset = units.len().saturating_sub(visible_rows.max(1));
     let mut offset = scroll_offset.min(max_offset);
     if selected_idx < offset {
         offset = selected_idx;
-    } else if visible_rows > 0 && selected_idx >= offset + visible_rows {
-        offset = selected_idx + 1 - visible_rows;
+    } else if visible_rows > 0 && selected_idx >= offset.saturating_add(visible_rows) {
+        offset = selected_idx.saturating_add(1).saturating_sub(visible_rows);
     }
 
-    let end = (offset + visible_rows).min(units.len());
-    let visible_units = &units[offset..end];
+    let end = (offset.saturating_add(visible_rows)).min(units.len());
+    let visible_units = units.get(offset..end).unwrap_or(&[]);
 
     let header = Row::new(vec!["", "Unit", "Type", "Load", "Active", "Sub", "Mem"])
         .style(Style::default().add_modifier(Modifier::BOLD));
@@ -295,7 +320,7 @@ fn render_table(
         .iter()
         .enumerate()
         .map(|(visible_i, u)| {
-            let i = offset + visible_i;
+            let i = offset.saturating_add(visible_i);
             let is_selected = i == selected_idx;
             let marker = if is_selected { icon::CURSOR } else { " " };
 
@@ -307,10 +332,10 @@ fn render_table(
                 Style::default()
             };
 
-            let mem_cell = match u.memory_bytes {
-                Some(bytes) => Cell::from(format_bytes(bytes)),
-                None => Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
-            };
+            let mem_cell = u.memory_bytes.map_or_else(
+                || Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
+                |bytes| Cell::from(format_bytes(bytes)),
+            );
 
             Row::new(vec![
                 Cell::from(marker).style(Style::default().fg(theme::ACCENT)),
@@ -348,8 +373,11 @@ fn render_table(
         .iter()
         .enumerate()
         .filter_map(|(visible_i, u)| {
-            let y = inner.y + 1 + visible_i as u16;
-            if y >= inner.y + inner.height {
+            let y = inner
+                .y
+                .saturating_add(kw_utils::conv::usize_to_u16_saturating(visible_i))
+                .saturating_add(1);
+            if y >= inner.y.saturating_add(inner.height) {
                 return None;
             }
             Some((
@@ -387,6 +415,9 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
             Constraint::Min(0),    // fragment path
         ])
         .split(inner);
+    let Ok(rows): Result<[Rect; 12], _> = rows.as_ref().try_into() else {
+        return;
+    };
 
     frame.render_widget(
         Paragraph::new(unit.unit_name.clone()).style(

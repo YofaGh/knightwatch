@@ -11,18 +11,20 @@ use tokio::sync::mpsc::Sender;
 
 use kw_clients::ApiClient;
 use kw_types::docker::{ContainerHealth, ContainerSnapshot, ContainerStatus};
-use kw_utils::format_bytes;
+use kw_utils::{conv, format_bytes};
 
 use crate::{
     events::{AppEvent, CommandOutcome},
     poll_panel::PollPanel,
-    ui_helpers::*,
+    ui_helpers::{
+        bar, bordered_block, bordered_block_focused, empty_note, icon, mouse_hit, percent_color,
+        percent_gauge, result_line, theme, waiting_placeholder,
+    },
 };
 
 pub struct DockerTab {
     containers: Vec<ContainerSnapshot>,
     /// Persists the user's selection (by container id) across snapshot
-    /// updates, mirroring how `ScreenTab` keeps `primary_monitor_id` sticky.
     selected_id: Option<String>,
     /// Screen-space rects of the table rows from the last render, tagged
     /// with the container id they represent, for mouse hit testing.
@@ -68,9 +70,15 @@ impl DockerTab {
             .as_ref()
             .and_then(|id| self.containers.iter().position(|c| &c.id == id))
             .unwrap_or(0);
-        let len = self.containers.len() as i32;
-        let next = (current as i32 + delta).rem_euclid(len) as usize;
-        self.selected_id = Some(self.containers[next].id.clone());
+        let len = conv::usize_to_i32_saturating(self.containers.len());
+        let next = conv::i32_to_usize_saturating(
+            conv::usize_to_i32_saturating(current)
+                .saturating_add(delta)
+                .rem_euclid(len),
+        );
+        if let Some(container) = self.containers.get(next) {
+            self.selected_id = Some(container.id.clone());
+        }
     }
 }
 
@@ -113,7 +121,7 @@ impl super::Tab for DockerTab {
                     return false;
                 }
                 for (rect, id) in &self.row_hit_rects {
-                    if mouse_hit(mouse, rect) {
+                    if mouse_hit(*mouse, *rect) {
                         self.selected_id = Some(id.clone());
                         self.actions.focused = false;
                         return true;
@@ -144,7 +152,7 @@ impl super::Tab for DockerTab {
     fn handle_app_event(&mut self, event: &AppEvent) -> bool {
         match event {
             AppEvent::DockerContainers(containers) => {
-                self.containers = containers.clone();
+                self.containers.clone_from(containers);
                 true
             }
             AppEvent::CommandResult { tab, label, result } => {
@@ -182,53 +190,71 @@ impl super::Tab for DockerTab {
             .as_ref()
             .and_then(|id| self.containers.iter().position(|c| &c.id == id))
             .unwrap_or(0);
-        self.selected_id = Some(self.containers[selected_idx].id.clone());
+        if let Some(container) = self.containers.get(selected_idx) {
+            self.selected_id = Some(container.id.clone());
+        }
 
         let outer = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area);
+        let (first_outer, second_outer) = match outer.as_ref() {
+            [first, second] => (*first, *second),
+            _ => return,
+        };
 
-        render_summary(frame, outer[0], &self.containers);
+        render_summary(frame, first_outer, &self.containers);
 
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(outer[1]);
+            .split(second_outer);
+        let (first_main, second_main) = match main.as_ref() {
+            [first, second] => (*first, *second),
+            _ => return,
+        };
 
-        self.row_hit_rects = render_table(frame, main[0], &self.containers, selected_idx);
+        self.row_hit_rects = render_table(frame, first_main, &self.containers, selected_idx);
 
+        let Some(selected_container) = self.containers.get(selected_idx) else {
+            return;
+        };
         if self.commands_allowed && logged_in {
             let right = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Min(0),
-                    Constraint::Length(self.actions.height()),
+                    Constraint::Length(ContainerActionsPanel::height()),
                 ])
-                .split(main[1]);
+                .split(second_main);
+            let (first_right, second_right) = match right.as_ref() {
+                [first, second] => (*first, *second),
+                _ => return,
+            };
 
-            render_detail(frame, right[0], &self.containers[selected_idx]);
-            self.actions.render(frame, right[1]);
+            render_detail(frame, first_right, selected_container);
+            self.actions.render(frame, second_right);
         } else {
-            render_detail(frame, main[1], &self.containers[selected_idx]);
+            render_detail(frame, second_main, selected_container);
         }
     }
 }
 
-fn status_icon(status: &ContainerStatus) -> &'static str {
+const fn status_icon(status: &ContainerStatus) -> &'static str {
     match status {
-        ContainerStatus::Running => icon::DOT_ON,
-        ContainerStatus::Paused
+        ContainerStatus::Running
+        | ContainerStatus::Paused
         | ContainerStatus::Restarting
         | ContainerStatus::Stopping
         | ContainerStatus::Removing => icon::DOT_ON,
-        ContainerStatus::Created => icon::DOT_OFF,
         ContainerStatus::Dead => icon::ERR,
-        ContainerStatus::Exited | ContainerStatus::Unknown(_) => icon::DOT_OFF,
+        ContainerStatus::Created | ContainerStatus::Exited | ContainerStatus::Unknown(_) => {
+            icon::DOT_OFF
+        }
     }
 }
 
-fn status_color(status: &ContainerStatus) -> Color {
+const fn status_color(status: &ContainerStatus) -> Color {
     match status {
         ContainerStatus::Running => theme::SUCCESS,
         ContainerStatus::Paused
@@ -241,7 +267,7 @@ fn status_color(status: &ContainerStatus) -> Color {
     }
 }
 
-fn health_color(health: &ContainerHealth) -> Color {
+const fn health_color(health: &ContainerHealth) -> Color {
     match health {
         ContainerHealth::Healthy => theme::SUCCESS,
         ContainerHealth::Unhealthy => theme::DANGER,
@@ -312,8 +338,14 @@ fn render_table(
         .enumerate()
         .map(|(i, c)| {
             let marker = if i == selected_idx { icon::CURSOR } else { " " };
-            let (cpu_cell, mem_cell) = match &c.stats {
-                Some(stats) => {
+            let (cpu_cell, mem_cell) = c.stats.as_ref().map_or_else(
+                || {
+                    (
+                        Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
+                        Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
+                    )
+                },
+                |stats| {
                     let mem_pct = stats.memory_percent.unwrap_or(0.0) * 100.0;
                     (
                         Cell::from(format!(
@@ -325,12 +357,8 @@ fn render_table(
                         Cell::from(format!("{} {}", bar(mem_pct, 8), mem_cell_text(stats)))
                             .style(Style::default().fg(percent_color(mem_pct))),
                     )
-                }
-                None => (
-                    Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
-                    Cell::from("--").style(Style::default().fg(theme::TEXT_MUTED)),
-                ),
-            };
+                },
+            );
 
             let row_style = if i == selected_idx {
                 Style::default()
@@ -372,8 +400,11 @@ fn render_table(
         .iter()
         .enumerate()
         .filter_map(|(i, c)| {
-            let y = inner.y + 1 + i as u16;
-            if y >= inner.y + inner.height {
+            let y = inner
+                .y
+                .saturating_add(1)
+                .saturating_add(conv::usize_to_u16_saturating(i));
+            if y >= inner.y.saturating_add(inner.height) {
                 return None;
             }
             Some((
@@ -390,14 +421,16 @@ fn render_table(
 }
 
 fn mem_cell_text(stats: &kw_types::docker::ContainerStats) -> String {
-    match stats.memory_percent {
-        Some(pct) => format!(
-            "{:>5.1}%  {}",
-            pct * 100.0,
-            format_bytes(stats.memory_bytes)
-        ),
-        None => format_bytes(stats.memory_bytes),
-    }
+    stats.memory_percent.map_or_else(
+        || format_bytes(stats.memory_bytes),
+        |pct| {
+            format!(
+                "{:>5.1}%  {}",
+                pct * 100.0,
+                format_bytes(stats.memory_bytes)
+            )
+        },
+    )
 }
 
 fn render_detail(frame: &mut Frame, area: Rect, container: &ContainerSnapshot) {
@@ -416,6 +449,10 @@ fn render_detail(frame: &mut Frame, area: Rect, container: &ContainerSnapshot) {
             Constraint::Min(0),    // io / pids list
         ])
         .split(inner);
+
+    let Ok(rows): Result<[Rect; 8], _> = rows.as_ref().try_into() else {
+        return;
+    };
 
     frame.render_widget(
         Paragraph::new(container.name.clone()).style(
@@ -513,11 +550,8 @@ enum ContainerActionItem {
 
 impl ContainerActionItem {
     /// Actions that interrupt a running container get a confirm step.
-    fn is_destructive(&self) -> bool {
-        matches!(
-            self,
-            ContainerActionItem::Stop | ContainerActionItem::Kill | ContainerActionItem::Restart
-        )
+    const fn is_destructive(self) -> bool {
+        matches!(self, Self::Stop | Self::Kill | Self::Restart)
     }
 }
 
@@ -531,8 +565,7 @@ const ALL_CONTAINER_ACTIONS: &[(char, ContainerActionItem, &str)] = &[
 ];
 
 /// Persistent, always-visible command list for the currently selected
-/// container — mirrors `ProcessActionsPanel` in `process_widgets.rs`,
-/// but keyed by container id (String) instead of pid (u32).
+/// container keyed by container id (String).
 pub struct ContainerActionsPanel {
     tab: &'static str,
     api: Arc<ApiClient>,
@@ -545,7 +578,7 @@ pub struct ContainerActionsPanel {
 }
 
 impl ContainerActionsPanel {
-    pub fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
+    pub const fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
         Self {
             tab,
             api,
@@ -560,8 +593,8 @@ impl ContainerActionsPanel {
 
     /// Rows + border + one status line; used by the tab to size the
     /// layout chunk this panel renders into.
-    pub fn height(&self) -> u16 {
-        ALL_CONTAINER_ACTIONS.len() as u16 + 1 + 2
+    pub fn height() -> u16 {
+        conv::usize_to_u16_saturating(ALL_CONTAINER_ACTIONS.len()).saturating_add(3)
     }
 
     /// Call from the tab's `handle_event`, only when commands are
@@ -575,7 +608,7 @@ impl ContainerActionsPanel {
         if let Event::Mouse(mouse) = event {
             if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 for (rect, idx) in &self.hit_rects {
-                    if mouse_hit(mouse, rect) {
+                    if mouse_hit(*mouse, *rect) {
                         self.focused = true;
                         self.selected = *idx;
                         self.confirm_pending = None;
@@ -598,7 +631,7 @@ impl ContainerActionsPanel {
 
         if let Some(idx) = self.confirm_pending {
             match key.code {
-                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
                     self.confirm_pending = None;
                     self.fire_confirmed(id, idx);
                 }
@@ -615,11 +648,20 @@ impl ContainerActionsPanel {
             }
             KeyCode::Right => false,
             KeyCode::Up if len > 0 => {
-                self.selected = (self.selected + len - 1) % len;
+                self.selected = self
+                    .selected
+                    .saturating_add(len)
+                    .saturating_sub(1)
+                    .checked_rem(len)
+                    .unwrap_or(0);
                 true
             }
             KeyCode::Down if len > 0 => {
-                self.selected = (self.selected + 1) % len;
+                self.selected = self
+                    .selected
+                    .saturating_add(1)
+                    .checked_rem(len)
+                    .unwrap_or(0);
                 true
             }
             KeyCode::Enter => {
@@ -648,40 +690,40 @@ impl ContainerActionsPanel {
         }
     }
 
-    fn fire_confirmed(&mut self, id: &str, idx: usize) {
+    fn fire_confirmed(&self, id: &str, idx: usize) {
         if let Some((_, item, _)) = ALL_CONTAINER_ACTIONS.get(idx).copied() {
             self.fire(id, item);
         }
     }
 
-    fn fire(&mut self, id: &str, item: ContainerActionItem) {
+    fn fire(&self, id: &str, item: ContainerActionItem) {
         let id = id.to_string();
         match item {
             ContainerActionItem::Stop => {
                 let api = self.api.clone();
                 let fut = Box::pin(async move { api.stop_container(&id, None).await });
-                crate::commands::spawn_command(self.tx.clone(), self.tab, "stop", fut, |_| {
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "stop", fut, |()| {
                     CommandOutcome::Ack
                 });
             }
             ContainerActionItem::Kill => {
                 let api = self.api.clone();
                 let fut = Box::pin(async move { api.kill_container(&id, None).await });
-                crate::commands::spawn_command(self.tx.clone(), self.tab, "kill", fut, |_| {
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "kill", fut, |()| {
                     CommandOutcome::Ack
                 });
             }
             ContainerActionItem::Restart => {
                 let api = self.api.clone();
                 let fut = Box::pin(async move { api.restart_container(&id, None).await });
-                crate::commands::spawn_command(self.tx.clone(), self.tab, "restart", fut, |_| {
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "restart", fut, |()| {
                     CommandOutcome::Ack
                 });
             }
             ContainerActionItem::Start => {
                 let api = self.api.clone();
                 let fut = Box::pin(async move { api.start_container(&id).await });
-                crate::commands::spawn_command(self.tx.clone(), self.tab, "start", fut, |_| {
+                crate::commands::spawn_command(self.tx.clone(), self.tab, "start", fut, |()| {
                     CommandOutcome::Ack
                 });
             }
@@ -693,7 +735,7 @@ impl ContainerActionsPanel {
                     self.tab,
                     "pause-container",
                     fut,
-                    |_| CommandOutcome::Ack,
+                    |()| CommandOutcome::Ack,
                 );
             }
             ContainerActionItem::Unpause => {
@@ -704,7 +746,7 @@ impl ContainerActionsPanel {
                     self.tab,
                     "unpause-container",
                     fut,
-                    |_| CommandOutcome::Ack,
+                    |()| CommandOutcome::Ack,
                 );
             }
         }
@@ -730,8 +772,8 @@ impl ContainerActionsPanel {
         let mut hit_rects = Vec::with_capacity(ALL_CONTAINER_ACTIONS.len());
 
         for (i, (key, _, label)) in ALL_CONTAINER_ACTIONS.iter().enumerate() {
-            let y = inner.y + i as u16;
-            if y >= inner.y + inner.height {
+            let y = inner.y.saturating_add(conv::usize_to_u16_saturating(i));
+            if y >= inner.y.saturating_add(inner.height) {
                 break;
             }
             let rect = Rect {
@@ -768,8 +810,11 @@ impl ContainerActionsPanel {
             hit_rects.push((rect, i));
         }
 
-        if let Some(status_y) =
-            (inner.y + ALL_CONTAINER_ACTIONS.len() as u16..inner.y + inner.height).next()
+        if let Some(status_y) = (inner
+            .y
+            .saturating_add(conv::usize_to_u16_saturating(ALL_CONTAINER_ACTIONS.len()))
+            ..inner.y.saturating_add(inner.height))
+            .next()
             && let Some((msg, is_err)) = &self.last_result
         {
             let rect = Rect {

@@ -40,7 +40,11 @@ pub struct InfoResponse {
 
 impl fmt::Display for InfoResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let pids: Vec<String> = self.pid.iter().map(|p| p.to_string()).collect();
+        let pids: Vec<String> = self
+            .pid
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
         writeln!(f, "auth enabled:    {}", self.auth_enabled)?;
         writeln!(f, "shutdown enabled:    {}", self.shutdown_enabled)?;
         writeln!(f, "blind:           {}", self.blind)?;
@@ -109,12 +113,7 @@ impl fmt::Display for ScreenshotImage {
         write!(
             f,
             "Screenshot[monitor={} ({}), {}x{}, mime={}, taken_at={}]",
-            self.monitor_name,
-            self.monitor_id,
-            self.width,
-            self.height,
-            self.mime,
-            self.timestamp
+            self.monitor_name, self.monitor_id, self.width, self.height, self.mime, self.timestamp
         )
     }
 }

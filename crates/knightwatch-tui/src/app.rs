@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 use kw_clients::ApiClient;
+use kw_utils::conv;
 
 use crate::{
     confirm::{ConfirmOutcome, ConfirmState},
@@ -51,7 +52,7 @@ impl App {
     pub fn new(
         picker: Picker,
         api: Arc<ApiClient>,
-        info: kw_types::api::InfoResponse,
+        info: &kw_types::api::InfoResponse,
         tx: Sender<AppEvent>,
     ) -> Self {
         let mut tabs: Vec<Box<dyn Tab>> = vec![];
@@ -112,7 +113,7 @@ impl App {
                 info.allow_docker_commands,
                 api.clone(),
                 tx.clone(),
-                control.clone(),
+                control,
             )));
         }
         // --- Top Processes tab ---
@@ -131,7 +132,7 @@ impl App {
                 info.allow_process_commands,
                 api.clone(),
                 tx.clone(),
-                processes_control.clone(),
+                processes_control,
             )));
         }
 
@@ -165,7 +166,7 @@ impl App {
     pub fn handle_app_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::Input(ev) => {
-                self.handle_event(ev);
+                self.handle_event(&ev);
                 self.dirty = true;
             }
             AppEvent::LoginResult(result) => {
@@ -259,14 +260,14 @@ impl App {
 
     /// True whenever commands can actually run: auth is off entirely, or
     /// it's on and login has succeeded.
-    pub fn logged_in(&self) -> bool {
+    pub const fn logged_in(&self) -> bool {
         self.authenticated || !self.auth_enabled
     }
 
-    pub fn handle_event(&mut self, event: Event) {
+    pub fn handle_event(&mut self, event: &Event) {
         // Login screen, when present, owns all input.
         if let Some(login) = &mut self.login {
-            match login.handle_event(&event) {
+            match login.handle_event(event) {
                 LoginOutcome::Submit { username, password } => self.spawn_login(username, password),
                 LoginOutcome::Cancel => self.login = None,
                 LoginOutcome::None => {}
@@ -276,7 +277,7 @@ impl App {
 
         // Shutdown confirmation, when present, owns all input.
         if let Some(confirm) = &mut self.confirm_shutdown {
-            match confirm.handle_event(&event) {
+            match confirm.handle_event(event) {
                 ConfirmOutcome::Confirm => self.spawn_shutdown(),
                 ConfirmOutcome::Cancel => self.confirm_shutdown = None,
                 ConfirmOutcome::None => {}
@@ -288,8 +289,7 @@ impl App {
         let consumed = self
             .tabs
             .get_mut(self.selected_tab)
-            .map(|tab| tab.handle_event(&event, logged_in))
-            .unwrap_or(false);
+            .is_some_and(|tab| tab.handle_event(event, logged_in));
 
         if consumed {
             return;
@@ -299,7 +299,7 @@ impl App {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.should_quit = true
+                    self.should_quit = true;
                 }
                 KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.login = Some(LoginState::new(true));
@@ -313,27 +313,26 @@ impl App {
                 KeyCode::Tab | KeyCode::Right => self.next_tab(),
                 KeyCode::BackTab | KeyCode::Left => self.prev_tab(),
                 KeyCode::Char(c) if ('1'..='9').contains(&c) => {
-                    let idx = (c as usize) - ('1' as usize);
+                    let idx = conv::char_to_usize_saturating(c)
+                        .saturating_sub(conv::char_to_usize_saturating('1'));
                     if idx < self.tabs.len() {
                         self.selected_tab = idx;
                     }
                 }
                 _ => {}
             },
-            Event::Mouse(mouse) => {
-                if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
-                    if let Some(rect) = self.shutdown_hit_rect
-                        && crate::ui_helpers::mouse_hit(&mouse, &rect)
-                    {
-                        self.open_shutdown_confirm();
-                        return;
-                    }
-                    if mouse.row < 3 {
-                        for (i, &(x0, x1)) in self.tab_hit_rects.iter().enumerate() {
-                            if mouse.column >= x0 && mouse.column < x1 {
-                                self.selected_tab = i;
-                                break;
-                            }
+            Event::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(rect) = self.shutdown_hit_rect
+                    && crate::ui_helpers::mouse_hit(*mouse, rect)
+                {
+                    self.open_shutdown_confirm();
+                    return;
+                }
+                if mouse.row < 3 {
+                    for (i, &(x0, x1)) in self.tab_hit_rects.iter().enumerate() {
+                        if mouse.column >= x0 && mouse.column < x1 {
+                            self.selected_tab = i;
+                            break;
                         }
                     }
                 }
@@ -364,8 +363,9 @@ impl App {
         self.login = Some(LoginState::new(!self.auth_enabled));
         self.authenticated = false;
         tokio::spawn(async move {
-            if let Err(e) = api.logout().await {
-                eprintln!("logout failed: {e}");
+            if let Err(_e) = api.logout().await {
+                // TODO: show logout fail in ui
+                //eprintln!("logout failed: {e}");
             }
             let _ = tx.send(AppEvent::LogoutResult).await;
         });
@@ -389,14 +389,19 @@ impl App {
 
     fn next_tab(&mut self) {
         if !self.tabs.is_empty() {
-            self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
+            self.selected_tab = (self.selected_tab.saturating_add(1))
+                .checked_rem(self.tabs.len())
+                .unwrap_or(0);
         }
     }
 
     fn prev_tab(&mut self) {
         if !self.tabs.is_empty() {
-            self.selected_tab =
-                (self.selected_tab + self.tabs.len().saturating_sub(1)) % self.tabs.len();
+            self.selected_tab = (self
+                .selected_tab
+                .saturating_add(self.tabs.len().saturating_sub(1)))
+            .checked_rem(self.tabs.len())
+            .unwrap_or(0);
         }
     }
 }

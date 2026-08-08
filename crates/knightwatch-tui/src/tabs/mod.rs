@@ -40,7 +40,7 @@ pub trait Tab {
         let _ = logged_in;
         let mid = area.height / 2;
         let centered = Rect {
-            y: area.y + mid,
+            y: area.y.saturating_add(mid),
             height: 1,
             ..area
         };

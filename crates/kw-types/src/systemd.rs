@@ -64,7 +64,7 @@ impl fmt::Display for SystemdSnapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnitLoadState {
     Loaded,
@@ -77,11 +77,11 @@ pub enum UnitLoadState {
 impl fmt::Display for UnitLoadState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            UnitLoadState::Loaded => "loaded",
-            UnitLoadState::NotFound => "not-found",
-            UnitLoadState::BadSetting => "bad-setting",
-            UnitLoadState::Error => "error",
-            UnitLoadState::Masked => "masked",
+            Self::Loaded => "loaded",
+            Self::NotFound => "not-found",
+            Self::BadSetting => "bad-setting",
+            Self::Error => "error",
+            Self::Masked => "masked",
         })
     }
 }
@@ -90,7 +90,6 @@ impl From<&str> for UnitLoadState {
     fn from(s: &str) -> Self {
         match s {
             "loaded" => Self::Loaded,
-            "not-found" => Self::NotFound,
             "bad-setting" => Self::BadSetting,
             "error" => Self::Error,
             "masked" => Self::Masked,
@@ -99,7 +98,7 @@ impl From<&str> for UnitLoadState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnitActiveState {
     Active,
@@ -111,7 +110,8 @@ pub enum UnitActiveState {
 }
 
 impl UnitActiveState {
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Active => "active",
             Self::Reloading => "reloading",
@@ -128,7 +128,6 @@ impl From<&str> for UnitActiveState {
         match s {
             "active" => Self::Active,
             "reloading" => Self::Reloading,
-            "inactive" => Self::Inactive,
             "failed" => Self::Failed,
             "activating" => Self::Activating,
             "deactivating" => Self::Deactivating,
@@ -137,7 +136,7 @@ impl From<&str> for UnitActiveState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnitType {
     Service,
@@ -152,28 +151,29 @@ pub enum UnitType {
 impl fmt::Display for UnitType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            UnitType::Service => "service",
-            UnitType::Socket => "socket",
-            UnitType::Target => "target",
-            UnitType::Timer => "timer",
-            UnitType::Mount => "mount",
-            UnitType::Device => "device",
-            UnitType::Other(name) => name,
+            Self::Service => "service",
+            Self::Socket => "socket",
+            Self::Target => "target",
+            Self::Timer => "timer",
+            Self::Mount => "mount",
+            Self::Device => "device",
+            Self::Other(name) => name,
         })
     }
 }
 
 impl UnitType {
+    #[must_use]
     pub fn from_name(name: &str) -> Self {
         match name.rsplit_once('.').map(|(_, ext)| ext) {
-            Some("service") => UnitType::Service,
-            Some("socket") => UnitType::Socket,
-            Some("target") => UnitType::Target,
-            Some("timer") => UnitType::Timer,
-            Some("mount") | Some("automount") => UnitType::Mount,
-            Some("device") => UnitType::Device,
-            Some(other) => UnitType::Other(other.to_string()),
-            None => UnitType::Other(String::new()),
+            Some("service") => Self::Service,
+            Some("socket") => Self::Socket,
+            Some("target") => Self::Target,
+            Some("timer") => Self::Timer,
+            Some("mount" | "automount") => Self::Mount,
+            Some("device") => Self::Device,
+            Some(other) => Self::Other(other.to_string()),
+            None => Self::Other(String::new()),
         }
     }
 }

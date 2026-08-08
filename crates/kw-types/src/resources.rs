@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use kw_utils::{format_bytes, format_time};
+use kw_utils::{conv, format_bytes, format_time};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemSnapshot {
@@ -97,8 +97,7 @@ impl fmt::Display for CpuSnapshot {
             self.usage_percent,
             self.frequency_mhz,
             self.physical_core_count
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "?".into())
+                .map_or_else(|| "?".into(), |n| n.to_string())
         )?;
         for c in &self.cores {
             writeln!(
@@ -168,7 +167,7 @@ pub struct MemorySnapshot {
     pub swap_total_bytes: u64,
     pub swap_used_bytes: u64,
     pub swap_free_bytes: u64,
-    /// swap_used / swap_total, 0–100. None when no swap is configured.
+    /// `swap_used` / `swap_total`, 0–100. None when no swap is configured.
     pub swap_used_percent: Option<f32>,
 }
 
@@ -186,7 +185,7 @@ impl fmt::Display for MemorySnapshot {
             writeln!(
                 f,
                 "Swap: {}% used  {} / {}",
-                self.swap_used_percent.unwrap_or(0.0) as u32,
+                self.swap_used_percent.map_or(0, conv::f32_percent_to_u32),
                 format_bytes(self.swap_used_bytes),
                 format_bytes(self.swap_total_bytes)
             )?;
@@ -246,11 +245,7 @@ impl From<&sysinfo::Disk> for DiskSnapshot {
         let total = disk.total_space();
         let available = disk.available_space();
         let used = total.saturating_sub(available);
-        let used_percent = if total > 0 {
-            (used as f32 / total as f32) * 100.0
-        } else {
-            0.0
-        };
+        let used_percent = conv::u64_ratio_percent_f32(used, total);
         Self {
             name: disk.name().to_string_lossy().into_owned(),
             mount_point: disk.mount_point().to_string_lossy().into_owned(),
@@ -332,7 +327,7 @@ impl From<(&String, &sysinfo::NetworkData)> for NetworkSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuSnapshot {
-    /// Identifier, e.g. "NVIDIA GeForce RTX 4090" or "Apple M3 Pro (GPU)".
+    /// Identifier, e.g. "NVIDIA `GeForce` RTX 4090" or "Apple M3 Pro (GPU)".
     pub name: String,
     /// Core utilisation 0–100. None if unavailable.
     pub usage_percent: Option<f32>,
@@ -355,16 +350,16 @@ impl fmt::Display for GpuSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)?;
         if let Some(u) = self.usage_percent {
-            write!(f, "  gpu={:.1}%", u)?;
+            write!(f, "  gpu={u:.1}%")?;
         }
         if let (Some(u), Some(t)) = (self.vram_used_bytes, self.vram_total_bytes) {
             write!(f, "  vram={}/{}", format_bytes(u), format_bytes(t))?;
         }
         if let Some(t) = self.temperature_celsius {
-            write!(f, "  temp={:.0}°C", t)?;
+            write!(f, "  temp={t:.0}°C")?;
         }
         if let Some(p) = self.power_draw_watts {
-            write!(f, "  power={:.0}W", p)?;
+            write!(f, "  power={p:.0}W")?;
         }
         Ok(())
     }
@@ -376,33 +371,34 @@ impl From<nvml_wrapper::Device<'_>> for GpuSnapshot {
         let vram = device.memory_info().ok();
         let used = vram.as_ref().map(|v| v.used);
         let total = vram.as_ref().map(|v| v.total);
-        let used_percent = if let (Some(used), Some(total)) = (used, total) {
-            if total > 0 {
-                Some((used as f32 / total as f32) * 100.0)
-            } else {
-                Some(0.0)
-            }
-        } else {
-            None
+        let used_percent = match (used, total) {
+            (Some(used), Some(total)) => Some(conv::u64_ratio_percent_f32(used, total)),
+            _ => None,
         };
         let num_fans = device.num_fans().unwrap_or(0);
         let fan_speed_percent = (0..num_fans)
-            .filter_map(|i| device.fan_speed(i).map(|f| f as f32).ok())
+            .filter_map(|i| device.fan_speed(i).map(conv::u32_to_f32).ok())
             .collect();
         Self {
             name: device.name().unwrap_or_default(),
-            usage_percent: device.utilization_rates().map(|r| r.gpu as f32).ok(),
+            usage_percent: device
+                .utilization_rates()
+                .map(|r| conv::u32_to_f32(r.gpu))
+                .ok(),
             vram_used_bytes: used,
             vram_total_bytes: total,
             vram_used_percent: used_percent,
             temperature_celsius: device
                 .temperature(nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu)
-                .map(|t| t as f32)
+                .map(conv::u32_to_f32)
                 .ok(),
-            power_draw_watts: device.power_usage().map(|p| p as f32 / 1000.0).ok(),
+            power_draw_watts: device
+                .power_usage()
+                .map(|p| conv::u32_to_f32(p) / 1000.0)
+                .ok(),
             power_limit_watts: device
                 .enforced_power_limit()
-                .map(|p| p as f32 / 1000.0)
+                .map(|p| conv::u32_to_f32(p) / 1000.0)
                 .ok(),
             fan_speed_percent,
         }
@@ -438,20 +434,18 @@ impl fmt::Display for BatterySnapshot {
                 f,
                 "  remaining: {}",
                 self.time_to_empty_secs
-                    .map(format_time)
-                    .unwrap_or("N/A".into())
+                    .map_or_else(|| "N/A".into(), format_time)
             )?,
             BatteryState::Charging => write!(
                 f,
                 "  full in: {}",
                 self.time_to_full_secs
-                    .map(format_time)
-                    .unwrap_or("N/A".into())
+                    .map_or_else(|| "N/A".into(), format_time)
             )?,
             _ => {}
         }
         if let Some(h) = self.health_percent {
-            write!(f, "  health={:.0}%", h)?;
+            write!(f, "  health={h:.0}%")?;
         }
         Ok(())
     }
@@ -463,8 +457,12 @@ impl From<starship_battery::Battery> for BatterySnapshot {
         Self {
             charge_percent: battery.state_of_charge().value * 100.0,
             state: battery.state().into(),
-            time_to_empty_secs: battery.time_to_empty().map(|t| t.value as u64),
-            time_to_full_secs: battery.time_to_full().map(|t| t.value as u64),
+            time_to_empty_secs: battery
+                .time_to_empty()
+                .map(|t| conv::f32_to_u64_saturating(t.value)),
+            time_to_full_secs: battery
+                .time_to_full()
+                .map(|t| conv::f32_to_u64_saturating(t.value)),
             power_draw_watts: Some(battery.energy_rate().value),
             cycle_count: battery.cycle_count(),
             health_percent: Some(battery.state_of_health().value * 100.0),
@@ -491,16 +489,13 @@ impl fmt::Display for ThermalSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let temp = self
             .temperature_celsius
-            .map(|t| format!("{:.0}°C", t))
-            .unwrap_or_else(|| "N/A".into());
+            .map_or_else(|| "N/A".into(), |t| format!("{t:.0}°C"));
         let max = self
             .temperature_max_celsius
-            .map(|t| format!("{:.0}°C", t))
-            .unwrap_or_else(|| "?".into());
+            .map_or_else(|| "?".into(), |t| format!("{t:.0}°C"));
         let crit = self
             .temperature_critical_celsius
-            .map(|t| format!("{:.0}°C", t))
-            .unwrap_or_else(|| "?".into());
+            .map_or_else(|| "?".into(), |t| format!("{t:.0}°C"));
         write!(
             f,
             "{:<40}  {} (max: {} crit: {})",
@@ -534,7 +529,7 @@ pub struct HostInfo {
     pub os_name: Option<String>,
     /// Kernel version string.
     pub kernel_version: Option<String>,
-    /// CPU architecture, e.g. "x86_64", "aarch64".
+    /// CPU architecture, e.g. "`x86_64`", "aarch64".
     pub cpu_arch: Option<String>,
     /// System uptime in seconds.
     pub uptime_secs: u64,
@@ -578,7 +573,7 @@ impl Default for Thresholds {
 }
 
 /// Controls which subsystems are collected on each tick.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefreshMask {
     pub cpu: bool,
     pub memory: bool,
@@ -601,7 +596,7 @@ impl Default for RefreshMask {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SystemHealth {
     /// Everything within normal thresholds.
     Healthy,
@@ -621,7 +616,7 @@ impl fmt::Display for SystemHealth {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BatteryState {
     Charging,
     Discharging,
@@ -653,7 +648,7 @@ impl From<starship_battery::State> for BatteryState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiskKind {
     Ssd,
     Hdd,
@@ -667,7 +662,7 @@ impl From<sysinfo::DiskKind> for DiskKind {
         match kind {
             sysinfo::DiskKind::HDD => Self::Hdd,
             sysinfo::DiskKind::SSD => Self::Ssd,
-            _ => Self::Unknown,
+            sysinfo::DiskKind::Unknown(_) => Self::Unknown,
         }
     }
 }

@@ -17,11 +17,14 @@ use tokio::sync::mpsc::Sender;
 
 use kw_clients::ApiClient;
 use kw_types::process::{ProcessSignal, ProcessSnapshot, ProcessState};
-use kw_utils::format_bytes;
+use kw_utils::{conv, format_bytes};
 
 use crate::{
     events::{AppEvent, CommandOutcome},
-    ui_helpers::*,
+    ui_helpers::{
+        bar, bordered_block, bordered_block_focused, empty_note, icon, mouse_hit, percent_color,
+        result_line, theme,
+    },
 };
 
 /// Selection + mouse-hit-rect bookkeeping shared by any process list tab.
@@ -40,7 +43,7 @@ impl ProcessListState {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     for (rect, pid) in &self.row_hit_rects {
-                        if mouse_hit(mouse, rect) {
+                        if mouse_hit(*mouse, *rect) {
                             self.selected_pid = Some(*pid);
                             return true;
                         }
@@ -85,15 +88,20 @@ impl ProcessListState {
             .selected_pid
             .and_then(|pid| processes.iter().position(|p| p.pid == pid))
             .unwrap_or(0);
-        let len = processes.len() as i32;
-        let next = (current as i32 + delta).rem_euclid(len) as usize;
-        self.selected_pid = Some(processes[next].pid);
+        let len = conv::usize_to_i32_saturating(processes.len());
+        let next = conv::i32_to_usize_saturating(
+            conv::usize_to_i32_saturating(current)
+                .saturating_add(delta)
+                .rem_euclid(len),
+        );
+        if let Some(p) = processes.get(next) {
+            self.selected_pid = Some(p.pid);
+        }
     }
 
     /// Resolves the current selection to an index, falling back to the
     /// first row and healing `selected_pid` if the previous selection
     /// has disappeared (process exited / fell out of the top-N).
-    /// Mirrors the `selected_idx` fallback pattern in `DockerTab::render`.
     pub fn resolve_selected_idx(&mut self, processes: &[ProcessSnapshot]) -> Option<usize> {
         if processes.is_empty() {
             self.selected_pid = None;
@@ -103,7 +111,8 @@ impl ProcessListState {
             .selected_pid
             .and_then(|pid| processes.iter().position(|p| p.pid == pid))
             .unwrap_or(0);
-        self.selected_pid = Some(processes[idx].pid);
+        let pid = processes.get(idx)?.pid;
+        self.selected_pid = Some(pid);
         Some(idx)
     }
 
@@ -114,7 +123,7 @@ impl ProcessListState {
     }
 }
 
-pub fn state_color(state: &ProcessState) -> Color {
+pub const fn state_color(state: &ProcessState) -> Color {
     match state {
         ProcessState::Running => theme::SUCCESS,
         ProcessState::Sleeping => theme::TEXT_MUTED,
@@ -141,20 +150,20 @@ pub fn render_process_table(
     scroll_offset: usize,
 ) -> (Vec<(Rect, u32)>, usize) {
     let inner = bordered_block(frame, area, title);
-    let visible_rows = inner.height.saturating_sub(1) as usize;
+    let visible_rows = usize::from(inner.height.saturating_sub(1));
     let max_offset = processes.len().saturating_sub(visible_rows.max(1));
     let mut offset = scroll_offset.min(max_offset);
     if let Some(idx) = selected_idx {
         if idx < offset {
             offset = idx;
-        } else if visible_rows > 0 && idx >= offset + visible_rows {
-            offset = idx + 1 - visible_rows;
+        } else if visible_rows > 0 && idx >= offset.saturating_add(visible_rows) {
+            offset = idx.saturating_add(1).saturating_sub(visible_rows);
         }
     }
 
-    let end = (offset + visible_rows).min(processes.len());
-    let visible = &processes[offset..end];
-    let visible_depths = &depths[offset..end];
+    let end = (offset.saturating_add(visible_rows)).min(processes.len());
+    let visible = processes.get(offset..end).unwrap_or(&[]);
+    let visible_depths = depths.get(offset..end).unwrap_or(&[]);
 
     let header = Row::new(vec!["", "PID", "Name", "State", "CPU", "Mem", "Disk"])
         .style(Style::default().add_modifier(Modifier::BOLD));
@@ -164,7 +173,7 @@ pub fn render_process_table(
         .zip(visible_depths)
         .enumerate()
         .map(|(visible_i, (p, depth))| {
-            let i = offset + visible_i;
+            let i = offset.saturating_add(visible_i);
             let is_selected = selected_idx == Some(i);
             let marker = if is_selected { icon::CURSOR } else { " " };
             let row_style = if is_selected {
@@ -183,10 +192,10 @@ pub fn render_process_table(
                 Cell::from(p.state.to_string()).style(Style::default().fg(state_color(&p.state))),
                 Cell::from(format!(
                     "{} {:>5.1}%",
-                    bar(p.cpu_usage as f64, 8),
+                    bar(f64::from(p.cpu_usage), 8),
                     p.cpu_usage
                 ))
-                .style(Style::default().fg(percent_color(p.cpu_usage as f64))),
+                .style(Style::default().fg(percent_color(f64::from(p.cpu_usage)))),
                 Cell::from(format_bytes(p.memory_bytes)),
                 Cell::from(format_bytes(p.disk_usage)),
             ])
@@ -211,8 +220,11 @@ pub fn render_process_table(
         .iter()
         .enumerate()
         .filter_map(|(visible_i, p)| {
-            let y = inner.y + 1 + visible_i as u16;
-            if y >= inner.y + inner.height {
+            let y = inner
+                .y
+                .saturating_add(1)
+                .saturating_add(conv::usize_to_u16_saturating(visible_i));
+            if y >= inner.y.saturating_add(inner.height) {
                 return None;
             }
             Some((
@@ -260,16 +272,20 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
         .constraints(constraints)
         .split(inner);
 
-    let mut idx = 0;
+    // Pull rows off an iterator instead of indexing by hand.
+    // Falls back to a zero-sized Rect (renders nothing) rather than panicking
+    // if the row count and layout ever drift apart.
+    let mut rows = rows.iter().copied();
+    let mut next_row = || rows.next().unwrap_or_default();
+
     frame.render_widget(
         Paragraph::new(process.name.clone()).style(
             Style::default()
                 .fg(theme::TEXT)
                 .add_modifier(Modifier::BOLD),
         ),
-        rows[idx],
+        next_row(),
     );
-    idx += 1;
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
@@ -279,47 +295,41 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
                 Style::default().fg(state_color(&process.state)),
             ),
         ])),
-        rows[idx],
+        next_row(),
     );
-    idx += 1;
 
     frame.render_widget(
         Paragraph::new(format!("cpu: {:.1}%", process.cpu_usage))
-            .style(Style::default().fg(percent_color(process.cpu_usage as f64))),
-        rows[idx],
+            .style(Style::default().fg(percent_color(f64::from(process.cpu_usage)))),
+        next_row(),
     );
-    idx += 1;
 
     frame.render_widget(
         Paragraph::new(format!("memory: {}", format_bytes(process.memory_bytes))),
-        rows[idx],
+        next_row(),
     );
-    idx += 1;
 
     frame.render_widget(
         Paragraph::new(format!("disk: {}", format_bytes(process.disk_usage)))
             .style(Style::default().fg(theme::TEXT_DIM)),
-        rows[idx],
+        next_row(),
     );
-    idx += 1;
 
-    idx += 1; // blank separator row
+    let _blank = next_row(); // blank separator row
 
     if let Some(cwd) = &process.cwd {
         frame.render_widget(
             Paragraph::new(format!("cwd: {cwd}")).style(Style::default().fg(theme::TEXT_MUTED)),
-            rows[idx],
+            next_row(),
         );
-        idx += 1;
     }
 
     if !process.cmdline.is_empty() {
         frame.render_widget(
             Paragraph::new(format!("cmd: {}", process.cmdline.join(" ")))
                 .style(Style::default().fg(theme::TEXT_MUTED)),
-            rows[idx],
+            next_row(),
         );
-        idx += 1;
     }
 
     if let Some(io) = &process.io_stats {
@@ -332,13 +342,13 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
                 format_bytes(io.write_chars),
             ))
             .style(Style::default().fg(theme::TEXT_DIM)),
-            rows[idx],
+            next_row(),
         );
-        idx += 1;
     }
 
+    let files_row = next_row();
     if process.open_files.is_empty() {
-        empty_note(frame, rows[idx], "no open files reported");
+        empty_note(frame, files_row, "no open files reported");
     } else {
         let items: Vec<ListItem> = process
             .open_files
@@ -347,7 +357,7 @@ pub fn render_process_detail(frame: &mut Frame, area: Rect, process: &ProcessSna
             .collect();
         frame.render_widget(
             List::new(items).style(Style::default().fg(theme::TEXT_DIM)),
-            rows[idx],
+            files_row,
         );
     }
 }
@@ -365,12 +375,10 @@ enum ActionItem {
 impl ActionItem {
     /// Destructive actions get a confirm step; everything else fires
     /// immediately on activation.
-    fn is_destructive(&self) -> bool {
+    const fn is_destructive(self) -> bool {
         matches!(
             self,
-            ActionItem::Signal(ProcessSignal::Kill)
-                | ActionItem::Signal(ProcessSignal::Term)
-                | ActionItem::KillTree
+            Self::Signal(ProcessSignal::Kill | ProcessSignal::Term) | Self::KillTree
         )
     }
 }
@@ -431,7 +439,7 @@ pub struct ProcessActionsPanel {
 }
 
 impl ProcessActionsPanel {
-    pub fn new(
+    pub const fn new(
         tab: &'static str,
         api: Arc<ApiClient>,
         tx: Sender<AppEvent>,
@@ -459,7 +467,7 @@ impl ProcessActionsPanel {
                 ActionItem::Signal(sig) => sig.is_supported(),
                 ActionItem::Track => self.show_track,
                 ActionItem::Untrack => self.show_untrack,
-                _ => true,
+                ActionItem::KillTree => true,
             })
             .copied()
             .collect()
@@ -468,7 +476,7 @@ impl ProcessActionsPanel {
     /// Rows + border + one status line; used by the tab to size the
     /// layout chunk this panel renders into.
     pub fn height(&self) -> u16 {
-        self.visible_items().len() as u16 + 1 + 2
+        conv::usize_to_u16_saturating(self.visible_items().len()).saturating_add(3)
     }
 
     /// Call from the tab's `handle_event`, only when commands are
@@ -485,7 +493,7 @@ impl ProcessActionsPanel {
         if let Event::Mouse(mouse) = event {
             if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 for (rect, idx) in &self.hit_rects {
-                    if mouse_hit(mouse, rect) {
+                    if mouse_hit(*mouse, *rect) {
                         self.focused = true;
                         self.selected = *idx;
                         self.confirm_pending = None;
@@ -508,7 +516,7 @@ impl ProcessActionsPanel {
 
         if let Some(idx) = self.confirm_pending {
             match key.code {
-                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
                     self.confirm_pending = None;
                     self.fire_confirmed(pid, idx);
                 }
@@ -525,11 +533,15 @@ impl ProcessActionsPanel {
             }
             KeyCode::Right => false,
             KeyCode::Up if !items.is_empty() => {
-                self.selected = (self.selected + items.len() - 1) % items.len();
+                self.selected = (self.selected.saturating_add(items.len()).saturating_sub(1))
+                    .checked_rem(items.len())
+                    .unwrap_or(0);
                 true
             }
             KeyCode::Down if !items.is_empty() => {
-                self.selected = (self.selected + 1) % items.len();
+                self.selected = (self.selected.saturating_add(1))
+                    .checked_rem(items.len())
+                    .unwrap_or(0);
                 true
             }
             KeyCode::Enter => {
@@ -559,14 +571,14 @@ impl ProcessActionsPanel {
         }
     }
 
-    fn fire_confirmed(&mut self, pid: u32, idx: usize) {
+    fn fire_confirmed(&self, pid: u32, idx: usize) {
         let items = self.visible_items();
         if let Some((_, item, _)) = items.get(idx).copied() {
             self.fire(pid, item);
         }
     }
 
-    fn fire(&mut self, pid: u32, item: ActionItem) {
+    fn fire(&self, pid: u32, item: ActionItem) {
         match item {
             ActionItem::Signal(signal) => self.send_signal(pid, signal),
             ActionItem::KillTree => self.fire_kill_tree(pid),
@@ -575,7 +587,7 @@ impl ProcessActionsPanel {
         }
     }
 
-    fn send_signal(&mut self, pid: u32, signal: ProcessSignal) {
+    fn send_signal(&self, pid: u32, signal: ProcessSignal) {
         let label: &'static str = match signal {
             ProcessSignal::Kill => "kill",
             ProcessSignal::Term => "term",
@@ -585,12 +597,12 @@ impl ProcessActionsPanel {
         };
         let api = self.api.clone();
         let fut = Box::pin(async move { api.kill_process(pid, signal).await });
-        crate::commands::spawn_command(self.tx.clone(), self.tab, label, fut, |_| {
+        crate::commands::spawn_command(self.tx.clone(), self.tab, label, fut, |()| {
             CommandOutcome::Ack
         });
     }
 
-    fn fire_kill_tree(&mut self, pid: u32) {
+    fn fire_kill_tree(&self, pid: u32) {
         let api = self.api.clone();
         let fut = Box::pin(async move { api.kill_process_tree(pid).await });
         crate::commands::spawn_command(self.tx.clone(), self.tab, "kill-tree", fut, |pids| {
@@ -598,18 +610,18 @@ impl ProcessActionsPanel {
         });
     }
 
-    fn fire_track(&mut self, pid: u32) {
+    fn fire_track(&self, pid: u32) {
         let api = self.api.clone();
         let fut = Box::pin(async move { api.track_pid(pid).await });
-        crate::commands::spawn_command(self.tx.clone(), self.tab, "track", fut, |_| {
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "track", fut, |()| {
             CommandOutcome::Ack
         });
     }
 
-    fn fire_untrack(&mut self, pid: u32) {
+    fn fire_untrack(&self, pid: u32) {
         let api = self.api.clone();
         let fut = Box::pin(async move { api.untrack_pid(pid).await });
-        crate::commands::spawn_command(self.tx.clone(), self.tab, "untrack", fut, |_| {
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "untrack", fut, |()| {
             CommandOutcome::Ack
         });
     }
@@ -639,8 +651,8 @@ impl ProcessActionsPanel {
         let mut hit_rects = Vec::with_capacity(items.len());
 
         for (i, (key, _, label)) in items.iter().enumerate() {
-            let y = inner.y + i as u16;
-            if y >= inner.y + inner.height {
+            let y = inner.y.saturating_add(conv::usize_to_u16_saturating(i));
+            if y >= inner.y.saturating_add(inner.height) {
                 break;
             }
             let rect = Rect {
@@ -677,7 +689,11 @@ impl ProcessActionsPanel {
             hit_rects.push((rect, i));
         }
 
-        if let Some(status_y) = (inner.y + items.len() as u16..inner.y + inner.height).next()
+        if let Some(status_y) = (inner
+            .y
+            .saturating_add(conv::usize_to_u16_saturating(items.len()))
+            ..inner.y.saturating_add(inner.height))
+            .next()
             && let Some((msg, is_err)) = &self.last_result
         {
             let rect = Rect {

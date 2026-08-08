@@ -6,9 +6,17 @@ use tokio::{
     time::Duration,
 };
 
-use kw_types::resources::*;
+use kw_types::resources::{
+    BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
+    MemorySnapshot, NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+};
+use kw_utils::conv::u64_ratio_percent_f32;
 
-use super::{commands::*, event::*, system::StaticHostInfo};
+use super::{
+    commands::{SystemResourcesChannels, SystemResourcesCommand, SystemResourcesQuery},
+    event::SystemResourcesEvent,
+    system::StaticHostInfo,
+};
 use crate::prelude::*;
 
 struct SystemResourcesState {
@@ -17,7 +25,7 @@ struct SystemResourcesState {
 }
 
 impl SystemResourcesState {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             last_snapshot: None,
             last_battery_state: None,
@@ -75,16 +83,16 @@ impl SystemResources {
     }
 
     async fn start_resource_loop(mut self) -> Result<()> {
-        let mut query_rx = self
-            .channels
-            .take_query_rx()
-            .expect("Failed to take query receiver");
-        let mut command_rx = self
-            .channels
-            .take_command_rx()
-            .expect("Failed to take command receiver");
+        let mut query_rx = self.channels.take_query_rx()?;
+        let mut command_rx = self.channels.take_command_rx()?;
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         loop {
+            let tick = async {
+                match self.poll_interval_timer.as_mut() {
+                    Some(timer) => timer.tick().await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
                 Some(query) = query_rx.recv() => {
                     self.handle_query(query);
@@ -92,8 +100,8 @@ impl SystemResources {
                 Some(command) = command_rx.recv() => {
                     self.handle_command(command);
                 }
-                _ = async { self.poll_interval_timer.as_mut().unwrap().tick().await }, if self.poll_interval_timer.is_some() => {
-                    self.handle_tick().await;
+                _ = tick => {
+                    self.handle_tick();
                 }
             }
         }
@@ -210,7 +218,7 @@ impl SystemResources {
     // Tick — refresh sysinfo, build snapshot, emit events
     // -----------------------------------------------------------------------
 
-    async fn handle_tick(&mut self) {
+    fn handle_tick(&mut self) {
         self.refresh_all();
         let snapshot = self.build_snapshot();
         // CPU
@@ -300,8 +308,8 @@ impl SystemResources {
         let cpu = self.build_cpu_snapshot();
         let memory = self.build_memory_snapshot();
         let disks = self.build_disk_snapshots();
-        let battery = self.build_battery_snapshot();
-        let health = super::utils::derive_health(&cpu, &memory, &disks, &battery);
+        let battery = Self::build_battery_snapshot();
+        let health = super::utils::derive_health(&cpu, &memory, &disks, battery.as_ref());
         SystemSnapshot {
             timestamp: crate::utils::now_rfc3339(),
             cpu,
@@ -320,7 +328,7 @@ impl SystemResources {
         let cpus = self.sys.cpus();
         let usage_percent = self.sys.global_cpu_usage();
         let cores = cpus.iter().map(Into::into).collect();
-        let frequency_mhz = cpus.first().map(|c| c.frequency()).unwrap_or(0);
+        let frequency_mhz = cpus.first().map_or(0, sysinfo::Cpu::frequency);
         let brand = cpus
             .first()
             .map(|c| c.brand().to_string())
@@ -342,17 +350,19 @@ impl SystemResources {
         let total = self.sys.total_memory();
         let used = self.sys.used_memory();
         let used_percent = if total > 0 {
-            (used as f32 / total as f32) * 100.0
+            u64_ratio_percent_f32(used, total)
         } else {
             0.0
         };
+
         let swap_total = self.sys.total_swap();
         let swap_used = self.sys.used_swap();
         let swap_used_percent = if swap_total > 0 {
-            Some((swap_used as f32 / swap_total as f32) * 100.0)
+            Some(u64_ratio_percent_f32(swap_used, swap_total))
         } else {
             None
         };
+
         MemorySnapshot {
             total_bytes: total,
             used_bytes: used,
@@ -378,7 +388,7 @@ impl SystemResources {
         self.components.iter().map(Into::into).collect()
     }
 
-    fn build_battery_snapshot(&self) -> Option<BatterySnapshot> {
+    fn build_battery_snapshot() -> Option<BatterySnapshot> {
         starship_battery::Manager::new()
             .ok()?
             .batteries()
@@ -404,7 +414,9 @@ impl SystemResources {
             os_name: self.static_host_info.os_name.clone(),
             kernel_version: self.static_host_info.kernel_version.clone(),
             cpu_arch: self.static_host_info.cpu_arch.clone(),
-            uptime_secs: self.uptime_baseline + self.uptime_started.elapsed().as_secs(),
+            uptime_secs: self
+                .uptime_baseline
+                .saturating_add(self.uptime_started.elapsed().as_secs()),
             process_count: self.sys.processes().len(),
         }
     }
@@ -423,19 +435,13 @@ pub fn init_system_resources() {
         return;
     }
     let resources = SystemResources::new();
-    SYSTEM_RESOURCES_QUERY_SENDER
-        .set(resources.channels.query_tx.clone())
-        .unwrap();
-    SYSTEM_RESOURCES_EVENT_SENDER
-        .set(resources.channels.event_tx.clone())
-        .unwrap();
+    let _ = SYSTEM_RESOURCES_QUERY_SENDER.set(resources.channels.query_tx.clone());
+    let _ = SYSTEM_RESOURCES_EVENT_SENDER.set(resources.channels.event_tx.clone());
     if config.args.allow_system_resources_commands {
-        SYSTEM_RESOURCES_COMMAND_SENDER
-            .set(resources.channels.command_tx.clone())
-            .unwrap();
+        let _ = SYSTEM_RESOURCES_COMMAND_SENDER.set(resources.channels.command_tx.clone());
     }
     tokio::spawn(async move {
-        if let Err(e) = resources.start_resource_loop().await {
+        if let Err(e) = Box::pin(resources.start_resource_loop()).await {
             error!(?e, "system resources loop exited with error");
         }
     });

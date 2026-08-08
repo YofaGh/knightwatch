@@ -41,12 +41,12 @@ impl ConfirmState {
             return ConfirmOutcome::None;
         }
         match key.code {
-            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+            KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
                 self.submitting = true;
                 self.error = None;
                 ConfirmOutcome::Confirm
             }
-            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => ConfirmOutcome::Cancel,
+            KeyCode::Esc | KeyCode::Char('n' | 'N') => ConfirmOutcome::Cancel,
             _ => ConfirmOutcome::None,
         }
     }
@@ -61,8 +61,12 @@ impl ConfirmState {
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let box_width = 50u16.min(area.width.saturating_sub(4)).max(24);
         let box_height = 8u16.min(area.height.saturating_sub(2)).max(7);
-        let x = area.x + (area.width.saturating_sub(box_width)) / 2;
-        let y = area.y + (area.height.saturating_sub(box_height)) / 2;
+        let x = area
+            .x
+            .saturating_add((area.width.saturating_sub(box_width)) / 2);
+        let y = area
+            .y
+            .saturating_add((area.height.saturating_sub(box_height)) / 2);
         let box_area = Rect {
             x,
             y,
@@ -97,6 +101,10 @@ impl ConfirmState {
                 Constraint::Length(1), // status/help
             ])
             .split(inner);
+
+        let Ok(rows): Result<[Rect; 3], _> = rows.as_ref().try_into() else {
+            return;
+        };
 
         frame.render_widget(
             Paragraph::new(self.message.clone())

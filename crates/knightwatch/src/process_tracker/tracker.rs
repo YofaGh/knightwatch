@@ -8,9 +8,13 @@ use tokio::{
     time::Duration,
 };
 
-use kw_types::process::*;
+use kw_types::process::{ProcessSnapshot, ProcessState, ProcessesSortKey};
 
-use super::{commands::*, event::*, process::RootProcess};
+use super::{
+    commands::{ProcessTrackerChannels, ProcessTrackerCommand, ProcessTrackerQuery},
+    event::ProcessTrackerEvent,
+    process::RootProcess,
+};
 use crate::prelude::*;
 
 struct ProcessTrackerState {
@@ -65,26 +69,23 @@ impl ProcessTracker {
         let _ = self.channels.event_tx.send(event);
     }
 
-    fn get_root_process_mut(&mut self, root_pid: &u32) -> Result<&mut RootProcess> {
-        self.state
-            .root_processes
-            .get_mut(root_pid)
-            .ok_or(Error::ProcessTracker(format!(
-                "Not Tracking a process with pid {root_pid}"
-            )))
+    fn get_root_process_mut(&mut self, root_pid: u32) -> Result<&mut RootProcess> {
+        self.state.root_processes.get_mut(&root_pid).ok_or_else(|| {
+            Error::ProcessTracker(format!("Not Tracking a process with pid {root_pid}"))
+        })
     }
 
     async fn start_tracking_loop(mut self) -> Result<()> {
-        let mut query_rx = self
-            .channels
-            .take_query_rx()
-            .expect("Failed to take query receiver");
-        let mut command_rx = self
-            .channels
-            .take_command_rx()
-            .expect("Failed to take command receiver");
+        let mut query_rx = self.channels.take_query_rx()?;
+        let mut command_rx = self.channels.take_command_rx()?;
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         loop {
+            let tick = async {
+                match self.poll_interval_timer.as_mut() {
+                    Some(timer) => timer.tick().await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
                 Some(query) = query_rx.recv() => {
                     self.handle_query(query);
@@ -92,8 +93,8 @@ impl ProcessTracker {
                 Some(command) = command_rx.recv() => {
                     self.handle_command(command);
                 }
-                _ = async { self.poll_interval_timer.as_mut().unwrap().tick().await }, if self.poll_interval_timer.is_some() => {
-                    self.handle_tick().await;
+                _ = tick => {
+                    self.handle_tick();
                 }
             }
         }
@@ -136,7 +137,7 @@ impl ProcessTracker {
                 let _ = response.send(self.state.root_processes.get(&root_pid).map(Into::into));
             }
             ProcessTrackerQuery::GetTrackedPids { response } => {
-                let _ = response.send(self.state.root_processes.keys().cloned().collect());
+                let _ = response.send(self.state.root_processes.keys().copied().collect());
             }
             ProcessTrackerQuery::GetTopProcesses {
                 by,
@@ -183,8 +184,12 @@ impl ProcessTracker {
                     false,
                     ProcessRefreshKind::nothing(),
                 );
-                let result = match self.sys.process(Pid::from_u32(pid)) {
-                    Some(process) => {
+                let result = self.sys.process(Pid::from_u32(pid)).map_or_else(
+                    || {
+                        warn!(pid, "kill_process: process not found");
+                        Err(Error::ProcessTracker(format!("Process {pid} not found")))
+                    },
+                    |process| {
                         let success = process.kill_with(sysinfo_signal).unwrap_or(false);
                         self.emit_event(ProcessTrackerEvent::ProcessKilled { pid, success });
                         if success {
@@ -193,12 +198,8 @@ impl ProcessTracker {
                             warn!(pid, signal = ?signal, "signal sent but OS reported failure");
                         }
                         Ok(success)
-                    }
-                    None => {
-                        warn!(pid, "kill_process: process not found");
-                        Err(Error::ProcessTracker(format!("Process {pid} not found")))
-                    }
-                };
+                    },
+                );
                 let _ = response.send(result);
             }
             // ----------------------------------------------------------------
@@ -276,7 +277,7 @@ impl ProcessTracker {
         }
     }
 
-    async fn handle_tick(&mut self) {
+    fn handle_tick(&mut self) {
         // ----------------------------------------------------------------
         // Refresh all processes (need parent links to walk subtree).
         // ----------------------------------------------------------------
@@ -288,7 +289,7 @@ impl ProcessTracker {
                 .with_memory()
                 .with_disk_usage(),
         );
-        let pids: Vec<u32> = self.state.root_processes.keys().cloned().collect();
+        let pids: Vec<u32> = self.state.root_processes.keys().copied().collect();
         for pid in pids {
             let _ = self.update_root_pid_state(pid);
         }
@@ -312,10 +313,10 @@ impl ProcessTracker {
         let root_snap = self.sys.process(Pid::from_u32(root_pid)).map(Into::into);
 
         if root_snap.is_some() {
-            self.get_root_process_mut(&root_pid)?.root_appeared = true;
+            self.get_root_process_mut(root_pid)?.root_appeared = true;
         } else {
             self.emit_event(ProcessTrackerEvent::RootExited { pid: root_pid });
-            let root_process = self.get_root_process_mut(&root_pid)?;
+            let root_process = self.get_root_process_mut(root_pid)?;
             root_process.root_exited = true;
             if root_process.first_tick {
                 error!(
@@ -336,9 +337,9 @@ impl ProcessTracker {
         let child_snaps = self.collect_descendants(root_pid);
         let current_child_pids: HashSet<u32> = child_snaps.iter().map(|s| s.pid).collect();
 
-        let root_process = self.get_root_process_mut(&root_pid)?;
+        let root_process = self.get_root_process_mut(root_pid)?;
 
-        root_process.last_root = root_snap.clone();
+        root_process.last_root.clone_from(&root_snap);
         // ----------------------------------------------------------------
         // Diff against previous tick.
         // ----------------------------------------------------------------
@@ -357,7 +358,7 @@ impl ProcessTracker {
         // ----------------------------------------------------------------
         if root_process.first_tick {
             self.emit_event(ProcessTrackerEvent::InitialSnapshot {
-                root: root_snap.clone(),
+                root: root_snap,
                 children: child_snaps.clone(),
             });
             if child_snaps.is_empty() {
@@ -403,7 +404,7 @@ impl ProcessTracker {
             }
         }
 
-        let root_process = self.get_root_process_mut(&root_pid)?;
+        let root_process = self.get_root_process_mut(root_pid)?;
 
         // ----------------------------------------------------------------
         // Track whether we've ever seen children.
@@ -428,11 +429,11 @@ impl ProcessTracker {
         }
         if work_done {
             info!(root_pid, "work is done");
-            self.get_root_process_mut(&root_pid)?.work_done = true;
+            self.get_root_process_mut(root_pid)?.work_done = true;
             self.emit_event(ProcessTrackerEvent::WorkComplete { pid: root_pid });
         }
 
-        let root_process = self.get_root_process_mut(&root_pid)?;
+        let root_process = self.get_root_process_mut(root_pid)?;
         root_process.last_children = child_snaps;
         root_process.prev_child_pids = current_child_pids;
         root_process.first_tick = false;
@@ -450,7 +451,9 @@ impl ProcessTracker {
                     p.pid().as_u32(),
                     p.cpu_usage(),
                     p.memory(),
-                    disk_usage.written_bytes + disk_usage.read_bytes,
+                    disk_usage
+                        .written_bytes
+                        .saturating_add(disk_usage.read_bytes),
                 )
             })
             .collect();
@@ -527,16 +530,10 @@ pub fn init_process_tracker() {
         return;
     }
     let process_tracker = ProcessTracker::new(config.args.pid.clone());
-    PROCESS_TRACKER_QUERY_SENDER
-        .set(process_tracker.channels.query_tx.clone())
-        .unwrap();
-    PROCESS_TRACKER_EVENT_SENDER
-        .set(process_tracker.channels.event_tx.clone())
-        .unwrap();
+    let _ = PROCESS_TRACKER_QUERY_SENDER.set(process_tracker.channels.query_tx.clone());
+    let _ = PROCESS_TRACKER_EVENT_SENDER.set(process_tracker.channels.event_tx.clone());
     if config.args.allow_process_commands {
-        PROCESS_TRACKER_COMMAND_SENDER
-            .set(process_tracker.channels.command_tx.clone())
-            .unwrap();
+        let _ = PROCESS_TRACKER_COMMAND_SENDER.set(process_tracker.channels.command_tx.clone());
     }
     tokio::spawn(async move {
         if let Err(e) = process_tracker.start_tracking_loop().await {
@@ -544,7 +541,12 @@ pub fn init_process_tracker() {
         }
     });
     info!("Process Tracker started");
-    let pids: Vec<String> = config.args.pid.iter().map(|p| p.to_string()).collect();
+    let pids: Vec<String> = config
+        .args
+        .pid
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     if !pids.is_empty() {
         info!(
             pids = pids.join(", "),

@@ -1,4 +1,4 @@
-use crate::{prelude::*, utils::recv_or_pending, events::EventPayload};
+use crate::{events::EventPayload, prelude::*, utils::recv_or_pending};
 
 pub async fn run_dispatcher(cancel_token: tokio_util::sync::CancellationToken) {
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
@@ -16,7 +16,7 @@ pub async fn run_dispatcher(cancel_token: tokio_util::sync::CancellationToken) {
     loop {
         let payload: EventPayload = tokio::select! {
             biased;
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 info!("sse: dispatcher shutting down");
                 return;
             }

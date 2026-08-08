@@ -1,6 +1,18 @@
 use teloxide::prelude::*;
 
-use super::{broadcast::*, handlers::*, models::*};
+use super::{
+    broadcast::event_notifier,
+    handlers::{
+        handle_auth_prompt, handle_docker_callback, handle_help, handle_plain_message,
+        handle_process, handle_process_callback, handle_screenshot, handle_start, handle_stop,
+        handle_system_resources, handle_system_resources_callback, handle_top_processes_menu,
+        send_auth_first_message,
+    },
+    models::{
+        Command, DockerCallbackAction, ProcessCallbackAction, State, SystemResourcesCallbackAction,
+        TelegramBot,
+    },
+};
 use crate::prelude::*;
 
 pub fn init_bot(cancel_token: tokio_util::sync::CancellationToken) -> Option<TelegramBot> {
@@ -32,8 +44,8 @@ pub fn init_bot(cancel_token: tokio_util::sync::CancellationToken) -> Option<Tel
                 Err(err) => {
                     warn!("Telegram unreachable, retrying in 10s: {err}");
                     tokio::select! {
-                        _ = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {}
-                        _ = cancel_clone.cancelled() => {
+                        () = tokio::time::sleep(tokio::time::Duration::from_secs(10)) => {}
+                        () = cancel_clone.cancelled() => {
                             info!("Cancelled while waiting for Telegram");
                             return;
                         }
@@ -75,17 +87,13 @@ fn schema() -> teloxide::dispatching::UpdateHandler<Error> {
 
 async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Result<()> {
     let _ = bot.answer_callback_query(q.id.clone()).await;
-    let chat_id = match q.message.as_ref().map(|m| m.chat().id) {
-        Some(id) => id,
-        None => return Ok(()),
+    let Some(chat_id) = q.message.as_ref().map(|m| m.chat().id) else {
+        return Ok(());
     };
     if !state.is_authorized_to_commmand(chat_id) {
         return send_auth_first_message(bot, chat_id).await;
     }
-    let data = match &q.data {
-        Some(d) => d,
-        None => return Ok(()),
-    };
+    let Some(data) = &q.data else { return Ok(()) };
     if let Some(action) = ProcessCallbackAction::decode(data) {
         return handle_process_callback(bot, q, chat_id, action).await;
     }

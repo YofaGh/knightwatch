@@ -19,7 +19,8 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub fn new(base: String, token: Option<String>) -> Self {
+    #[must_use]
+    pub fn new(base: &str, token: Option<String>) -> Self {
         Self {
             client: Client::new(),
             base: base.trim_end_matches('/').to_string(),
@@ -32,7 +33,12 @@ impl ApiClient {
     }
 
     pub fn bearer(&self, req: RequestBuilder) -> RequestBuilder {
-        match self.token.read().unwrap().as_ref() {
+        match self
+            .token
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
             Some(t) => req.bearer_auth(t),
             None => req,
         }
@@ -92,20 +98,41 @@ impl ApiClient {
 
     // ── Common ────────────────────────────────────────────────────────
 
+    /// Fetches the server health status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn health(&self) -> Result<kw_types::api::HealthResponse> {
         self.get_typed("/health").await
     }
 
+    /// Fetches general server info.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn info(&self) -> Result<kw_types::api::InfoResponse> {
         self.get_typed("/info").await
     }
 
+    /// Requests that the server shut down.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn shutdown(&self) -> Result<Option<Value>> {
         self.post("/shutdown", json!({})).await
     }
 
     // ── Auth ──────────────────────────────────────────────────────────
 
+    /// Logs in with the given credentials and stores the returned auth token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, the server responds with a non-success status,
+    /// or the response cannot be deserialized.
     pub async fn login(
         &self,
         username: String,
@@ -117,39 +144,68 @@ impl ApiClient {
                 kw_types::api::LoginRequest { username, password },
             )
             .await;
-        match &result {
-            Ok(login_response) => {
-                *self.token.write().unwrap() = Some(login_response.token.clone());
-            }
-            Err(e) => eprintln!("Error occurred: {}", e),
+        if let Ok(login_response) = &result {
+            *self
+                .token
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                Some(login_response.token.clone());
         }
         result
     }
 
+    /// Logs out and clears the stored auth token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn logout(&self) -> Result<()> {
         self.post("/auth/logout", json!({})).await?;
-        *self.token.write().unwrap() = None;
+        *self
+            .token
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         Ok(())
     }
 
     // ── Screenshot ────────────────────────────────────────────────────
 
+    /// Fetches a screenshot of the current screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn screenshot(&self) -> Result<kw_types::api::ScreenshotResponse> {
         self.get_typed("/screenshot").await
     }
 
     // ── Screen capture commands ───────────────────────────────────────
 
+    /// Pauses periodic screen capture polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn screen_capture_poll_pause(&self) -> Result<()> {
         self.post("/screen/poll/pause", json!({})).await?;
         Ok(())
     }
 
+    /// Resumes periodic screen capture polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn screen_capture_poll_resume(&self) -> Result<()> {
         self.post("/screen/poll/resume", json!({})).await?;
         Ok(())
     }
 
+    /// Sets the screen capture polling interval, in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn screen_capture_interval(&self, interval_ms: u64) -> Result<()> {
         self.post(
             "/screen/poll/interval",
@@ -161,36 +217,76 @@ impl ApiClient {
 
     // ── Process tracking ──────────────────────────────────────────────
 
+    /// Fetches the list of tracked root process IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn root_pids(&self) -> Result<Vec<u32>> {
         self.get_typed("/root_pids").await
     }
 
+    /// Fetches the process tree rooted at the given PID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn process_tree(&self, root_pid: u32) -> Result<ProcessTree> {
         self.get_typed(&format!("/process/{root_pid}")).await
     }
 
+    /// Fetches a snapshot of the given root process.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn process_root(&self, root_pid: u32) -> Result<ProcessSnapshot> {
         self.get_typed(&format!("/process/root/{root_pid}")).await
     }
 
+    /// Fetches snapshots of the children of the given root process.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn process_children(&self, root_pid: u32) -> Result<Vec<ProcessSnapshot>> {
         self.get_typed(&format!("/process/children/{root_pid}"))
             .await
     }
 
+    /// Fetches the status of the given root process.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn process_status(&self, root_pid: u32) -> Result<kw_types::process::ProcessStatus> {
         self.get_typed(&format!("/process/status/{root_pid}")).await
     }
 
+    /// Checks whether the given root process has finished.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn process_is_done(&self, root_pid: u32) -> Result<bool> {
         self.get_typed(&format!("/process/is-done/{root_pid}"))
             .await
     }
 
+    /// Fetches all tracked process trees.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn process_trees(&self) -> Result<Vec<ProcessTree>> {
         self.get_typed("/process/trees").await
     }
 
+    /// Fetches the top processes sorted by the given key, optionally limited to `limit` results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn top_processes(
         &self,
         sort: kw_types::process::ProcessesSortKey,
@@ -203,12 +299,22 @@ impl ApiClient {
         .await
     }
 
+    /// Fetches the list of signals supported by the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn supported_signals(&self) -> Result<Vec<ProcessSignal>> {
         self.get_typed("/supported-signals").await
     }
 
     // ── Process commands ──────────────────────────────────────────────
 
+    /// Sends the given signal to the process with the given PID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn kill_process(&self, pid: u32, signal: ProcessSignal) -> Result<()> {
         self.post(
             &format!("/process/kill/{pid}"),
@@ -218,33 +324,63 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Kills the process tree rooted at the given PID, returning the PIDs that were killed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn kill_process_tree(&self, root_pid: u32) -> Result<Vec<u32>> {
         self.post_typed(&format!("/process/kill-tree/{root_pid}"), json!({}))
             .await
     }
 
+    /// Starts tracking the given PID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn track_pid(&self, pid: u32) -> Result<()> {
         self.post(&format!("/process/track/{pid}"), json!({}))
             .await?;
         Ok(())
     }
 
+    /// Stops tracking the given PID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn untrack_pid(&self, pid: u32) -> Result<()> {
         self.post(&format!("/process/untrack/{pid}"), json!({}))
             .await?;
         Ok(())
     }
 
+    /// Pauses periodic process polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn process_poll_pause(&self) -> Result<()> {
         self.post("/process/poll/pause", json!({})).await?;
         Ok(())
     }
 
+    /// Resumes periodic process polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn process_poll_resume(&self) -> Result<()> {
         self.post("/process/poll/resume", json!({})).await?;
         Ok(())
     }
 
+    /// Sets the process polling interval, in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn process_poll_interval(&self, interval_ms: u64) -> Result<()> {
         self.post(
             "/process/poll/interval",
@@ -256,44 +392,94 @@ impl ApiClient {
 
     // ── System resources ──────────────────────────────────────────────
 
+    /// Fetches a snapshot of overall system resource usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn system_snapshot(&self) -> Result<resources::SystemSnapshot> {
         self.get_typed("/system").await
     }
 
+    /// Fetches a snapshot of CPU usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn cpu_snapshot(&self) -> Result<resources::CpuSnapshot> {
         self.get_typed("/cpu").await
     }
 
+    /// Fetches a snapshot of memory usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn memory_snapshot(&self) -> Result<resources::MemorySnapshot> {
         self.get_typed("/memory").await
     }
 
+    /// Fetches snapshots of disk usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn disk_snapshots(&self) -> Result<Vec<resources::DiskSnapshot>> {
         self.get_typed("/disks").await
     }
 
+    /// Fetches snapshots of network usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn network_snapshots(&self) -> Result<Vec<resources::NetworkSnapshot>> {
         self.get_typed("/networks").await
     }
 
+    /// Fetches snapshots of GPU usage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn gpu_snapshots(&self) -> Result<Vec<resources::GpuSnapshot>> {
         self.get_typed("/gpus").await
     }
 
+    /// Fetches a snapshot of battery status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn battery_snapshot(&self) -> Result<resources::BatterySnapshot> {
         self.get_typed("/battery").await
     }
 
+    /// Fetches information about the host system.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn host_info(&self) -> Result<resources::HostInfo> {
         self.get_typed("/host-info").await
     }
 
+    /// Fetches snapshots of thermal sensor readings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn temperatures(&self) -> Result<Vec<resources::ThermalSnapshot>> {
         self.get_typed("/temperatures").await
     }
 
     // ── System resource commands ──────────────────────────────────────
 
+    /// Sets the warning/low thresholds for CPU, memory, disk, and battery.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn set_thresholds(
         &self,
         cpu_warn: f32,
@@ -314,6 +500,11 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Sets which resource categories are refreshed during polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn set_refresh_mask(
         &self,
         cpu: bool,
@@ -338,16 +529,31 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Pauses periodic resource polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn resources_poll_pause(&self) -> Result<()> {
         self.post("/resources/poll/pause", json!({})).await?;
         Ok(())
     }
 
+    /// Resumes periodic resource polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn resources_poll_resume(&self) -> Result<()> {
         self.post("/resources/poll/resume", json!({})).await?;
         Ok(())
     }
 
+    /// Sets the resource polling interval, in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn resources_poll_interval(&self, interval_ms: u64) -> Result<()> {
         self.post(
             "/resources/poll/interval",
@@ -359,34 +565,69 @@ impl ApiClient {
 
     // ── Systemd ───────────────────────────────────────────────────────
 
+    /// Fetches a snapshot of systemd state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn systemd_snapshot(&self) -> Result<kw_types::systemd::SystemdSnapshot> {
         self.get_typed("/systemd").await
     }
 
+    /// Fetches a snapshot of the given systemd unit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn unit_snapshot(&self, unit_name: &str) -> Result<UnitSnapshot> {
         self.get_typed(&format!("/unit/{unit_name}")).await
     }
 
+    /// Fetches snapshots of all units in the given state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn units_by_state(&self, unit_state: &str) -> Result<Vec<UnitSnapshot>> {
         self.get_typed(&format!("/units/{unit_state}")).await
     }
 
+    /// Fetches snapshots of all failed units.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn failed_units(&self) -> Result<Vec<UnitSnapshot>> {
         self.get_typed("/failed_units").await
     }
 
     // ── Systemd commands ──────────────────────────────────────
 
+    /// Pauses periodic systemd polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn systemd_poll_pause(&self) -> Result<()> {
         self.post("/systemd/poll/pause", json!({})).await?;
         Ok(())
     }
 
+    /// Resumes periodic systemd polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn systemd_poll_resume(&self) -> Result<()> {
         self.post("/systemd/poll/resume", json!({})).await?;
         Ok(())
     }
 
+    /// Sets the systemd polling interval, in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn systemd_poll_interval(&self, interval_ms: u64) -> Result<()> {
         self.post(
             "/systemd/poll/interval",
@@ -398,14 +639,29 @@ impl ApiClient {
 
     // ── Docker ────────────────────────────────────────────────────────
 
+    /// Fetches snapshots of all docker containers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn docker_containers(&self) -> Result<Vec<ContainerSnapshot>> {
         self.get_typed("/docker-containers").await
     }
 
+    /// Fetches a snapshot of the given docker container.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn docker_container(&self, id_or_name: &str) -> Result<ContainerSnapshot> {
         self.get_typed(&format!("/container/{id_or_name}")).await
     }
 
+    /// Fetches the top containers sorted by the given key, optionally limited to `limit` results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn top_containers(
         &self,
         sort: kw_types::docker::DockerSortKey,
@@ -420,6 +676,11 @@ impl ApiClient {
 
     // ── Docker commands ───────────────────────────────────────────────
 
+    /// Stops the given container, optionally with a timeout in seconds before it is killed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn stop_container(&self, id_or_name: &str, timeout_secs: Option<i32>) -> Result<()> {
         self.post(
             "/docker/stop-container",
@@ -432,6 +693,11 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Kills the given container, optionally with a specific signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn kill_container(&self, id_or_name: &str, signal: Option<String>) -> Result<()> {
         self.post(
             "/docker/kill-container",
@@ -444,6 +710,11 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Starts the given container.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn start_container(&self, id_or_name: &str) -> Result<()> {
         self.post(
             "/docker/start-container",
@@ -455,6 +726,11 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Restarts the given container, optionally with a timeout in seconds before it is killed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn restart_container(
         &self,
         id_or_name: &str,
@@ -471,6 +747,11 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Pauses the given container.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn pause_container(&self, id_or_name: &str) -> Result<()> {
         self.post(
             "/docker/pause-container",
@@ -482,6 +763,11 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Unpauses the given container.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn unpause_container(&self, id_or_name: &str) -> Result<()> {
         self.post(
             "/docker/unpause-container",
@@ -493,16 +779,31 @@ impl ApiClient {
         Ok(())
     }
 
+    /// Pauses periodic docker polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn docker_poll_pause(&self) -> Result<()> {
         self.post("/docker/poll/pause", json!({})).await?;
         Ok(())
     }
 
+    /// Resumes periodic docker polling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn docker_poll_resume(&self) -> Result<()> {
         self.post("/docker/poll/resume", json!({})).await?;
         Ok(())
     }
 
+    /// Sets the docker polling interval, in milliseconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
     pub async fn docker_poll_interval(&self, interval_ms: u64) -> Result<()> {
         self.post(
             "/docker/poll/interval",

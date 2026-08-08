@@ -21,7 +21,9 @@ pub async fn handle_screenshot(
     }
     for (chunk_idx, chunk) in images.chunks(10).enumerate() {
         if chunk.len() == 1 {
-            let s = &chunk[0];
+            let Some(s) = chunk.first() else {
+                continue;
+            };
             bot.send_photo(msg.chat.id, InputFile::memory(s.image.clone()))
                 .caption(format!(
                     "🖼️ {} | {}x{} | {}",
@@ -35,7 +37,10 @@ pub async fn handle_screenshot(
                 .map(|(i, s)| {
                     let mut photo = InputMediaPhoto::new(InputFile::memory(s.image.clone()));
                     if i == 0 {
-                        photo = photo.caption(format!("🖼️ Screenshot — batch {}", chunk_idx + 1));
+                        photo = photo.caption(format!(
+                            "🖼️ Screenshot — batch {}",
+                            chunk_idx.saturating_add(1)
+                        ));
                     } else {
                         photo = photo.caption(format!(
                             "{} | {}x{} | {}",

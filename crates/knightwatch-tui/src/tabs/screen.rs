@@ -58,7 +58,7 @@ impl super::Tab for ScreenTab {
         }
 
         for (rect, monitor_id) in &self.thumb_hit_rects {
-            if mouse_hit(mouse, rect) {
+            if mouse_hit(*mouse, *rect) {
                 self.primary_monitor_id = Some(*monitor_id);
                 return true;
             }
@@ -101,7 +101,11 @@ impl super::Tab for ScreenTab {
             .iter()
             .position(|s| Some(s.monitor_id) == self.primary_monitor_id)
             .unwrap_or(0);
-        self.primary_monitor_id = Some(self.screenshots[primary_idx].monitor_id);
+        let Some(primary) = self.screenshots.get_mut(primary_idx) else {
+            crate::ui_helpers::waiting_placeholder(frame, area, "Screen");
+            return;
+        };
+        self.primary_monitor_id = Some(primary.monitor_id);
 
         let others: Vec<usize> = (0..self.screenshots.len())
             .filter(|&i| i != primary_idx)
@@ -116,15 +120,20 @@ impl super::Tab for ScreenTab {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Min(0), Constraint::Length(28)])
                 .split(area);
-            (chunks[0], Some(chunks[1]))
+            match &chunks[..] {
+                [first, second] => (*first, Some(*second)),
+                _ => (area, None),
+            }
         };
 
         // ── Primary image ──
-        frame.render_stateful_widget(
-            StatefulImage::default(),
-            primary_area,
-            &mut self.screenshots[primary_idx].protocol,
-        );
+        if let Some(shot) = self.screenshots.get_mut(primary_idx) {
+            frame.render_stateful_widget(
+                StatefulImage::default(),
+                primary_area,
+                &mut shot.protocol,
+            );
+        }
 
         // ── Thumbnails on the right, stacked vertically ──
         if let Some(thumbs_area) = thumbs_area {
@@ -136,25 +145,27 @@ impl super::Tab for ScreenTab {
                 .constraints(constraints)
                 .split(thumbs_area);
 
-            for (slot, &idx) in others.iter().enumerate() {
-                let chunk = thumb_chunks[slot];
+            for (&idx, &chunk) in others.iter().zip(thumb_chunks.iter()) {
                 let label_area = Rect { height: 1, ..chunk };
                 let image_area = Rect {
-                    y: chunk.y + 1,
+                    y: chunk.y.saturating_add(1),
                     height: chunk.height.saturating_sub(1),
                     ..chunk
                 };
 
-                let monitor_id = self.screenshots[idx].monitor_id;
+                let Some(shot) = self.screenshots.get_mut(idx) else {
+                    continue;
+                };
+                let monitor_id = shot.monitor_id;
                 frame.render_widget(
-                    Paragraph::new(self.screenshots[idx].monitor_name.clone())
+                    Paragraph::new(shot.monitor_name.clone())
                         .style(Style::default().fg(theme::ACCENT)),
                     label_area,
                 );
                 frame.render_stateful_widget(
                     StatefulImage::default(),
                     image_area,
-                    &mut self.screenshots[idx].protocol,
+                    &mut shot.protocol,
                 );
 
                 self.thumb_hit_rects.push((chunk, monitor_id));
@@ -202,11 +213,12 @@ impl ScreenTab {
                         protocol,
                     });
                 }
-                Err(err) => {
-                    eprintln!(
-                        "screen tab: failed to decode screenshot for monitor {} ({}): {err}",
-                        shot.monitor_id, shot.monitor_name
-                    );
+                Err(_err) => {
+                    // TODO: show in ui instead of stderr, but don't panic the whole app for one bad screenshot.
+                    // eprintln!(
+                    //     "screen tab: failed to decode screenshot for monitor {} ({}): {err}",
+                    //     shot.monitor_id, shot.monitor_name
+                    // );
                 }
             }
         }

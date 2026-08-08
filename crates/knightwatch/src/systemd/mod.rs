@@ -1,8 +1,8 @@
 use crate::prelude::*;
 
 mod client;
-mod event;
 mod commands;
+mod event;
 mod systemd_snap;
 
 #[cfg(target_os = "linux")]
@@ -23,16 +23,11 @@ pub fn init_systemd_monitor() {
     tokio::spawn(async move {
         match monitor::SystemdMonitor::new().await {
             Ok(monitor) => {
-                monitor::SYSTEMD_QUERY_SENDER
-                    .set(monitor.channels.query_tx.clone())
-                    .unwrap();
-                monitor::SYSTEMD_EVENT_SENDER
-                    .set(monitor.channels.event_tx.clone())
-                    .unwrap();
+                let _ = monitor::SYSTEMD_QUERY_SENDER.set(monitor.channels.query_tx.clone());
+                let _ = monitor::SYSTEMD_EVENT_SENDER.set(monitor.channels.event_tx.clone());
                 if config.args.allow_systemd_commands {
-                    monitor::SYSTEMD_COMMAND_SENDER
-                        .set(monitor.channels.command_tx.clone())
-                        .unwrap();
+                    let _ =
+                        monitor::SYSTEMD_COMMAND_SENDER.set(monitor.channels.command_tx.clone());
                 }
                 info!("Systemd Monitor started");
                 if let Err(e) = monitor.start_monitor_loop().await {

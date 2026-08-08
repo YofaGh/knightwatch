@@ -1,6 +1,6 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use kw_types::systemd::*;
+use kw_types::systemd::{SystemdSnapshot, UnitActiveState, UnitSnapshot};
 
 use super::{
     commands::{SystemdCommand, SystemdQuery},
@@ -12,11 +12,11 @@ use crate::prelude::*;
 pub fn subscribe_events() -> Option<broadcast::Receiver<SystemdEvent>> {
     super::monitor::SYSTEMD_EVENT_SENDER
         .get()
-        .map(|tx| tx.subscribe())
+        .map(tokio::sync::broadcast::Sender::subscribe)
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn subscribe_events() -> Option<broadcast::Receiver<SystemdEvent>> {
+pub const fn subscribe_events() -> Option<broadcast::Receiver<SystemdEvent>> {
     None
 }
 
@@ -26,7 +26,7 @@ fn get_systemd_query_sender() -> Option<&'static mpsc::Sender<SystemdQuery>> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn get_systemd_query_sender() -> Option<&'static mpsc::Sender<SystemdQuery>> {
+const fn get_systemd_query_sender() -> Option<&'static mpsc::Sender<SystemdQuery>> {
     None
 }
 
@@ -36,7 +36,7 @@ fn get_systemd_command_sender() -> Option<&'static mpsc::Sender<SystemdCommand>>
 }
 
 #[cfg(not(target_os = "linux"))]
-fn get_systemd_command_sender() -> Option<&'static mpsc::Sender<SystemdCommand>> {
+const fn get_systemd_command_sender() -> Option<&'static mpsc::Sender<SystemdCommand>> {
     None
 }
 
@@ -101,7 +101,7 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Pause polling. The systemd continues to handle queries and commands,
@@ -112,7 +112,7 @@ pub async fn pause_poll() -> Result<()> {
     let _ = tx_ref
         .send(SystemdCommand::PausePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
@@ -122,5 +122,5 @@ pub async fn resume_poll() -> Result<()> {
     let _ = tx_ref
         .send(SystemdCommand::ResumePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }

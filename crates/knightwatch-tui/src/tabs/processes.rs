@@ -16,7 +16,7 @@ use crate::{
     process_widgets::{
         ProcessActionsPanel, ProcessListState, render_process_detail, render_process_table,
     },
-    ui_helpers::*,
+    ui_helpers::{bordered_block, empty_note, icon, theme, waiting_placeholder},
 };
 
 pub struct ProcessesTab {
@@ -139,7 +139,7 @@ impl super::Tab for ProcessesTab {
     fn handle_app_event(&mut self, event: &AppEvent) -> bool {
         match event {
             AppEvent::ProcessTrees(trees) => {
-                self.trees = trees.clone();
+                self.trees.clone_from(trees);
                 self.rebuild_rows();
                 true
             }
@@ -180,18 +180,26 @@ impl super::Tab for ProcessesTab {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area);
+        let (first_outer, second_outer) = match outer.as_ref() {
+            [first, second] => (*first, *second),
+            _ => return,
+        };
 
-        render_summary(frame, outer[0], &self.trees);
+        render_summary(frame, first_outer, &self.trees);
 
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(outer[1]);
+            .split(second_outer);
+        let (first_main, second_main) = match main.as_ref() {
+            [first, second] => (*first, *second),
+            _ => return,
+        };
 
         let title = format!("Process Trees ({})", self.trees.len());
         let (hit_rects, offset) = render_process_table(
             frame,
-            main[0],
+            first_main,
             &title,
             &self.rows,
             &self.depths,
@@ -208,17 +216,25 @@ impl super::Tab for ProcessesTab {
                     Constraint::Min(0),
                     Constraint::Length(self.actions.height()),
                 ])
-                .split(main[1]);
+                .split(second_main);
+            let (first_right, second_right) = match right.as_ref() {
+                [first, second] => (*first, *second),
+                _ => return,
+            };
 
             match selected_idx {
-                Some(idx) => render_process_detail(frame, right[0], &self.rows[idx]),
-                None => empty_note(frame, right[0], "no process selected"),
+                Some(idx) if let Some(row) = self.rows.get(idx) => {
+                    render_process_detail(frame, first_right, row);
+                }
+                _ => empty_note(frame, first_right, "no process selected"),
             }
-            self.actions.render(frame, right[1]);
+            self.actions.render(frame, second_right);
         } else {
             match selected_idx {
-                Some(idx) => render_process_detail(frame, main[1], &self.rows[idx]),
-                None => empty_note(frame, main[1], "no process selected"),
+                Some(idx) if let Some(row) = self.rows.get(idx) => {
+                    render_process_detail(frame, second_main, row);
+                }
+                _ => empty_note(frame, second_main, "no process selected"),
             }
         }
     }

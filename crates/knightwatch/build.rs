@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
+
 fn main() {
     let profile = std::env::var("PROFILE").unwrap_or_default();
     let is_dist = std::env::var("CARGO_DIST_VERSION").is_ok();
@@ -6,24 +8,29 @@ fn main() {
     }
 
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
-    let workspace = std::env::var("CARGO_WORKSPACE_DIR").unwrap();
-    let dashboard = format!("{}/dashboard", workspace);
+    let workspace = std::env::var("CARGO_WORKSPACE_DIR")
+        .expect("CARGO_WORKSPACE_DIR should be set by the cargo workspace");
+    let dashboard = format!("{workspace}/dashboard");
 
-    println!("cargo:rerun-if-changed={}/src", dashboard);
-    println!("cargo:rerun-if-changed={}/package.json", dashboard);
-    println!("cargo:rerun-if-changed={}/svelte.config.js", dashboard);
-    println!("cargo:rerun-if-changed={}/vite.config.js", dashboard);
+    println!("cargo:rerun-if-changed={dashboard}/src");
+    println!("cargo:rerun-if-changed={dashboard}/package.json");
+    println!("cargo:rerun-if-changed={dashboard}/svelte.config.js");
+    println!("cargo:rerun-if-changed={dashboard}/vite.config.js");
 
-    let node_modules = format!("{}/node_modules", dashboard);
-    if std::env::var("CI").is_ok() && std::path::Path::new(&node_modules).exists() {
-        std::fs::remove_dir_all(&node_modules)
-            .unwrap_or_else(|e| eprintln!("Warning: could not remove node_modules: {}", e));
+    let node_modules = format!("{dashboard}/node_modules");
+    if std::env::var("CI").is_ok()
+        && std::path::Path::new(&node_modules).exists()
+        && let Err(e) = std::fs::remove_dir_all(&node_modules)
+    {
+        eprintln!("Warning: could not remove node_modules: {e}");
     }
 
-    let lockfile = format!("{}/package-lock.json", dashboard);
-    if std::env::var("CI").is_ok() && std::path::Path::new(&lockfile).exists() {
-        std::fs::remove_file(&lockfile)
-            .unwrap_or_else(|e| eprintln!("Warning: could not remove package-lock.json: {}", e));
+    let lockfile = format!("{dashboard}/package-lock.json");
+    if std::env::var("CI").is_ok()
+        && std::path::Path::new(&lockfile).exists()
+        && let Err(e) = std::fs::remove_file(&lockfile)
+    {
+        eprintln!("Warning: could not remove package-lock.json: {e}");
     }
 
     run_npm(npm, &["install"], &dashboard);
@@ -35,8 +42,10 @@ fn run_npm(npm: &str, args: &[&str], cwd: &str) {
         .args(args)
         .current_dir(cwd)
         .status()
-        .unwrap_or_else(|e| panic!("Failed to spawn npm {:?}: {}", args, e));
-    if !status.success() {
-        panic!("npm {:?} failed with status: {}", args, status);
-    }
+        .unwrap_or_else(|e| panic!("Failed to spawn npm {args:?}: {e}"));
+
+    assert!(
+        status.success(),
+        "npm {args:?} failed with status: {status}"
+    );
 }

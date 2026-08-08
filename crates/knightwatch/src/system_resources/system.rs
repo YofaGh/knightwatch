@@ -5,6 +5,6 @@ pub struct StaticHostInfo {
     pub os_name: Option<String>,
     /// Kernel version string.
     pub kernel_version: Option<String>,
-    /// CPU architecture, e.g. "x86_64", "aarch64".
+    /// CPU architecture, e.g. "`x86_64`", "aarch64".
     pub cpu_arch: Option<String>,
 }

@@ -17,7 +17,7 @@ use crate::{
     process_widgets::{
         ProcessActionsPanel, ProcessListState, render_process_detail, render_process_table,
     },
-    ui_helpers::*,
+    ui_helpers::{bordered_block, empty_note, theme, waiting_placeholder},
 };
 
 /// Shared poll settings for the top-processes poller. Wrapped in an
@@ -77,7 +77,9 @@ impl TopProcessesTab {
             |api, ms| Box::pin(async move { api.process_poll_interval(ms).await }),
         );
         let actions = ProcessActionsPanel::new("Top Processes", api, tx, true, false);
-        let cfg = *poll_config.lock().unwrap();
+        let cfg = *poll_config
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Self {
             rows: Vec::new(),
             depths: Vec::new(),
@@ -103,7 +105,7 @@ impl TopProcessesTab {
                 .rows
                 .sort_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage)),
             ProcessesSortKey::Memory => {
-                self.rows.sort_by_key(|p| std::cmp::Reverse(p.memory_bytes))
+                self.rows.sort_by_key(|p| std::cmp::Reverse(p.memory_bytes));
             }
             ProcessesSortKey::Disk => self.rows.sort_by_key(|p| std::cmp::Reverse(p.disk_usage)),
         }
@@ -112,14 +114,17 @@ impl TopProcessesTab {
 
     /// Push the current sort/limit settings out to the poller.
     fn push_config(&self) {
-        *self.poll_config.lock().unwrap() = TopProcessesPollConfig {
+        *self
+            .poll_config
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = TopProcessesPollConfig {
             sort: self.sort_by,
             limit: self.limit,
         };
     }
 
     fn increase_limit(&mut self) {
-        self.limit = Some(self.limit.unwrap_or(LIMIT_MIN) + LIMIT_STEP);
+        self.limit = Some(self.limit.unwrap_or(LIMIT_MIN).saturating_add(LIMIT_STEP));
         self.push_config();
     }
 
@@ -259,17 +264,35 @@ impl super::Tab for TopProcessesTab {
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .split(area);
 
-        render_summary(frame, outer[0], self.rows.len(), self.sort_by, self.limit);
+        let [summary_area, body_area] = outer.as_ref() else {
+            return;
+        };
+        let summary_area = *summary_area;
+        let body_area = *body_area;
+
+        render_summary(
+            frame,
+            summary_area,
+            self.rows.len(),
+            self.sort_by,
+            self.limit,
+        );
 
         let main = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(outer[1]);
+            .split(body_area);
+
+        let [table_area, side_area] = main.as_ref() else {
+            return;
+        };
+        let table_area = *table_area;
+        let side_area = *side_area;
 
         let title = format!("Top Processes (sorted by {})", self.sort_by);
         let (hit_rects, offset) = render_process_table(
             frame,
-            main[0],
+            table_area,
             &title,
             &self.rows,
             &self.depths,
@@ -279,6 +302,8 @@ impl super::Tab for TopProcessesTab {
         self.list.set_hit_rects(hit_rects);
         self.scroll_offset = offset;
 
+        let selected_row = selected_idx.and_then(|idx| self.rows.get(idx));
+
         if self.commands_allowed && logged_in {
             let right = Layout::default()
                 .direction(Direction::Vertical)
@@ -286,17 +311,23 @@ impl super::Tab for TopProcessesTab {
                     Constraint::Min(0),
                     Constraint::Length(self.actions.height()),
                 ])
-                .split(main[1]);
+                .split(side_area);
 
-            match selected_idx {
-                Some(idx) => render_process_detail(frame, right[0], &self.rows[idx]),
-                None => empty_note(frame, right[0], "no process selected"),
+            let [detail_area, actions_area] = right.as_ref() else {
+                return;
+            };
+            let detail_area = *detail_area;
+            let actions_area = *actions_area;
+
+            match selected_row {
+                Some(row) => render_process_detail(frame, detail_area, row),
+                None => empty_note(frame, detail_area, "no process selected"),
             }
-            self.actions.render(frame, right[1]);
+            self.actions.render(frame, actions_area);
         } else {
-            match selected_idx {
-                Some(idx) => render_process_detail(frame, main[1], &self.rows[idx]),
-                None => empty_note(frame, main[1], "no process selected"),
+            match selected_row {
+                Some(row) => render_process_detail(frame, side_area, row),
+                None => empty_note(frame, side_area, "no process selected"),
             }
         }
     }
@@ -310,10 +341,7 @@ fn render_summary(
     limit: Option<usize>,
 ) {
     let inner = bordered_block(frame, area, "Top Processes");
-    let limit_str = match limit {
-        Some(n) => n.to_string(),
-        None => "all".to_string(),
-    };
+    let limit_str = limit.map_or_else(|| "all".to_string(), |n| n.to_string());
     let spans = vec![
         Span::raw(format!("{count} processes   sorted by ")),
         Span::styled(

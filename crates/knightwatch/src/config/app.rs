@@ -22,6 +22,7 @@ impl AppConfig {
     }
 }
 
+#[allow(clippy::expect_used)]
 pub fn get_config() -> &'static AppConfig {
     CONFIG.get().expect("Config not initialized")
 }
@@ -44,6 +45,7 @@ pub fn handle_command(command: &Command) -> Result<()> {
     }
 }
 
+#[allow(clippy::print_stdout)]
 fn handle_config_action(action: &ConfigAction) -> Result<()> {
     match action {
         ConfigAction::Get { field } => {
@@ -73,7 +75,7 @@ fn handle_config_action(action: &ConfigAction) -> Result<()> {
                         persistent.save()?;
                         println!("telegram_token cleared.");
                     } else if value.is_some() {
-                        persistent.telegram_token = value.clone();
+                        persistent.telegram_token.clone_from(value);
                         persistent.save()?;
                         println!("telegram_token updated.");
                     } else {
@@ -94,11 +96,11 @@ fn handle_config_action(action: &ConfigAction) -> Result<()> {
                             }
                         }
                         for url in add {
-                            if !persistent.webhook_urls.contains(url) {
+                            if persistent.webhook_urls.contains(url) {
+                                println!("webhook_url already exists: {url}");
+                            } else {
                                 persistent.webhook_urls.push(url.clone());
                                 println!("webhook_url added: {url}");
-                            } else {
-                                println!("webhook_url already exists: {url}");
                             }
                         }
                     }
@@ -106,10 +108,11 @@ fn handle_config_action(action: &ConfigAction) -> Result<()> {
                 }
             }
         }
-    };
+    }
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 fn handle_users_action(action: &UsersAction) -> Result<()> {
     match action {
         UsersAction::Add { username } => {
@@ -168,6 +171,6 @@ fn handle_users_action(action: &UsersAction) -> Result<()> {
                 None => return Err(Error::Config(format!("User '{username}' not found"))),
             }
         }
-    };
+    }
     Ok(())
 }

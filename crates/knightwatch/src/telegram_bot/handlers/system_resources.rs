@@ -14,10 +14,10 @@ pub async fn handle_system_resources(bot: Bot, msg: Message, state: State) -> Re
         return send_auth_first_message(bot, msg.chat.id).await;
     }
     let system_snapshot = system_resources::get_snapshot().await;
-    let message = match system_snapshot {
-        Some(snap) => TelegramDisplay(&snap).to_string(),
-        None => "*No System Snapshot found*".to_string(),
-    };
+    let message = system_snapshot.map_or_else(
+        || "*No System Snapshot found*".to_string(),
+        |snap| TelegramDisplay(&snap).to_string(),
+    );
     bot.send_message(msg.chat.id, message)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(system_resources_keyboard())

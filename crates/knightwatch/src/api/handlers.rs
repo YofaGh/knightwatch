@@ -1,7 +1,7 @@
 use axum::{body::Body, http::StatusCode, response::Response};
 use std::{sync::OnceLock, time::Instant};
 
-use super::{models::Vite, routers::*};
+use super::{models::Vite, routers::create_routers};
 use crate::prelude::*;
 
 pub static START_TIME: OnceLock<Instant> = OnceLock::new();
@@ -12,10 +12,16 @@ fn init_start_time() {
 
 #[cfg(debug_assertions)]
 async fn serve_dashboard(uri: axum::http::Uri) -> Response {
-    let vite_url = match uri.query() {
-        Some(q) => format!("http://localhost:5173{}?{}", uri.path(), q),
-        None => format!("http://localhost:5173{}", uri.path()),
-    };
+    fn bad_gateway(msg: &'static str) -> Response {
+        let mut response = Response::new(Body::from(msg));
+        *response.status_mut() = StatusCode::BAD_GATEWAY;
+        response
+    }
+
+    let vite_url = uri.query().map_or_else(
+        || format!("http://localhost:5173{}", uri.path()),
+        |q| format!("http://localhost:5173{}?{}", uri.path(), q),
+    );
     match reqwest::Client::new().get(&vite_url).send().await {
         Ok(res) => {
             let status = res.status();
@@ -24,24 +30,19 @@ async fn serve_dashboard(uri: axum::http::Uri) -> Response {
                 Ok(b) => b,
                 Err(err) => {
                     error!(?err, "Failed to read Vite response body");
-                    return Response::builder()
-                        .status(StatusCode::BAD_GATEWAY)
-                        .body(Body::from("Failed to read Vite response body"))
-                        .expect("BAD_GATEWAY response is valid");
+                    return bad_gateway("Failed to read Vite response body");
                 }
             };
-            let mut builder = Response::builder().status(status);
+            let mut response = Response::new(Body::from(bytes));
+            *response.status_mut() = status;
             if let Some(ct) = headers.get(reqwest::header::CONTENT_TYPE) {
-                builder = builder.header(reqwest::header::CONTENT_TYPE, ct);
+                response
+                    .headers_mut()
+                    .insert(reqwest::header::CONTENT_TYPE, ct.clone());
             }
-            builder
-                .body(Body::from(bytes))
-                .expect("Vite proxy response builder is valid")
+            response
         }
-        Err(_) => Response::builder()
-            .status(StatusCode::BAD_GATEWAY)
-            .body(Body::from("Vite dev server not running on :5173"))
-            .expect("BAD_GATEWAY response is valid"),
+        Err(_) => bad_gateway("Vite dev server not running on :5173"),
     }
 }
 
@@ -76,11 +77,11 @@ pub fn init_api_server(cancel_token: tokio_util::sync::CancellationToken) -> Res
     init_start_time();
     let mut app = create_routers(config, cancel_token.clone());
     #[cfg(debug_assertions)]
-    let vite = if !config.args.no_dashboard {
+    let vite = if config.args.no_dashboard {
+        None
+    } else {
         app = app.fallback(serve_dashboard);
         crate::utils::start_dev_server().map(|child_process| Vite { child_process })
-    } else {
-        None
     };
     #[cfg(not(debug_assertions))]
     let vite = {

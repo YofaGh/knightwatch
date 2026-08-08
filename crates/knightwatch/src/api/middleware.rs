@@ -4,10 +4,9 @@ pub async fn auth_middleware(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, StatusCode> {
-    let users = crate::config::get_users();
-    if users.users.is_empty() {
+    let Some(_) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
         return Ok(next.run(request).await);
-    }
+    };
     let token = request
         .headers()
         .get(axum::http::header::AUTHORIZATION)

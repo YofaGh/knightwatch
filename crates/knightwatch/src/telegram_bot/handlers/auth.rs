@@ -42,17 +42,15 @@ pub async fn handle_auth_token(
         .await?;
         return Ok(());
     }
-    if crate::config::set_user_chat_id(token_input, msg.chat.id.0)? {
-        state.set_chat_state_idle(msg.chat.id);
+    state.set_chat_state_idle(msg.chat.id);
+    if crate::config::set_user_chat_id(&token_input, msg.chat.id.0)? {
         state.set_chat_auth(msg.chat.id, AuthState::Authenticated);
-        state.set_chat_state_idle(msg.chat.id);
         send_chat_state(&chat_state_tx, (msg.chat.id, AuthState::Authenticated)).await;
         bot.send_message(msg.chat.id, "✅ You are now *authenticated*\\!")
             .parse_mode(ParseMode::MarkdownV2)
             .reply_markup(ReplyMarkup::Keyboard(main_keyboard()))
             .await?;
     } else {
-        state.set_chat_state_idle(msg.chat.id);
         bot.send_message(msg.chat.id, "❌ Authentication failed\\. Invalid token\\.")
             .parse_mode(ParseMode::MarkdownV2)
             .reply_markup(ReplyMarkup::Keyboard(main_keyboard()))

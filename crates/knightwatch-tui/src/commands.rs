@@ -23,11 +23,7 @@ pub fn spawn_command<T, Fut, M>(
     tokio::spawn(async move {
         let result = request.await.map(into_outcome).map_err(|e| e.to_string());
         let _ = tx
-            .send(AppEvent::CommandResult {
-                tab,
-                label,
-                result,
-            })
+            .send(AppEvent::CommandResult { tab, label, result })
             .await;
     });
 }

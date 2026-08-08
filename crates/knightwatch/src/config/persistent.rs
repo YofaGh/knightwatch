@@ -7,7 +7,7 @@ pub struct PersistentConfig {
 
 impl super::store::JsonStore for PersistentConfig {
     const NAME: &'static str = "config";
-    fn path() -> std::path::PathBuf {
+    fn path() -> Option<std::path::PathBuf> {
         super::paths::config_file_path("config.json")
     }
 }

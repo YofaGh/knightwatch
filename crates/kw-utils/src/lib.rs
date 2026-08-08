@@ -1,3 +1,6 @@
+pub mod conv;
+
+#[must_use]
 pub fn format_time(secs: u64) -> String {
     let days = secs / 86_400;
     let hours = (secs % 86_400) / 3_600;
@@ -23,16 +26,25 @@ pub fn format_time(secs: u64) -> String {
     }
 }
 
+#[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     const KB: u64 = 1_024;
     const MB: u64 = KB * 1_024;
     const GB: u64 = MB * 1_024;
     const TB: u64 = GB * 1_024;
+
+    fn format_unit(bytes: u64, unit: u64, suffix: &str) -> String {
+        let whole = bytes.checked_div(unit).unwrap_or(0);
+        let remainder = bytes.checked_rem(unit).unwrap_or(0);
+        let tenths = remainder.saturating_mul(10).checked_div(unit).unwrap_or(0);
+        format!("{whole}.{tenths} {suffix}")
+    }
+
     match bytes {
-        b if b >= TB => format!("{:.1} TB", b as f64 / TB as f64),
-        b if b >= GB => format!("{:.1} GB", b as f64 / GB as f64),
-        b if b >= MB => format!("{:.1} MB", b as f64 / MB as f64),
-        b if b >= KB => format!("{:.1} KB", b as f64 / KB as f64),
+        b if b >= TB => format_unit(b, TB, "TB"),
+        b if b >= GB => format_unit(b, GB, "GB"),
+        b if b >= MB => format_unit(b, MB, "MB"),
+        b if b >= KB => format_unit(b, KB, "KB"),
         b => format!("{b} B"),
     }
 }

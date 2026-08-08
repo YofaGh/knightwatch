@@ -1,3 +1,5 @@
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+
 use clap::Parser;
 use rustyline::{
     Completer, Helper, Hinter, Validator, completion::Pair, error::ReadlineError,
@@ -5,7 +7,7 @@ use rustyline::{
 };
 use std::borrow::Cow;
 
-use crate::colors::*;
+use crate::colors::{CYAN, DIM, RED, RESET, YELLOW};
 
 /// All top-level subcommand names, used for tab-completion.
 const SUBCOMMANDS: &[&str] = &[
@@ -121,9 +123,14 @@ impl rustyline::completion::Completer for SubcommandCompleter {
         _ctx: &rustyline::Context,
     ) -> rustyline::Result<(usize, Vec<Pair>)> {
         // Only complete the first token
-        let word_start = line[..pos].rfind(' ').map(|i| i + 1).unwrap_or(0);
-        let word = &line[word_start..pos];
-        let has_space = line[..pos].contains(' ');
+        let safe_pos = (0..=pos)
+            .rev()
+            .find(|&i| line.is_char_boundary(i))
+            .unwrap_or(0);
+        let prefix = line.get(..safe_pos).unwrap_or("");
+        let word_start = prefix.rfind(' ').map_or(0, |i| i.saturating_add(1));
+        let word = prefix.get(word_start..).unwrap_or("");
+        let has_space = prefix.contains(' ');
 
         if has_space {
             // Don't complete arguments — just return nothing
@@ -162,13 +169,20 @@ pub async fn run_interactive(api: kw_clients::ApiClient) {
         .completion_type(rustyline::CompletionType::List)
         .build();
 
-    let mut rl = rustyline::Editor::with_config(config).expect("failed to create editor");
+    let mut rl = match rustyline::Editor::with_config(config) {
+        Ok(rl) => rl,
+        Err(e) => {
+            eprintln!("{RED}error:{RESET} failed to create editor: {e}");
+            return;
+        }
+    };
     rl.set_helper(Some(helper));
 
     // Persist history across sessions
-    let hist_path = directories::ProjectDirs::from("com", "", "knightwatch")
-        .map(|proj| proj.data_local_dir().join("cli").join("history"))
-        .unwrap_or_else(|| std::path::PathBuf::from(".kwctl_history"));
+    let hist_path = directories::ProjectDirs::from("com", "", "knightwatch").map_or_else(
+        || std::path::PathBuf::from(".kwctl_history"),
+        |proj| proj.data_local_dir().join("cli").join("history"),
+    );
     if let Some(parent) = hist_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -198,16 +212,13 @@ pub async fn run_interactive(api: kw_clients::ApiClient) {
                 }
 
                 // Prepend a fake argv[0] so clap can parse the command
-                let args = match shlex::split(trimmed) {
-                    Some(a) => a,
-                    None => {
-                        eprintln!("{RED}error:{RESET} could not tokenize input");
-                        continue;
-                    }
+                let Some(args) = shlex::split(trimmed) else {
+                    eprintln!("{RED}error:{RESET} could not tokenize input");
+                    continue;
                 };
-                let argv: Vec<String> = std::iter::once("kwctl".to_owned()).chain(args).collect();
+                let args: Vec<String> = std::iter::once("kwctl".to_owned()).chain(args).collect();
 
-                match crate::Cli::try_parse_from(&argv) {
+                match crate::Cli::try_parse_from(&args) {
                     Ok(parsed) => {
                         if let Err(e) = crate::dispatch(parsed.command, &api).await {
                             eprintln!("{RED}error:{RESET} {e}");

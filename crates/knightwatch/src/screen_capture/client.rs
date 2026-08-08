@@ -9,7 +9,7 @@ fn get_screen_capture_query_sender() -> Option<&'static mpsc::Sender<ScreenCaptu
 }
 
 #[cfg(not(feature = "screenshot"))]
-fn get_screen_capture_query_sender() -> Option<&'static mpsc::Sender<ScreenCaptureQuery>> {
+const fn get_screen_capture_query_sender() -> Option<&'static mpsc::Sender<ScreenCaptureQuery>> {
     None
 }
 
@@ -19,7 +19,8 @@ fn get_screen_capture_command_sender() -> Option<&'static mpsc::Sender<ScreenCap
 }
 
 #[cfg(not(feature = "screenshot"))]
-fn get_screen_capture_command_sender() -> Option<&'static mpsc::Sender<ScreenCaptureCommand>> {
+const fn get_screen_capture_command_sender() -> Option<&'static mpsc::Sender<ScreenCaptureCommand>>
+{
     None
 }
 
@@ -44,7 +45,7 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Pause polling. The capture continues to handle queries and commands,
@@ -55,7 +56,7 @@ pub async fn pause_poll() -> Result<()> {
     let _ = tx_ref
         .send(ScreenCaptureCommand::PausePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
@@ -65,5 +66,5 @@ pub async fn resume_poll() -> Result<()> {
     let _ = tx_ref
         .send(ScreenCaptureCommand::ResumePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }

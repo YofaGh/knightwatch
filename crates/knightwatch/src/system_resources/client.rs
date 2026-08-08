@@ -1,6 +1,9 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use kw_types::resources::*;
+use kw_types::resources::{
+    BatterySnapshot, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo, MemorySnapshot,
+    NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+};
 
 use super::commands::{SystemResourcesCommand, SystemResourcesQuery};
 use crate::prelude::*;
@@ -8,7 +11,7 @@ use crate::prelude::*;
 pub fn subscribe_events() -> Option<broadcast::Receiver<super::event::SystemResourcesEvent>> {
     super::resources::SYSTEM_RESOURCES_EVENT_SENDER
         .get()
-        .map(|tx| tx.subscribe())
+        .map(tokio::sync::broadcast::Sender::subscribe)
 }
 
 fn get_system_resources_query_sender() -> Option<&'static mpsc::Sender<SystemResourcesQuery>> {
@@ -119,7 +122,7 @@ pub async fn set_thresholds(thresholds: Thresholds) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Change the refresh mask.
@@ -130,7 +133,7 @@ pub async fn set_refresh_mask(mask: RefreshMask) -> Result<()> {
     let _ = tx_ref
         .send(SystemResourcesCommand::SetRefreshMask { mask, response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Change the polling interval and restart the tick timer immediately.
@@ -144,7 +147,7 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Pause polling. The system resources continues to handle queries and commands,
@@ -156,7 +159,7 @@ pub async fn pause_poll() -> Result<()> {
     let _ = tx_ref
         .send(SystemResourcesCommand::PausePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
@@ -167,5 +170,5 @@ pub async fn resume_poll() -> Result<()> {
     let _ = tx_ref
         .send(SystemResourcesCommand::ResumePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }

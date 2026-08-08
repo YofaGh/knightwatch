@@ -17,7 +17,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui_image::picker::Picker;
-use std::io;
+use std::io::{self, Write};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -43,16 +43,17 @@ async fn main() -> io::Result<()> {
     });
 
     // Read this before `picker` is moved into `App::new` below.
-    match picker.protocol_type() {
-        ratatui_image::picker::ProtocolType::Halfblocks => {
-            eprintln!("image protocol: halfblocks (fallback, always safe)");
-        }
-        proto => {
-            eprintln!(
-                "image protocol: {proto:?} (detected/guessed — may not render correctly on all terminals, e.g. VS Code)"
-            );
-        }
-    }
+    // TODO: show in ui
+    // match picker.protocol_type() {
+    //     ratatui_image::picker::ProtocolType::Halfblocks => {
+    //         eprintln!("image protocol: halfblocks (fallback, always safe)");
+    //     }
+    //     proto => {
+    //         eprintln!(
+    //             "image protocol: {proto:?} (detected/guessed — may not render correctly on all terminals, e.g. VS Code)"
+    //         );
+    //     }
+    // }
 
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -61,18 +62,29 @@ async fn main() -> io::Result<()> {
 
     let base_url = std::env::var("KW_URL").unwrap_or_else(|_| "http://localhost:8083".to_string());
     let token = std::env::var("KW_TOKEN").ok();
-    let api = std::sync::Arc::new(kw_clients::ApiClient::new(base_url.clone(), token));
+    let api = std::sync::Arc::new(kw_clients::ApiClient::new(&base_url, token));
 
-    let info = api
-        .info()
-        .await
-        .unwrap_or_else(|_| panic!("Failed to connect to knightwatch server at: {base_url}"));
+    let info = match api.info().await {
+        Ok(info) => info,
+        Err(e) => {
+            // Clean up the terminal before bailing — main hasn't set up
+            // the panic hook's cleanup path for this, and we're not
+            // panicking, so do it manually here.
+            disable_raw_mode()?;
+            execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+            let _ = writeln!(
+                io::stderr(),
+                "Failed to connect to knightwatch server at: {base_url} ({e})"
+            );
+            std::process::exit(1);
+        }
+    };
 
     // Single channel, single event enum, one receiver in the main loop.
     // Every producer below just sends into a clone of `tx`.
     let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
-    let mut app = app::App::new(picker, api, info, tx.clone());
+    let mut app = app::App::new(picker, api, &info, tx.clone());
 
     // Drop our own sender. If we didn't, `rx.recv()` would never return
     // `None` even after every spawned task above exits, since a sender

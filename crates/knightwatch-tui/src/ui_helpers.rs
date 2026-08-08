@@ -6,6 +6,8 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
 };
 
+use kw_utils::conv;
+
 /// every part should pull its colors from here instead of hardcoding `Color::Cyan`.
 pub mod theme {
     use ratatui::style::Color;
@@ -39,9 +41,14 @@ pub mod icon {
 /// Unicode-block progress bar, e.g. "████░░░░".
 pub fn bar(percent: f64, width: usize) -> String {
     let percent = percent.clamp(0.0, 100.0);
-    let filled = ((percent / 100.0) * width as f64).round() as usize;
+    let filled =
+        conv::f64_to_usize_saturating(((percent / 100.0) * conv::usize_to_f64(width)).round());
     let filled = filled.min(width);
-    format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
+    format!(
+        "{}{}",
+        "█".repeat(filled),
+        "░".repeat(width.saturating_sub(filled))
+    )
 }
 
 /// Standard red/yellow/green threshold coloring used across tabs.
@@ -56,11 +63,11 @@ pub fn percent_color(p: f64) -> ratatui::style::Color {
 }
 
 /// Whether a mouse event's coordinates fall inside `rect`.
-pub fn mouse_hit(mouse: &crossterm::event::MouseEvent, rect: &Rect) -> bool {
+pub const fn mouse_hit(mouse: crossterm::event::MouseEvent, rect: Rect) -> bool {
     mouse.column >= rect.x
-        && mouse.column < rect.x + rect.width
+        && mouse.column < rect.x.saturating_add(rect.width)
         && mouse.row >= rect.y
-        && mouse.row < rect.y + rect.height
+        && mouse.row < rect.y.saturating_add(rect.height)
 }
 
 /// Draws the standard rounded, accent-titled block and returns the inner content area.
@@ -100,7 +107,7 @@ fn bordered_block_styled(frame: &mut Frame, area: Rect, title: &str, active: boo
 pub fn waiting_placeholder(frame: &mut Frame, area: Rect, label: &str) {
     let mid = area.height / 2;
     let centered = Rect {
-        y: area.y + mid,
+        y: area.y.saturating_add(mid),
         height: 1,
         ..area
     };
@@ -176,6 +183,12 @@ pub fn command_login_banner(
         .constraints([Constraint::Length(1), Constraint::Min(0)])
         .split(area);
 
+    let [banner_area, rest_area] = chunks.as_ref() else {
+        return area;
+    };
+    let banner_area = *banner_area;
+    let rest_area = *rest_area;
+
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
@@ -194,8 +207,8 @@ pub fn command_login_banner(
             ),
         ]))
         .alignment(Alignment::Center),
-        chunks[0],
+        banner_area,
     );
 
-    chunks[1]
+    rest_area
 }

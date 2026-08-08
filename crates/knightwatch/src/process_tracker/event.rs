@@ -30,7 +30,7 @@ pub enum ProcessTrackerEvent {
     WorkComplete {
         pid: u32,
     },
-    /// A process was killed via a KillProcess or KillTree command.
+    /// A process was killed via a `KillProcess` or `KillTree` command.
     ProcessKilled {
         pid: u32,
         /// `false` if the signal was sent but the OS reported failure,
@@ -59,7 +59,7 @@ impl From<&ProcessTrackerEvent> for crate::events::EventPayload {
             ProcessTrackerEvent::InitialSnapshot { root, children } => (
                 "process.initial_snapshot",
                 json!({
-                    "root_pid": if let Some(root) = root { root.pid } else { 0 },
+                    "root_pid": root.as_ref().map_or(0, |root| root.pid),
                     "child_count": children.len()
                 }),
             ),

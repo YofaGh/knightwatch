@@ -16,12 +16,15 @@ use kw_clients::ApiClient;
 use kw_types::resources::{
     self, BatteryState, CpuSnapshot, RefreshMask, SystemHealth, SystemSnapshot, Thresholds,
 };
-use kw_utils::{format_bytes, format_time};
+use kw_utils::{conv, format_bytes, format_time};
 
 use crate::{
     events::{AppEvent, CommandOutcome},
     poll_panel::PollPanel,
-    ui_helpers::*,
+    ui_helpers::{
+        bar, bordered_block, bordered_block_focused, empty_note, icon, mouse_hit, percent_color,
+        percent_gauge, result_line, theme, waiting_placeholder,
+    },
 };
 
 /// How many samples of CPU/memory history to keep for the sparklines.
@@ -67,7 +70,7 @@ impl SystemResourcesTab {
         if history.len() == HISTORY_LEN {
             history.pop_front();
         }
-        history.push_back(value.round().clamp(0.0, 100.0) as u64);
+        history.push_back(conv::f32_to_u64_saturating(value.round().clamp(0.0, 100.0)));
     }
 }
 
@@ -139,12 +142,9 @@ impl super::Tab for SystemResourcesTab {
         let area =
             crate::ui_helpers::command_login_banner(frame, area, self.commands_allowed, logged_in);
 
-        let snapshot = match &self.snapshot {
-            Some(s) => s,
-            None => {
-                waiting_placeholder(frame, area, "System Resources");
-                return;
-            }
+        let Some(snapshot) = &self.snapshot else {
+            waiting_placeholder(frame, area, "System Resources");
+            return;
         };
 
         let show_settings = self.commands_allowed && logged_in;
@@ -162,35 +162,50 @@ impl super::Tab for SystemResourcesTab {
             .constraints(constraints)
             .split(area);
 
-        render_host(frame, outer[0], snapshot);
+        let (Some(&host_area), Some(&cpu_mem_area), Some(&disks_nets_area), Some(&gpu_other_area)) =
+            (outer.first(), outer.get(1), outer.get(2), outer.get(3))
+        else {
+            return;
+        };
+
+        render_host(frame, host_area, snapshot);
 
         let cpu_mem = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(outer[1]);
-        render_cpu(frame, cpu_mem[0], snapshot, &self.cpu_history);
-        render_memory(frame, cpu_mem[1], snapshot, &self.mem_history);
+            .split(cpu_mem_area);
+        let [cpu_area, mem_area] = cpu_mem.as_ref() else {
+            return;
+        };
+        render_cpu(frame, *cpu_area, snapshot, &self.cpu_history);
+        render_memory(frame, *mem_area, snapshot, &self.mem_history);
 
         let disks_nets = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(outer[2]);
-        render_disks(frame, disks_nets[0], &snapshot.disks);
-        render_networks(frame, disks_nets[1], &snapshot.networks);
+            .split(disks_nets_area);
+        let [disks_area, nets_area] = disks_nets.as_ref() else {
+            return;
+        };
+        render_disks(frame, *disks_area, &snapshot.disks);
+        render_networks(frame, *nets_area, &snapshot.networks);
 
         let gpu_other = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(outer[3]);
-        render_gpus(frame, gpu_other[0], &snapshot.gpus);
+            .split(gpu_other_area);
+        let [gpus_area, other_area] = gpu_other.as_ref() else {
+            return;
+        };
+        render_gpus(frame, *gpus_area, &snapshot.gpus);
         render_battery_temps(
             frame,
-            gpu_other[1],
+            *other_area,
             snapshot.battery.as_ref(),
             &snapshot.temperatures,
         );
-        if show_settings {
-            self.settings.render(frame, outer[4]);
+        if show_settings && let Some(&settings_area) = outer.get(4) {
+            self.settings.render(frame, settings_area);
         }
     }
 }
@@ -199,7 +214,7 @@ impl super::Tab for SystemResourcesTab {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn health_color(h: &SystemHealth) -> Color {
+const fn health_color(h: &SystemHealth) -> Color {
     match h {
         SystemHealth::Healthy => theme::SUCCESS,
         SystemHealth::Warning => theme::WARNING,
@@ -208,10 +223,9 @@ fn health_color(h: &SystemHealth) -> Color {
 }
 
 fn load_avg_line(cpu: &CpuSnapshot) -> String {
-    match &cpu.load_avg {
-        Some(la) => format!("load {:.2} {:.2} {:.2}", la.one, la.five, la.fifteen),
-        None => String::new(),
-    }
+    cpu.load_avg.as_ref().map_or_else(String::new, |la| {
+        format!("load {:.2} {:.2} {:.2}", la.one, la.five, la.fifteen)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +269,12 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
             Constraint::Min(0),    // per-core list
         ])
         .split(inner);
+    let [info_area, gauge_area, cores_area] = rows.as_ref() else {
+        return;
+    };
+    let info_area = *info_area;
+    let gauge_area = *gauge_area;
+    let cores_area = *cores_area;
 
     let cpu = &snap.cpu;
     let load = load_avg_line(cpu);
@@ -263,8 +283,7 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         cpu.brand,
         cpu.frequency_mhz,
         cpu.physical_core_count
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "?".into()),
+            .map_or_else(|| "?".into(), |n| n.to_string()),
         if load.is_empty() {
             String::new()
         } else {
@@ -273,20 +292,25 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
     );
     frame.render_widget(
         Paragraph::new(info_line).style(Style::default().fg(theme::TEXT_DIM)),
-        rows[0],
+        info_area,
     );
 
     let gauge_sparkline = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(rows[1]);
+        .split(gauge_area);
+    let [gauge_col, sparkline_col] = gauge_sparkline.as_ref() else {
+        return;
+    };
+    let gauge_col = *gauge_col;
+    let sparkline_col = *sparkline_col;
 
     let gauge = percent_gauge(
         "",
-        cpu.usage_percent as f64,
+        f64::from(cpu.usage_percent),
         format!("{:.1}%", cpu.usage_percent),
     );
-    frame.render_widget(gauge, gauge_sparkline[0]);
+    frame.render_widget(gauge, gauge_col);
 
     let data: Vec<u64> = history.iter().copied().collect();
     let sparkline = Sparkline::default()
@@ -298,7 +322,7 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         .data(&data)
         .max(100)
         .style(Style::default().fg(theme::ACCENT));
-    frame.render_widget(sparkline, gauge_sparkline[1]);
+    frame.render_widget(sparkline, sparkline_col);
 
     let items: Vec<ListItem> = cpu
         .cores
@@ -307,14 +331,15 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
             let line = format!(
                 "{:<8} {} {:>5.1}%  {:>5} MHz",
                 c.name,
-                bar(c.usage_percent as f64, 20),
+                bar(f64::from(c.usage_percent), 20),
                 c.usage_percent,
                 c.frequency_mhz
             );
-            ListItem::new(line).style(Style::default().fg(percent_color(c.usage_percent as f64)))
+            ListItem::new(line)
+                .style(Style::default().fg(percent_color(f64::from(c.usage_percent))))
         })
         .collect();
-    frame.render_widget(List::new(items), rows[2]);
+    frame.render_widget(List::new(items), cores_area);
 }
 
 fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &VecDeque<u64>) {
@@ -330,10 +355,17 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
             Constraint::Min(0),    // history sparkline
         ])
         .split(inner);
+    let [ram_area, free_area, swap_area, history_area] = rows.as_ref() else {
+        return;
+    };
+    let ram_area = *ram_area;
+    let free_area = *free_area;
+    let swap_area = *swap_area;
+    let history_area = *history_area;
 
     let ram_gauge = percent_gauge(
         "RAM",
-        mem.used_percent as f64,
+        f64::from(mem.used_percent),
         format!(
             "{:.1}%  {} / {}",
             mem.used_percent,
@@ -341,7 +373,7 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
             format_bytes(mem.total_bytes)
         ),
     );
-    frame.render_widget(ram_gauge, rows[0]);
+    frame.render_widget(ram_gauge, ram_area);
 
     frame.render_widget(
         Paragraph::new(format!(
@@ -350,14 +382,14 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
             format_bytes(mem.free_bytes)
         ))
         .style(Style::default().fg(theme::TEXT_MUTED)),
-        rows[1],
+        free_area,
     );
 
     if mem.swap_total_bytes > 0 {
         let swap_pct = mem.swap_used_percent.unwrap_or(0.0);
         let swap_gauge = percent_gauge(
             "Swap",
-            swap_pct as f64,
+            f64::from(swap_pct),
             format!(
                 "{:.1}%  {} / {}",
                 swap_pct,
@@ -365,11 +397,11 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
                 format_bytes(mem.swap_total_bytes)
             ),
         );
-        frame.render_widget(swap_gauge, rows[2]);
+        frame.render_widget(swap_gauge, swap_area);
     } else {
         frame.render_widget(
             Paragraph::new("Swap: none").style(Style::default().fg(theme::TEXT_MUTED)),
-            rows[2],
+            swap_area,
         );
     }
 
@@ -383,7 +415,7 @@ fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: 
         .data(&data)
         .max(100)
         .style(Style::default().fg(Color::Magenta));
-    frame.render_widget(sparkline, rows[3]);
+    frame.render_widget(sparkline, history_area);
 }
 
 fn render_disks(frame: &mut Frame, area: Rect, disks: &[resources::DiskSnapshot]) {
@@ -400,14 +432,14 @@ fn render_disks(frame: &mut Frame, area: Rect, disks: &[resources::DiskSnapshot]
     let rows: Vec<Row> = disks
         .iter()
         .map(|d| {
-            let color = percent_color(d.used_percent as f64);
+            let color = percent_color(f64::from(d.used_percent));
             Row::new(vec![
                 Cell::from(d.mount_point.clone()),
                 Cell::from(d.file_system.clone()),
                 Cell::from(d.kind.to_string()),
                 Cell::from(format!(
                     "{} {:>5.1}%",
-                    bar(d.used_percent as f64, 12),
+                    bar(f64::from(d.used_percent), 12),
                     d.used_percent
                 ))
                 .style(Style::default().fg(color)),
@@ -453,7 +485,7 @@ fn render_networks(frame: &mut Frame, area: Rect, nets: &[resources::NetworkSnap
     let rows: Vec<Row> = nets
         .iter()
         .map(|n| {
-            let errs = n.rx_errors + n.tx_errors;
+            let errs = n.rx_errors.saturating_add(n.tx_errors);
             let err_style = if errs > 0 {
                 Style::default().fg(theme::DANGER)
             } else {
@@ -500,7 +532,11 @@ fn render_gpus(frame: &mut Frame, area: Rect, gpus: &[resources::GpuSnapshot]) {
                 .add_modifier(Modifier::BOLD),
         )];
         if let Some(u) = g.usage_percent {
-            parts.push(Span::raw(format!("  {} {:>5.1}%", bar(u as f64, 12), u)));
+            parts.push(Span::raw(format!(
+                "  {} {:>5.1}%",
+                bar(f64::from(u), 12),
+                u
+            )));
         }
         lines.push(Line::from(parts));
 
@@ -516,10 +552,10 @@ fn render_gpus(frame: &mut Frame, area: Rect, gpus: &[resources::GpuSnapshot]) {
             detail.push(format!("{t:.0}°C"));
         }
         if let Some(p) = g.power_draw_watts {
-            detail.push(match g.power_limit_watts {
-                Some(limit) => format!("{p:.0}W / {limit:.0}W"),
-                None => format!("{p:.0}W"),
-            });
+            detail.push(g.power_limit_watts.map_or_else(
+                || format!("{p:.0}W"),
+                |limit| format!("{p:.0}W / {limit:.0}W"),
+            ));
         }
         if !g.fan_speed_percent.is_empty() {
             let fans = g
@@ -551,8 +587,13 @@ fn render_battery_temps(
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(4), Constraint::Min(0)])
         .split(area);
+    let [battery_row, temps_row] = rows.as_ref() else {
+        return;
+    };
+    let battery_row = *battery_row;
+    let temps_row = *temps_row;
 
-    let battery_inner = bordered_block(frame, rows[0], "Battery");
+    let battery_inner = bordered_block(frame, battery_row, "Battery");
 
     match battery {
         Some(b) => {
@@ -576,7 +617,7 @@ fn render_battery_temps(
             };
             let gauge = Gauge::default()
                 .gauge_style(Style::default().fg(color))
-                .ratio((b.charge_percent as f64 / 100.0).clamp(0.0, 1.0))
+                .ratio((f64::from(b.charge_percent) / 100.0).clamp(0.0, 1.0))
                 .label(format!("{:.0}%  {}{}", b.charge_percent, b.state, extra));
             frame.render_widget(gauge, battery_inner);
         }
@@ -585,7 +626,7 @@ fn render_battery_temps(
         }
     }
 
-    let temps_inner = bordered_block(frame, rows[1], "Temperatures");
+    let temps_inner = bordered_block(frame, temps_row, "Temperatures");
 
     if temps.is_empty() {
         empty_note(frame, temps_inner, "no sensors reported");
@@ -606,11 +647,9 @@ fn render_battery_temps(
                 t.label,
                 temp,
                 t.temperature_max_celsius
-                    .map(|v| format!("{v:.0}°C"))
-                    .unwrap_or_else(|| "?".into()),
+                    .map_or_else(|| "?".into(), |v| format!("{v:.0}°C")),
                 t.temperature_critical_celsius
-                    .map(|v| format!("{v:.0}°C"))
-                    .unwrap_or_else(|| "?".into()),
+                    .map_or_else(|| "?".into(), |v| format!("{v:.0}°C")),
             );
             ListItem::new(line).style(Style::default().fg(color))
         })
@@ -657,13 +696,15 @@ impl ResourceSettingsPanel {
 
     pub fn height(&self) -> u16 {
         if self.focused {
-            1 + THRESHOLD_ROWS as u16 + 1 + 1 + MASK_ROWS as u16 + 1 + 1 + 2
+            conv::usize_to_u16_saturating(
+                THRESHOLD_ROWS.saturating_add(MASK_ROWS).saturating_add(7),
+            )
         } else {
             3
         }
     }
 
-    fn threshold_value(&self, row: usize) -> f32 {
+    const fn threshold_value(&self, row: usize) -> f32 {
         match row {
             0 => self.thresholds.cpu_warn,
             1 => self.thresholds.memory_warn,
@@ -672,7 +713,7 @@ impl ResourceSettingsPanel {
         }
     }
 
-    fn set_threshold_value(&mut self, row: usize, value: f32) {
+    const fn set_threshold_value(&mut self, row: usize, value: f32) {
         match row {
             0 => self.thresholds.cpu_warn = value,
             1 => self.thresholds.memory_warn = value,
@@ -681,7 +722,7 @@ impl ResourceSettingsPanel {
         }
     }
 
-    fn mask_value(&self, idx: usize) -> bool {
+    const fn mask_value(&self, idx: usize) -> bool {
         match idx {
             0 => self.mask.cpu,
             1 => self.mask.memory,
@@ -692,7 +733,7 @@ impl ResourceSettingsPanel {
         }
     }
 
-    fn toggle_mask(&mut self, idx: usize) {
+    const fn toggle_mask(&mut self, idx: usize) {
         match idx {
             0 => self.mask.cpu = !self.mask.cpu,
             1 => self.mask.memory = !self.mask.memory,
@@ -707,7 +748,7 @@ impl ResourceSettingsPanel {
         if let Event::Mouse(mouse) = event {
             if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 for (rect, idx) in &self.hit_rects {
-                    if mouse_hit(mouse, rect) {
+                    if mouse_hit(*mouse, *rect) {
                         if !self.focused {
                             self.focused = true;
                             return true;
@@ -758,11 +799,12 @@ impl ResourceSettingsPanel {
                 true
             }
             KeyCode::Up => {
-                self.selected = (self.selected + TOTAL_ROWS - 1) % TOTAL_ROWS;
+                self.selected =
+                    (self.selected.saturating_add(TOTAL_ROWS).saturating_sub(1)) % TOTAL_ROWS;
                 true
             }
             KeyCode::Down => {
-                self.selected = (self.selected + 1) % TOTAL_ROWS;
+                self.selected = (self.selected.saturating_add(1)) % TOTAL_ROWS;
                 true
             }
             KeyCode::Enter | KeyCode::Char(' ') => {
@@ -777,31 +819,31 @@ impl ResourceSettingsPanel {
         if row < THRESHOLD_ROWS {
             self.editing = Some(format!("{:.0}", self.threshold_value(row)));
         } else {
-            self.toggle_mask(row - THRESHOLD_ROWS);
+            self.toggle_mask(row.saturating_sub(THRESHOLD_ROWS));
             self.fire_mask();
         }
     }
 
-    fn fire_thresholds(&mut self) {
+    fn fire_thresholds(&self) {
         let t = self.thresholds.clone();
         let api = self.api.clone();
         let fut = Box::pin(async move {
             api.set_thresholds(t.cpu_warn, t.memory_warn, t.disk_warn, t.battery_low)
                 .await
         });
-        crate::commands::spawn_command(self.tx.clone(), self.tab, "thresholds", fut, |_| {
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "thresholds", fut, |()| {
             CommandOutcome::Ack
         });
     }
 
-    fn fire_mask(&mut self) {
+    fn fire_mask(&self) {
         let m = self.mask.clone();
         let api = self.api.clone();
         let fut = Box::pin(async move {
             api.set_refresh_mask(m.cpu, m.memory, m.disks, m.networks, m.temperatures, m.gpus)
                 .await
         });
-        crate::commands::spawn_command(self.tx.clone(), self.tab, "refresh-mask", fut, |_| {
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "refresh-mask", fut, |()| {
             CommandOutcome::Ack
         });
     }
@@ -856,7 +898,7 @@ impl ResourceSettingsPanel {
 
         let mut hit_rects = Vec::with_capacity(TOTAL_ROWS);
         let mut y = inner.y;
-        let bottom = inner.y + inner.height;
+        let bottom = inner.y.saturating_add(inner.height);
 
         macro_rules! line {
             ($text:expr, $style:expr) => {
@@ -880,7 +922,7 @@ impl ResourceSettingsPanel {
                 .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD)
         );
-        y += 1;
+        y = y.saturating_add(1);
 
         for (row, threshold) in THRESHOLD_LABELS.iter().enumerate().take(THRESHOLD_ROWS) {
             let is_selected = self.selected == row;
@@ -890,7 +932,7 @@ impl ResourceSettingsPanel {
                 Some(buf) if is_selected => format!("{buf}_"),
                 _ => format!("{:.0}", self.threshold_value(row)),
             };
-            let text = format!("{marker} {:<14} {value_text}%", threshold);
+            let text = format!("{marker} {threshold:<14} {value_text}%");
             let style = if is_editing {
                 Style::default()
                     .fg(Color::Black)
@@ -913,24 +955,24 @@ impl ResourceSettingsPanel {
                 frame.render_widget(Paragraph::new(text).style(style), rect);
                 hit_rects.push((rect, row));
             }
-            y += 1;
+            y = y.saturating_add(1);
         }
 
-        y += 1;
+        y = y.saturating_add(1);
         line!(
             "Refresh Mask".to_string(),
             Style::default()
                 .fg(theme::ACCENT)
                 .add_modifier(Modifier::BOLD)
         );
-        y += 1;
+        y = y.saturating_add(1);
 
         for (idx, max_label) in MASK_LABELS.iter().enumerate().take(MASK_ROWS) {
-            let row = THRESHOLD_ROWS + idx;
+            let row = THRESHOLD_ROWS.saturating_add(idx);
             let is_selected = self.selected == row;
             let marker = if is_selected { icon::CURSOR } else { " " };
             let check = if self.mask_value(idx) { "[x]" } else { "[ ]" };
-            let text = format!("{marker} {check} {}", max_label);
+            let text = format!("{marker} {check} {max_label}");
             let style = if is_selected {
                 Style::default()
                     .fg(theme::ACCENT)
@@ -948,10 +990,10 @@ impl ResourceSettingsPanel {
                 frame.render_widget(Paragraph::new(text).style(style), rect);
                 hit_rects.push((rect, row));
             }
-            y += 1;
+            y = y.saturating_add(1);
         }
 
-        y += 1;
+        y = y.saturating_add(1);
         if let Some((msg, is_err)) = &self.last_result {
             line!(result_line(msg, *is_err), Style::default());
         }

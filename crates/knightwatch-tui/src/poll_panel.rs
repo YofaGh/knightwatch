@@ -64,19 +64,25 @@ impl PollPanel {
 
     /// Call from the tab's `handle_event`, only when commands are allowed
     /// and the user is logged in. Returns whether the key was consumed.
-    pub fn handle_event(&mut self, event: &Event) -> bool {
+    pub fn handle_event(&self, event: &Event) -> bool {
         let Event::Key(key) = event else { return false };
         if key.kind != KeyEventKind::Press {
             return false;
         }
         match key.code {
             KeyCode::Char('p') => {
-                self.control.lock().unwrap().paused = true; // optimistic
+                self.control
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .paused = true; // optimistic
                 self.fire("pause", (self.pause)(self.api.clone()));
                 true
             }
             KeyCode::Char('r') => {
-                self.control.lock().unwrap().paused = false;
+                self.control
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .paused = false;
                 self.fire("resume", (self.resume)(self.api.clone()));
                 true
             }
@@ -92,17 +98,22 @@ impl PollPanel {
         }
     }
 
-    fn adjust_interval(&mut self, delta_ms: i64) {
+    fn adjust_interval(&self, delta_ms: i64) {
         let new_ms = {
-            let mut ctrl = self.control.lock().unwrap();
-            ctrl.interval_ms = (ctrl.interval_ms as i64 + delta_ms).max(250) as u64;
+            let mut ctrl = self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            ctrl.interval_ms = (ctrl.interval_ms.cast_signed().saturating_add(delta_ms))
+                .max(250)
+                .cast_unsigned();
             ctrl.interval_ms
         };
         self.fire("interval", (self.interval)(self.api.clone(), new_ms));
     }
 
     fn fire(&self, label: &'static str, request: ActionResult) {
-        crate::commands::spawn_command(self.tx.clone(), self.tab, label, request, |_| {
+        crate::commands::spawn_command(self.tx.clone(), self.tab, label, request, |()| {
             CommandOutcome::Ack
         });
     }
@@ -124,8 +135,14 @@ impl PollPanel {
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(1), Constraint::Min(0)])
             .split(area);
+        let [first_chunk, second_chunk] = chunks.as_ref() else {
+            return area;
+        };
 
-        let ctrl = *self.control.lock().unwrap();
+        let ctrl = *self
+            .control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let status = if ctrl.paused {
             Span::styled(
                 format!("{} paused", icon::DOT_OFF),
@@ -161,7 +178,7 @@ impl PollPanel {
             spans.push(Span::styled(msg.clone(), Style::default().fg(color)));
         }
 
-        frame.render_widget(Paragraph::new(Line::from(spans)), chunks[0]);
-        chunks[1]
+        frame.render_widget(Paragraph::new(Line::from(spans)), *first_chunk);
+        *second_chunk
     }
 }

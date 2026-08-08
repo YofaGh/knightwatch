@@ -42,10 +42,12 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         let chats = Arc::new(Mutex::new(HashMap::new()));
-        let pre_auth_ids = get_users().get_telegram_chat_ids().into_iter().map(ChatId);
-        if let Ok(mut g) = chats.lock() {
-            for chat_id in pre_auth_ids {
-                g.insert(chat_id, Chat::new_authed());
+        if let Some(users) = get_users() {
+            let pre_auth_ids = users.get_telegram_chat_ids().into_iter().map(ChatId);
+            if let Ok(mut g) = chats.lock() {
+                for chat_id in pre_auth_ids {
+                    g.insert(chat_id, Chat::new_authed());
+                }
             }
         }
         Self {
@@ -58,7 +60,7 @@ impl State {
         self.chats
             .lock()
             .ok()
-            .map(|g| g.keys().cloned().collect())
+            .map(|g| g.keys().copied().collect())
             .unwrap_or_default()
     }
 
@@ -83,7 +85,7 @@ impl State {
         }
     }
 
-    pub fn remove_chat(&mut self, chat_id: ChatId) {
+    pub fn remove_chat(&self, chat_id: ChatId) {
         if let Ok(mut g) = self.chats.lock() {
             g.remove(&chat_id);
         }
@@ -140,14 +142,14 @@ pub struct Chat {
 }
 
 impl Chat {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             chat_state: ChatState::Idle,
             auth_state: AuthState::Unauthenticated,
         }
     }
 
-    pub fn new_authed() -> Self {
+    pub const fn new_authed() -> Self {
         Self {
             chat_state: ChatState::Idle,
             auth_state: AuthState::Authenticated,
@@ -155,7 +157,7 @@ impl Chat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Subsystem {
     ProcessTracker,
     ScreenCapture,
@@ -165,18 +167,18 @@ pub enum Subsystem {
 }
 
 impl Subsystem {
-    pub fn label(&self) -> &'static str {
+    pub const fn label(&self) -> &'static str {
         match self {
-            Subsystem::ProcessTracker => "Process Tracker",
-            Subsystem::ScreenCapture => "Screen Capture",
-            Subsystem::SystemResources => "System Resources",
-            Subsystem::Systemd => "Systemd",
-            Subsystem::DockerTracker => "Docker Tracker",
+            Self::ProcessTracker => "Process Tracker",
+            Self::ScreenCapture => "Screen Capture",
+            Self::SystemResources => "System Resources",
+            Self::Systemd => "Systemd",
+            Self::DockerTracker => "Docker Tracker",
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatState {
     Idle,
     AwaitingUnitName,
@@ -185,7 +187,7 @@ pub enum ChatState {
 }
 
 /// Inline-button callback actions, encoded as `"action:payload"` strings.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessCallbackAction {
     /// `"track:1234"`
     Track { pid: u32 },
@@ -193,35 +195,35 @@ pub enum ProcessCallbackAction {
     Untrack { pid: u32 },
     /// `"killtree:1234"`
     KillTree { pid: u32 },
-    /// `"signal:1234:kill"` / `"signal:1234:term"` etc. — uses ProcessSignal's Display/TryFrom
+    /// `"signal:1234:kill"` / `"signal:1234:term"` etc. — uses `ProcessSignal`'s Display/TryFrom
     Signal { pid: u32, signal: ProcessSignal },
 }
 
 impl ProcessCallbackAction {
     pub fn encode(&self) -> String {
         match self {
-            ProcessCallbackAction::Track { pid } => format!("track:{pid}"),
-            ProcessCallbackAction::Untrack { pid } => format!("untrack:{pid}"),
-            ProcessCallbackAction::KillTree { pid } => format!("killtree:{pid}"),
-            ProcessCallbackAction::Signal { pid, signal } => format!("signal:{pid}:{signal}"),
+            Self::Track { pid } => format!("track:{pid}"),
+            Self::Untrack { pid } => format!("untrack:{pid}"),
+            Self::KillTree { pid } => format!("killtree:{pid}"),
+            Self::Signal { pid, signal } => format!("signal:{pid}:{signal}"),
         }
     }
 
     pub fn decode(s: &str) -> Option<Self> {
         let parts: Vec<&str> = s.splitn(3, ':').collect();
         match parts.as_slice() {
-            ["track", pid] => Some(ProcessCallbackAction::Track {
+            ["track", pid] => Some(Self::Track {
                 pid: pid.parse().ok()?,
             }),
-            ["untrack", pid] => Some(ProcessCallbackAction::Untrack {
+            ["untrack", pid] => Some(Self::Untrack {
                 pid: pid.parse().ok()?,
             }),
-            ["killtree", pid] => Some(ProcessCallbackAction::KillTree {
+            ["killtree", pid] => Some(Self::KillTree {
                 pid: pid.parse().ok()?,
             }),
             ["signal", pid, sig] => {
                 let signal = ProcessSignal::try_from(*sig).ok()?;
-                Some(ProcessCallbackAction::Signal {
+                Some(Self::Signal {
                     pid: pid.parse().ok()?,
                     signal,
                 })
@@ -243,18 +245,18 @@ pub enum SystemResourcesCallbackAction {
 impl SystemResourcesCallbackAction {
     pub fn encode(&self) -> String {
         match self {
-            SystemResourcesCallbackAction::SetThresholds(t) => format!(
+            Self::SetThresholds(t) => format!(
                 "sr_set_thresholds:{}:{}:{}:{}",
                 t.cpu_warn, t.memory_warn, t.disk_warn, t.battery_low
             ),
-            SystemResourcesCallbackAction::SetRefreshMask(m) => format!(
+            Self::SetRefreshMask(m) => format!(
                 "sr_set_refresh_mask:{}:{}:{}:{}:{}:{}",
-                m.cpu as u8,
-                m.memory as u8,
-                m.disks as u8,
-                m.networks as u8,
-                m.temperatures as u8,
-                m.gpus as u8,
+                u8::from(m.cpu),
+                u8::from(m.memory),
+                u8::from(m.disks),
+                u8::from(m.networks),
+                u8::from(m.temperatures),
+                u8::from(m.gpus),
             ),
         }
     }
@@ -268,7 +270,7 @@ impl SystemResourcesCallbackAction {
                 memory_warn,
                 disk_warn,
                 battery_low,
-            ] => Some(SystemResourcesCallbackAction::SetThresholds(Thresholds {
+            ] => Some(Self::SetThresholds(Thresholds {
                 cpu_warn: cpu_warn.parse().ok()?,
                 memory_warn: memory_warn.parse().ok()?,
                 disk_warn: disk_warn.parse().ok()?,
@@ -282,7 +284,7 @@ impl SystemResourcesCallbackAction {
                 networks,
                 temperatures,
                 gpus,
-            ] => Some(SystemResourcesCallbackAction::SetRefreshMask(RefreshMask {
+            ] => Some(Self::SetRefreshMask(RefreshMask {
                 cpu: *cpu != "0",
                 memory: *memory != "0",
                 disks: *disks != "0",
@@ -297,7 +299,7 @@ impl SystemResourcesCallbackAction {
 
 /// Inline-button callback actions for docker container commands.
 /// Encoded as `"dc_<action>:<id>"`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DockerCallbackAction {
     Stop { id: String },
     Start { id: String },
@@ -310,12 +312,12 @@ pub enum DockerCallbackAction {
 impl DockerCallbackAction {
     pub fn encode(&self) -> String {
         match self {
-            DockerCallbackAction::Stop { id } => format!("dc_stop:{id}"),
-            DockerCallbackAction::Start { id } => format!("dc_start:{id}"),
-            DockerCallbackAction::Kill { id } => format!("dc_kill:{id}"),
-            DockerCallbackAction::Restart { id } => format!("dc_restart:{id}"),
-            DockerCallbackAction::Pause { id } => format!("dc_pause:{id}"),
-            DockerCallbackAction::Unpause { id } => format!("dc_unpause:{id}"),
+            Self::Stop { id } => format!("dc_stop:{id}"),
+            Self::Start { id } => format!("dc_start:{id}"),
+            Self::Kill { id } => format!("dc_kill:{id}"),
+            Self::Restart { id } => format!("dc_restart:{id}"),
+            Self::Pause { id } => format!("dc_pause:{id}"),
+            Self::Unpause { id } => format!("dc_unpause:{id}"),
         }
     }
 
@@ -323,18 +325,18 @@ impl DockerCallbackAction {
         let (prefix, id) = s.split_once(':')?;
         let id = id.to_string();
         match prefix {
-            "dc_stop" => Some(DockerCallbackAction::Stop { id }),
-            "dc_start" => Some(DockerCallbackAction::Start { id }),
-            "dc_kill" => Some(DockerCallbackAction::Kill { id }),
-            "dc_restart" => Some(DockerCallbackAction::Restart { id }),
-            "dc_pause" => Some(DockerCallbackAction::Pause { id }),
-            "dc_unpause" => Some(DockerCallbackAction::Unpause { id }),
+            "dc_stop" => Some(Self::Stop { id }),
+            "dc_start" => Some(Self::Start { id }),
+            "dc_kill" => Some(Self::Kill { id }),
+            "dc_restart" => Some(Self::Restart { id }),
+            "dc_pause" => Some(Self::Pause { id }),
+            "dc_unpause" => Some(Self::Unpause { id }),
             _ => None,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthState {
     Unauthenticated,
     Authenticated,

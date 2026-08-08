@@ -9,3 +9,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 kw-types = { path = "../kw-types" }
+
+[lints]
+workspace = true

@@ -29,3 +29,6 @@ kw-types = { path = "../kw-types" }
 kw-clients = { path = "../kw-clients" }
 rustyline = { version = "18.0.1", features = ["derive"] }
 shlex = "2.0.1"
+
+[lints]
+workspace = true

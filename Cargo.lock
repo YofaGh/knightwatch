@@ -2639,6 +2639,9 @@ dependencies = [
 [[package]]
 name = "kw-utils"
 version = "1.0.18"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "lab"

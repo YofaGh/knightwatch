@@ -13,10 +13,10 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn bind_address(address: &str, err: std::io::Error) -> Self {
+    pub fn bind_address(address: &str, err: &std::io::Error) -> Self {
         Self::Network(format!("Failed to bind address: {address}, {err}"))
     }
-    pub fn channel_closed(err: tokio::sync::oneshot::error::RecvError) -> Self {
+    pub fn channel_closed(err: &tokio::sync::oneshot::error::RecvError) -> Self {
         Self::ChannelClosed(format!("Channel was closed: {err}"))
     }
     pub fn unsupported_signal(signal: crate::process_tracker::ProcessSignal) -> Self {
@@ -41,7 +41,7 @@ impl Error {
     pub fn systemd_commands_disabled() -> Self {
         Self::Systemd("Systemd commands are disabled — rerun with --allow-systemd-commands".into())
     }
-    pub fn bollard_error(err: bollard::errors::Error) -> Self {
+    pub fn bollard_error(err: &bollard::errors::Error) -> Self {
         Self::DockerTracker(format!("Docker API error: {err}"))
     }
     pub fn docker_commands_disabled() -> Self {
@@ -54,16 +54,16 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::Other(msg)
-            | Error::Config(msg)
-            | Error::Network(msg)
-            | Error::ChannelClosed(msg)
-            | Error::TelegramBot(msg)
-            | Error::Screen(msg)
-            | Error::SystemResources(msg)
-            | Error::DockerTracker(msg)
-            | Error::Systemd(msg)
-            | Error::ProcessTracker(msg) => {
+            Self::Other(msg)
+            | Self::Config(msg)
+            | Self::Network(msg)
+            | Self::ChannelClosed(msg)
+            | Self::TelegramBot(msg)
+            | Self::Screen(msg)
+            | Self::SystemResources(msg)
+            | Self::DockerTracker(msg)
+            | Self::Systemd(msg)
+            | Self::ProcessTracker(msg) => {
                 write!(f, "{msg}")
             }
         }
@@ -72,6 +72,6 @@ impl std::fmt::Display for Error {
 
 impl From<teloxide::errors::RequestError> for Error {
     fn from(err: teloxide::errors::RequestError) -> Self {
-        Error::TelegramBot(err.to_string())
+        Self::TelegramBot(err.to_string())
     }
 }

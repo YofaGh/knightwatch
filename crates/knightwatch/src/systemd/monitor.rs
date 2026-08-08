@@ -8,23 +8,31 @@ use tokio::{
 };
 use zbus::{Connection, zvariant::OwnedObjectPath};
 
-use kw_types::systemd::*;
+use kw_types::systemd::{SystemdSnapshot, UnitActiveState, UnitLoadState, UnitSnapshot, UnitType};
+use kw_utils::conv::{u64_to_u32_saturating, usize_to_u32_saturating};
 
-use super::{event::*, proxies::*, commands::*, systemd_snap::*, types::*, utils::*};
+use super::{
+    commands::{SystemdCommand, SystemdMonitorChannels, SystemdQuery},
+    event::SystemdEvent,
+    proxies::{SystemdManagerProxy, SystemdServiceProxy, SystemdUnitProxy},
+    systemd_snap::UnitFilter,
+    types::{ServiceDetails, ServiceProperties, UnitProperties},
+    utils::block_on_local,
+};
 use crate::prelude::*;
 
 struct SystemdMonitorState {
-    last_snapshot: Option<SystemdSnapshot>,
-    last_active_states: HashMap<String, UnitActiveState>,
-    last_failed_units: HashSet<String>,
+    snapshot: Option<SystemdSnapshot>,
+    active_states: HashMap<String, UnitActiveState>,
+    failed_units: HashSet<String>,
 }
 
 impl SystemdMonitorState {
     fn new() -> Self {
         Self {
-            last_snapshot: None,
-            last_active_states: HashMap::new(),
-            last_failed_units: HashSet::new(),
+            snapshot: None,
+            active_states: HashMap::new(),
+            failed_units: HashSet::new(),
         }
     }
 }
@@ -66,16 +74,16 @@ impl SystemdMonitor {
     }
 
     pub async fn start_monitor_loop(mut self) -> Result<()> {
-        let mut query_rx = self
-            .channels
-            .take_query_rx()
-            .expect("Failed to take query receiver");
-        let mut command_rx = self
-            .channels
-            .take_command_rx()
-            .expect("Failed to take command receiver");
+        let mut query_rx = self.channels.take_query_rx()?;
+        let mut command_rx = self.channels.take_command_rx()?;
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         loop {
+            let tick = async {
+                match self.poll_interval_timer.as_mut() {
+                    Some(timer) => timer.tick().await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
                 Some(query) = query_rx.recv() => {
                     self.handle_query(query);
@@ -83,7 +91,7 @@ impl SystemdMonitor {
                 Some(command) = command_rx.recv() => {
                     self.handle_command(command);
                 }
-                _ = async { self.poll_interval_timer.as_mut().unwrap().tick().await }, if self.poll_interval_timer.is_some() => {
+                _ = tick => {
                     self.handle_tick().await;
                 }
             }
@@ -93,7 +101,7 @@ impl SystemdMonitor {
     fn handle_query(&self, query: SystemdQuery) {
         match query {
             SystemdQuery::Snapshot { response } => {
-                let _ = response.send(self.state.last_snapshot.clone());
+                let _ = response.send(self.state.snapshot.clone());
             }
             SystemdQuery::Unit {
                 unit_name,
@@ -101,7 +109,7 @@ impl SystemdMonitor {
             } => {
                 let unit = self
                     .state
-                    .last_snapshot
+                    .snapshot
                     .as_ref()
                     .and_then(|s| s.units.iter().find(|u| u.unit_name == unit_name).cloned());
                 let _ = response.send(unit);
@@ -109,7 +117,7 @@ impl SystemdMonitor {
             SystemdQuery::ByActiveState { state, response } => {
                 let units = self
                     .state
-                    .last_snapshot
+                    .snapshot
                     .as_ref()
                     .map(|s| {
                         s.units
@@ -166,7 +174,7 @@ impl SystemdMonitor {
                         snapshot: snapshot.clone(),
                     });
                 }
-                self.state.last_snapshot = Some(snapshot);
+                self.state.snapshot = Some(snapshot);
             }
             Err(e) => {
                 error!(?e, "systemd monitor: failed to build snapshot");
@@ -177,8 +185,7 @@ impl SystemdMonitor {
     fn diff_and_emit_events(&mut self, snapshot: &SystemdSnapshot) {
         let current_names: HashSet<String> =
             snapshot.units.iter().map(|u| u.unit_name.clone()).collect();
-        let previous_names: HashSet<String> =
-            self.state.last_active_states.keys().cloned().collect();
+        let previous_names: HashSet<String> = self.state.active_states.keys().cloned().collect();
 
         // Units that appeared since last tick
         for name in current_names.difference(&previous_names) {
@@ -198,9 +205,9 @@ impl SystemdMonitor {
 
         // State transitions for existing units
         for unit in &snapshot.units {
-            let prev = self.state.last_active_states.get(&unit.unit_name);
+            let prev = self.state.active_states.get(&unit.unit_name);
 
-            let was_failed = self.state.last_failed_units.contains(&unit.unit_name);
+            let was_failed = self.state.failed_units.contains(&unit.unit_name);
             let now_failed = unit.active_state == UnitActiveState::Failed;
 
             if now_failed && !was_failed {
@@ -219,12 +226,12 @@ impl SystemdMonitor {
         }
 
         // Update state maps for next tick
-        self.state.last_active_states = snapshot
+        self.state.active_states = snapshot
             .units
             .iter()
             .map(|u| (u.unit_name.clone(), u.active_state.clone()))
             .collect();
-        self.state.last_failed_units = snapshot
+        self.state.failed_units = snapshot
             .units
             .iter()
             .filter(|u| u.active_state == UnitActiveState::Failed)
@@ -263,7 +270,7 @@ impl SystemdMonitor {
                         UnitActiveState::Active | UnitActiveState::Reloading
                     )
                 {
-                    self.fetch_service_details(&unit_name, &raw.6).await
+                    self.fetch_service_details(&unit_name, &raw.6)
                 } else {
                     (None, None, None, None, None, None)
                 };
@@ -283,32 +290,30 @@ impl SystemdMonitor {
                 fragment_path,
             });
         }
+        units.sort_by(|a, b| {
+            Self::rank(a)
+                .cmp(&Self::rank(b))
+                .then(a.unit_name.cmp(&b.unit_name))
+        });
 
-        // Sort: failed first, then active, then by name
-        fn rank(u: &UnitSnapshot) -> u8 {
-            match u.active_state {
-                UnitActiveState::Failed => 0,
-                UnitActiveState::Active => 1,
-                UnitActiveState::Reloading => 2,
-                UnitActiveState::Activating => 3,
-                UnitActiveState::Deactivating => 4,
-                UnitActiveState::Inactive => 5,
-            }
-        }
-        units.sort_by(|a, b| rank(a).cmp(&rank(b)).then(a.unit_name.cmp(&b.unit_name)));
-
-        let failed_count = units
-            .iter()
-            .filter(|u| u.active_state == UnitActiveState::Failed)
-            .count() as u32;
-        let active_count = units
-            .iter()
-            .filter(|u| u.active_state == UnitActiveState::Active)
-            .count() as u32;
-        let inactive_count = units
-            .iter()
-            .filter(|u| u.active_state == UnitActiveState::Inactive)
-            .count() as u32;
+        let failed_count = usize_to_u32_saturating(
+            units
+                .iter()
+                .filter(|u| u.active_state == UnitActiveState::Failed)
+                .count(),
+        );
+        let active_count = usize_to_u32_saturating(
+            units
+                .iter()
+                .filter(|u| u.active_state == UnitActiveState::Active)
+                .count(),
+        );
+        let inactive_count = usize_to_u32_saturating(
+            units
+                .iter()
+                .filter(|u| u.active_state == UnitActiveState::Inactive)
+                .count(),
+        );
 
         Ok(SystemdSnapshot {
             timestamp: crate::utils::now_rfc3339(),
@@ -319,10 +324,22 @@ impl SystemdMonitor {
         })
     }
 
+    // Sort: failed first, then active, then by name
+    const fn rank(u: &UnitSnapshot) -> u8 {
+        match u.active_state {
+            UnitActiveState::Failed => 0,
+            UnitActiveState::Active => 1,
+            UnitActiveState::Reloading => 2,
+            UnitActiveState::Activating => 3,
+            UnitActiveState::Deactivating => 4,
+            UnitActiveState::Inactive => 5,
+        }
+    }
+
     /// Fetch extended properties for a single active .service unit.
     /// Delegates to two focused helpers — one per D-Bus interface — so a
     /// missing interface on one doesn't affect the other.
-    async fn fetch_service_details(
+    fn fetch_service_details(
         &self,
         unit_name: &str,
         object_path: &OwnedObjectPath,
@@ -370,8 +387,9 @@ impl SystemdMonitor {
                         return None;
                     }
                     let secs = ts_usec / 1_000_000;
-                    let nsecs = ((ts_usec % 1_000_000) * 1000) as u32;
-                    chrono::DateTime::from_timestamp(secs as i64, nsecs).map(|dt| dt.to_rfc3339())
+                    let nsecs = u64_to_u32_saturating((ts_usec % 1_000_000).saturating_mul(1000));
+                    chrono::DateTime::from_timestamp(secs.cast_signed(), nsecs)
+                        .map(|dt| dt.to_rfc3339())
                 });
 
             (fragment_path, since)
@@ -386,7 +404,7 @@ impl SystemdMonitor {
             .ok()
             .and_then(|b| block_on_local(async { b.build().await.ok() }));
 
-        if let Some(svc) = svc_proxy {
+        svc_proxy.map_or((None, None, None, None), |svc| {
             block_on_local(async {
                 let pid = svc.main_pid().await.ok().filter(|&p| p != 0);
                 let mem = svc.memory_current().await.ok().filter(|&m| m != u64::MAX);
@@ -398,9 +416,7 @@ impl SystemdMonitor {
                 let restarts = svc.n_restarts().await.ok();
                 (pid, mem, cpu, restarts)
             })
-        } else {
-            (None, None, None, None)
-        }
+        })
     }
 }
 

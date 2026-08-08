@@ -9,9 +9,13 @@ use tokio::{
     time::Duration,
 };
 
-use kw_types::docker::*;
+use kw_types::docker::{ContainerSnapshot, ContainerStats, ContainerStatus, DockerSortKey};
 
-use super::{commands::*, container::*, event::*};
+use super::{
+    commands::{DockerTrackerChannels, DockerTrackerCommand, DockerTrackerQuery},
+    container::ContainerAction,
+    event::DockerTrackerEvent,
+};
 use crate::prelude::*;
 
 /// State held by the tracker between ticks.
@@ -71,23 +75,21 @@ impl DockerTracker {
     // -------------------------------------------------------------------------
 
     async fn start_tracking_loop(mut self) -> Result<()> {
-        let mut query_rx = self
-            .channels
-            .take_query_rx()
-            .expect("Failed to take query receiver");
-        let mut command_rx = self
-            .channels
-            .take_command_rx()
-            .expect("Failed to take command receiver");
-
+        let mut query_rx = self.channels.take_query_rx()?;
+        let mut command_rx = self.channels.take_command_rx()?;
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
-
         // Spawn the Docker event stream listener as a separate task that
         // forwards OOM events onto the broadcast bus via a dedicated channel.
         let (oom_tx, mut oom_rx) = mpsc::channel::<(String, String)>(32);
         tokio::spawn(docker_event_listener(self.docker.clone(), oom_tx));
 
         loop {
+            let tick = async {
+                match self.poll_interval_timer.as_mut() {
+                    Some(timer) => timer.tick().await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
                 Some(query) = query_rx.recv() => {
                     self.handle_query(query);
@@ -99,9 +101,7 @@ impl DockerTracker {
                     warn!(id, name, "container OOM-killed");
                     self.emit_event(DockerTrackerEvent::ContainerOomKilled { id, name });
                 }
-                _ = async {
-                    self.poll_interval_timer.as_mut().unwrap().tick().await
-                }, if self.poll_interval_timer.is_some() => {
+                _ = tick => {
                     if let Err(e) = self.handle_tick().await {
                         error!(?e, "docker tracker tick failed");
                     }
@@ -139,7 +139,7 @@ impl DockerTracker {
             .docker
             .list_containers(Some(options))
             .await
-            .map_err(Error::bollard_error)?;
+            .map_err(|err| Error::bollard_error(&err))?;
 
         // 2. Build fresh snapshot map.
         let mut fresh: HashMap<String, ContainerSnapshot> = summaries
@@ -278,8 +278,8 @@ impl DockerTracker {
             fresh.values().filter(|s| s.stats.is_some()).collect();
 
         with_stats.sort_unstable_by(|a, b| {
-            let ca = a.stats.as_ref().map(|s| s.cpu_percent).unwrap_or(0.0);
-            let cb = b.stats.as_ref().map(|s| s.cpu_percent).unwrap_or(0.0);
+            let ca = a.stats.as_ref().map_or(0.0, |s| s.cpu_percent);
+            let cb = b.stats.as_ref().map_or(0.0, |s| s.cpu_percent);
             cb.partial_cmp(&ca).unwrap_or(std::cmp::Ordering::Equal)
         });
         self.state.last_top_by_cpu = with_stats
@@ -289,8 +289,8 @@ impl DockerTracker {
             .collect();
 
         with_stats.sort_unstable_by(|a, b| {
-            let ma = a.stats.as_ref().map(|s| s.memory_bytes).unwrap_or(0);
-            let mb = b.stats.as_ref().map(|s| s.memory_bytes).unwrap_or(0);
+            let ma = a.stats.as_ref().map_or(0, |s| s.memory_bytes);
+            let mb = b.stats.as_ref().map_or(0, |s| s.memory_bytes);
             mb.cmp(&ma)
         });
         self.state.last_top_by_memory = with_stats
@@ -369,7 +369,7 @@ impl DockerTracker {
                     .docker
                     .stop_container(&target, opts)
                     .await
-                    .map_err(Error::bollard_error);
+                    .map_err(|err| Error::bollard_error(&err));
                 self.emit_action_event(&target, &id_or_name, ContainerAction::Stop, result.is_ok());
                 let _ = response.send(result);
             }
@@ -389,7 +389,7 @@ impl DockerTracker {
                     .docker
                     .kill_container(&target, opts)
                     .await
-                    .map_err(Error::bollard_error);
+                    .map_err(|err| Error::bollard_error(&err));
                 self.emit_action_event(&target, &id_or_name, ContainerAction::Kill, result.is_ok());
                 let _ = response.send(result);
             }
@@ -403,7 +403,7 @@ impl DockerTracker {
                     .docker
                     .start_container(&target, None)
                     .await
-                    .map_err(Error::bollard_error);
+                    .map_err(|err| Error::bollard_error(&err));
                 self.emit_action_event(
                     &target,
                     &id_or_name,
@@ -428,7 +428,7 @@ impl DockerTracker {
                     .docker
                     .restart_container(&target, opts)
                     .await
-                    .map_err(Error::bollard_error);
+                    .map_err(|err| Error::bollard_error(&err));
                 self.emit_action_event(
                     &target,
                     &id_or_name,
@@ -447,7 +447,7 @@ impl DockerTracker {
                     .docker
                     .pause_container(&target)
                     .await
-                    .map_err(Error::bollard_error);
+                    .map_err(|err| Error::bollard_error(&err));
                 self.emit_action_event(
                     &target,
                     &id_or_name,
@@ -466,7 +466,7 @@ impl DockerTracker {
                     .docker
                     .unpause_container(&target)
                     .await
-                    .map_err(Error::bollard_error);
+                    .map_err(|err| Error::bollard_error(&err));
                 self.emit_action_event(
                     &target,
                     &id_or_name,
@@ -506,8 +506,7 @@ impl DockerTracker {
             .containers
             .values()
             .find(|c| c.id.starts_with(id_or_name) || c.name == id_or_name)
-            .map(|c| c.id.clone())
-            .unwrap_or_else(|| id_or_name.to_owned())
+            .map_or_else(|| id_or_name.to_owned(), |c| c.id.clone())
     }
 
     fn emit_action_event(
@@ -521,9 +520,9 @@ impl DockerTracker {
             .state
             .containers
             .get(id)
-            .map(|c| c.name.clone())
-            .unwrap_or_else(|| id_or_name.to_owned());
-        let short = &id[..id.len().min(12)];
+            .map_or_else(|| id_or_name.to_owned(), |c| c.name.clone());
+        let short_len = id.char_indices().nth(12).map_or(id.len(), |(idx, _)| idx);
+        let short = id.get(..short_len).unwrap_or(id);
         if success {
             info!(id = %short, name, action = %action, "container action succeeded");
         } else {
@@ -613,16 +612,10 @@ pub fn init_docker_tracker() {
         }
     };
     let tracker = DockerTracker::new(docker);
-    DOCKER_TRACKER_QUERY_SENDER
-        .set(tracker.channels.query_tx.clone())
-        .unwrap();
-    DOCKER_TRACKER_EVENT_SENDER
-        .set(tracker.channels.event_tx.clone())
-        .unwrap();
+    let _ = DOCKER_TRACKER_QUERY_SENDER.set(tracker.channels.query_tx.clone());
+    let _ = DOCKER_TRACKER_EVENT_SENDER.set(tracker.channels.event_tx.clone());
     if config.args.allow_docker_commands {
-        DOCKER_TRACKER_COMMAND_SENDER
-            .set(tracker.channels.command_tx.clone())
-            .unwrap();
+        let _ = DOCKER_TRACKER_COMMAND_SENDER.set(tracker.channels.command_tx.clone());
     }
     tokio::spawn(async move {
         if let Err(e) = tracker.start_tracking_loop().await {

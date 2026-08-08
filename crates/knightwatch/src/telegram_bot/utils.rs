@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use super::display::TelegramDisplay;
 use crate::{
     docker_tracker::{ContainerHealth, ContainerStatus, DockerTrackerEvent},
@@ -13,19 +15,20 @@ const SPECIAL: &[char] = &[
 pub fn format_process_tracker_event(event: &ProcessTrackerEvent) -> String {
     match event {
         ProcessTrackerEvent::InitialSnapshot { root, children } => {
-            let mut msg = if let Some(root) = root {
-                let root_info = TelegramDisplay(root);
-                format!("🟢 *Initial Snapshot*\n\n*Root:*\n{root_info}")
-            } else {
-                "🟢 *Initial Snapshot*\n\n*Root:*\n_none_".to_string()
-            };
+            let mut msg = root.as_ref().map_or_else(
+                || "🟢 *Initial Snapshot*\n\n*Root:*\n_none_".to_string(),
+                |root| {
+                    let root_info = TelegramDisplay(root);
+                    format!("🟢 *Initial Snapshot*\n\n*Root:*\n{root_info}")
+                },
+            );
             if children.is_empty() {
                 msg.push_str("\n\n*Children:* _none_");
             } else {
-                msg.push_str(&format!("\n\n*Children* \\({}\\):", children.len()));
+                let _ = write!(msg, "\n\n*Children* \\({}\\):", children.len());
                 for child in children {
                     let child_info = TelegramDisplay(child);
-                    msg.push_str(&format!("\n{child_info}\n"));
+                    let _ = write!(msg, "\n{child_info}\n");
                 }
             }
             msg
@@ -37,7 +40,7 @@ pub fn format_process_tracker_event(event: &ProcessTrackerEvent) -> String {
             );
             for child in children {
                 let info = TelegramDisplay(child);
-                msg.push_str(&format!("\n{info}\n"));
+                let _ = write!(msg, "\n{info}\n");
             }
             msg
         }
@@ -117,7 +120,7 @@ pub fn format_system_resources_event(event: &SystemResourcesEvent) -> Option<Str
                 BatteryState::Charging => ("⚡", "Charging"),
                 BatteryState::Discharging => ("🔋", "Discharging"),
                 BatteryState::Full => ("✅", "Full"),
-                _ => ("🔌", "Unknown"),
+                BatteryState::Unknown => ("🔌", "Unknown"),
             };
             Some(format!(
                 "{emoji} *Battery State Changed*\n└ State: `{label}`"
@@ -151,7 +154,7 @@ pub fn format_systemd_event(event: &SystemdEvent) -> Option<String> {
             unit = escape_mdv2(unit_name),
         )),
         SystemdEvent::UnitAppeared { unit } => {
-            Some(format!("🆕 *Unit Appeared*\n{}", TelegramDisplay(unit),))
+            Some(format!("🆕 *Unit Appeared*\n{}", TelegramDisplay(unit)))
         }
         SystemdEvent::UnitDisappeared { unit_name } => Some(format!(
             "👻 *Unit Disappeared*\n\
@@ -263,7 +266,7 @@ pub fn format_docker_tracker_event(event: &DockerTrackerEvent) -> String {
     }
 }
 
-pub fn unit_state_emoji(state: &UnitActiveState) -> &'static str {
+pub const fn unit_state_emoji(state: &UnitActiveState) -> &'static str {
     match state {
         UnitActiveState::Active => "🟢",
         UnitActiveState::Reloading => "🔄",
@@ -274,7 +277,7 @@ pub fn unit_state_emoji(state: &UnitActiveState) -> &'static str {
     }
 }
 
-pub fn container_status_emoji(status: &ContainerStatus) -> &'static str {
+pub const fn container_status_emoji(status: &ContainerStatus) -> &'static str {
     match status {
         ContainerStatus::Running => "🟢",
         ContainerStatus::Paused => "🟡",
@@ -282,13 +285,12 @@ pub fn container_status_emoji(status: &ContainerStatus) -> &'static str {
         ContainerStatus::Exited => "⚫",
         ContainerStatus::Dead => "🔴",
         ContainerStatus::Created => "🔵",
-        ContainerStatus::Removing => "🟠",
-        ContainerStatus::Stopping => "🟠",
+        ContainerStatus::Removing | ContainerStatus::Stopping => "🟠",
         ContainerStatus::Unknown(_) => "❓",
     }
 }
 
-pub fn container_health_emoji(health: &ContainerHealth) -> &'static str {
+pub const fn container_health_emoji(health: &ContainerHealth) -> &'static str {
     match health {
         ContainerHealth::Healthy => "💚",
         ContainerHealth::Unhealthy => "❤️",
@@ -308,7 +310,7 @@ pub fn escape_mdv2(s: &str) -> String {
     out
 }
 
-pub fn health_emoji(health: &SystemHealth) -> &'static str {
+pub const fn health_emoji(health: &SystemHealth) -> &'static str {
     match health {
         SystemHealth::Healthy => "✅",
         SystemHealth::Warning => "⚠️",

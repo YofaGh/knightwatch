@@ -1,7 +1,7 @@
 use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 
-use crate::{prelude::*, utils::recv_or_pending, events::EventPayload};
+use crate::{events::EventPayload, prelude::*, utils::recv_or_pending};
 
 pub async fn run_dispatcher(urls: Vec<String>, cancel_token: CancellationToken) {
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
@@ -20,7 +20,7 @@ pub async fn run_dispatcher(urls: Vec<String>, cancel_token: CancellationToken) 
     loop {
         let payload = tokio::select! {
             biased;
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 info!("webhook: dispatcher shutting down");
                 return;
             }
@@ -53,7 +53,7 @@ async fn fire_with_retry(
     loop {
         tokio::select! {
             biased;
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 info!("webhook: retry loop cancelled for {url}");
                 return;
             }
@@ -65,17 +65,17 @@ async fn fire_with_retry(
                 }
             }
         }
-        attempts += 1;
+        attempts = attempts.saturating_add(1);
         if attempts >= 3 {
             return;
         }
         tokio::select! {
             biased;
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 info!("webhook: backoff sleep cancelled for {url}");
                 return;
             }
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(2u64.pow(attempts))) => {}
+            () = tokio::time::sleep(tokio::time::Duration::from_secs(2u64.pow(attempts))) => {}
         }
     }
 }

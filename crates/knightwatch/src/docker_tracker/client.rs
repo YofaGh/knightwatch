@@ -10,7 +10,7 @@ use crate::prelude::*;
 pub fn subscribe_events() -> Option<broadcast::Receiver<super::event::DockerTrackerEvent>> {
     super::tracker::DOCKER_TRACKER_EVENT_SENDER
         .get()
-        .map(|tx| tx.subscribe())
+        .map(tokio::sync::broadcast::Sender::subscribe)
 }
 
 fn get_docker_tracker_query_sender() -> Option<&'static mpsc::Sender<DockerTrackerQuery>> {
@@ -79,7 +79,7 @@ pub async fn stop_container(id_or_name: String, timeout_secs: Option<i32>) -> Re
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
@@ -93,7 +93,7 @@ pub async fn kill_container(id_or_name: String, signal: Option<String>) -> Resul
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
@@ -106,7 +106,7 @@ pub async fn start_container(id_or_name: String) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
@@ -120,7 +120,7 @@ pub async fn restart_container(id_or_name: String, timeout_secs: Option<i32>) ->
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
@@ -133,7 +133,7 @@ pub async fn pause_container(id_or_name: String) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
@@ -146,7 +146,7 @@ pub async fn unpause_container(id_or_name: String) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Change the polling interval and restart the tick timer immediately.
@@ -159,7 +159,7 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Pause polling. The capture continues to handle queries and commands,
@@ -170,7 +170,7 @@ pub async fn pause_poll() -> Result<()> {
     let _ = tx_ref
         .send(DockerTrackerCommand::PausePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
@@ -180,5 +180,5 @@ pub async fn resume_poll() -> Result<()> {
     let _ = tx_ref
         .send(DockerTrackerCommand::ResumePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }

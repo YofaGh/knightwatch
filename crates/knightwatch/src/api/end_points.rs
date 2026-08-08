@@ -6,9 +6,14 @@ use axum::{
 use axum_extra::{TypedHeader, headers};
 use std::time::Duration;
 
-use kw_types::api::*;
+use kw_types::api::{
+    ContainerRequest, ContainerTimeoutRequest, HealthResponse, InfoResponse, KillContainerRequest,
+    KillProcessRequest, LoginRequest, LoginResponse, ScreenshotImage, ScreenshotResponse,
+    SetPollIntervalRequest, SetRefreshMaskRequest, SetThresholdsRequest, TopContainersParams,
+    TopProcessesParams,
+};
 
-use super::utils::*;
+use super::utils::{bad_request, internal_server_error, not_found};
 use crate::{
     docker_tracker::{self, ContainerSnapshot},
     process_tracker::{self, ProcessSignal, ProcessSnapshot, ProcessTree},
@@ -26,8 +31,7 @@ pub async fn shutdown(
 pub async fn health() -> Json<HealthResponse> {
     let uptime = super::handlers::START_TIME
         .get()
-        .map(|t| t.elapsed().as_secs())
-        .unwrap_or(0);
+        .map_or(0, |t| t.elapsed().as_secs());
     Json(HealthResponse {
         status: "healthy".to_string(),
         timestamp: crate::utils::now_rfc3339(),
@@ -58,17 +62,16 @@ pub async fn info() -> Json<InfoResponse> {
 }
 
 pub async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>, StatusCode> {
-    let users = crate::config::get_users();
-    if users.users.is_empty() {
+    let Some(users) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
         return Err(StatusCode::NOT_FOUND);
-    }
+    };
     match users.verify_password(&body.username, &body.password) {
         Ok(true) => {}
         _ => return Err(StatusCode::UNAUTHORIZED),
     }
     let token = uuid::Uuid::new_v4().to_string();
     let session = super::session::Session {
-        username: body.username.clone(),
+        username: body.username,
         token: token.clone(),
     };
     super::session::get_sessions()
@@ -81,13 +84,13 @@ pub async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>
 pub async fn logout(
     TypedHeader(auth): TypedHeader<headers::Authorization<headers::authorization::Bearer>>,
 ) -> StatusCode {
-    match super::session::get_sessions().write() {
-        Ok(mut sessions) => {
+    super::session::get_sessions().write().map_or(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        |mut sessions| {
             sessions.remove_by_token(auth.token());
             StatusCode::OK
-        }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    }
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +119,7 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Strin
 pub async fn screen_capture_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
     screen_capture::pause_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -125,7 +128,7 @@ pub async fn screen_capture_pause_poll() -> Result<StatusCode, (StatusCode, Stri
 pub async fn screen_capture_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
     screen_capture::resume_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -136,7 +139,7 @@ pub async fn screen_capture_set_poll_interval(
 ) -> Result<StatusCode, (StatusCode, String)> {
     screen_capture::set_poll_interval(Duration::from_millis(body.interval_ms))
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -258,7 +261,7 @@ pub async fn kill_process(
     }
     process_tracker::kill_process(pid, body.signal)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -267,14 +270,14 @@ pub async fn kill_tree(Path(root_pid): Path<u32>) -> Result<Json<Vec<u32>>, (Sta
     process_tracker::kill_tree(root_pid)
         .await
         .map(Json)
-        .map_err(internal_server_error)
+        .map_err(|error| internal_server_error(&error))
 }
 
 /// `POST /process/track/{pid}`
 pub async fn track_pid(Path(pid): Path<u32>) -> Result<StatusCode, (StatusCode, String)> {
     process_tracker::track_pid(pid)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -282,7 +285,7 @@ pub async fn track_pid(Path(pid): Path<u32>) -> Result<StatusCode, (StatusCode, 
 pub async fn untrack_pid(Path(pid): Path<u32>) -> Result<StatusCode, (StatusCode, String)> {
     process_tracker::untrack_pid(pid)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -290,7 +293,7 @@ pub async fn untrack_pid(Path(pid): Path<u32>) -> Result<StatusCode, (StatusCode
 pub async fn process_tracker_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
     process_tracker::pause_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -298,7 +301,7 @@ pub async fn process_tracker_pause_poll() -> Result<StatusCode, (StatusCode, Str
 pub async fn process_tracker_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
     process_tracker::resume_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -308,7 +311,7 @@ pub async fn process_tracker_set_poll_interval(
 ) -> Result<StatusCode, (StatusCode, String)> {
     process_tracker::set_poll_interval(Duration::from_millis(body.interval_ms))
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -415,7 +418,7 @@ pub async fn resources_set_thresholds(
         battery_low: body.battery_low,
     })
     .await
-    .map_err(internal_server_error)?;
+    .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -434,7 +437,7 @@ pub async fn resources_set_refresh_mask(
         gpus: body.gpus,
     })
     .await
-    .map_err(internal_server_error)?;
+    .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -442,7 +445,7 @@ pub async fn resources_set_refresh_mask(
 pub async fn resources_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
     system_resources::pause_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -450,7 +453,7 @@ pub async fn resources_pause_poll() -> Result<StatusCode, (StatusCode, String)> 
 pub async fn resources_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
     system_resources::resume_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -460,7 +463,7 @@ pub async fn resources_set_poll_interval(
 ) -> Result<StatusCode, (StatusCode, String)> {
     system_resources::set_poll_interval(Duration::from_millis(body.interval_ms))
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -510,7 +513,9 @@ pub async fn failed_units() -> Json<Vec<UnitSnapshot>> {
 
 /// `POST /systemd/poll/pause`
 pub async fn systemd_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
-    systemd::pause_poll().await.map_err(internal_server_error)?;
+    systemd::pause_poll()
+        .await
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -518,7 +523,7 @@ pub async fn systemd_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
 pub async fn systemd_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
     systemd::resume_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -528,7 +533,7 @@ pub async fn systemd_set_poll_interval(
 ) -> Result<StatusCode, (StatusCode, String)> {
     systemd::set_poll_interval(Duration::from_millis(body.interval_ms))
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -577,7 +582,7 @@ pub async fn stop_container(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::stop_container(body.id_or_name, body.timeout_secs)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -589,7 +594,7 @@ pub async fn kill_container(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::kill_container(body.id_or_name, body.signal)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -601,7 +606,7 @@ pub async fn start_container(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::start_container(body.id_or_name)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -613,7 +618,7 @@ pub async fn restart_container(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::restart_container(body.id_or_name, body.timeout_secs)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -625,7 +630,7 @@ pub async fn pause_container(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::pause_container(body.id_or_name)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -637,7 +642,7 @@ pub async fn unpause_container(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::unpause_container(body.id_or_name)
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -647,7 +652,7 @@ pub async fn unpause_container(
 pub async fn docker_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::pause_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -657,7 +662,7 @@ pub async fn docker_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
 pub async fn docker_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::resume_poll()
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
@@ -669,6 +674,6 @@ pub async fn docker_set_poll_interval(
 ) -> Result<StatusCode, (StatusCode, String)> {
     docker_tracker::set_poll_interval(Duration::from_millis(body.interval_ms))
         .await
-        .map_err(internal_server_error)?;
+        .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }

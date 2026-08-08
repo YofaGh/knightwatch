@@ -1,6 +1,8 @@
 use sysinfo::System;
 
-use kw_types::resources::*;
+use kw_types::resources::{
+    BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, MemorySnapshot, SystemHealth,
+};
 
 use super::system::StaticHostInfo;
 
@@ -8,15 +10,14 @@ pub fn derive_health(
     cpu: &CpuSnapshot,
     memory: &MemorySnapshot,
     disks: &[DiskSnapshot],
-    battery: &Option<BatterySnapshot>,
+    battery: Option<&BatterySnapshot>,
 ) -> SystemHealth {
     let cpu_crit = cpu.usage_percent >= 95.0;
     let mem_crit = memory.used_percent >= 95.0;
     let disk_crit = disks.iter().any(|d| d.used_percent >= 95.0);
     let bat_crit = battery
         .as_ref()
-        .map(|b| b.state == BatteryState::Discharging && b.charge_percent <= 5.0)
-        .unwrap_or(false);
+        .is_some_and(|b| b.state == BatteryState::Discharging && b.charge_percent <= 5.0);
     if cpu_crit || mem_crit || disk_crit || bat_crit {
         return SystemHealth::Critical;
     }
@@ -25,8 +26,7 @@ pub fn derive_health(
     let disk_warn = disks.iter().any(|d| d.used_percent >= 90.0);
     let bat_warn = battery
         .as_ref()
-        .map(|b| b.state == BatteryState::Discharging && b.charge_percent <= 20.0)
-        .unwrap_or(false);
+        .is_some_and(|b| b.state == BatteryState::Discharging && b.charge_percent <= 20.0);
     if cpu_warn || mem_warn || disk_warn || bat_warn {
         return SystemHealth::Warning;
     }

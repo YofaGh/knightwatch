@@ -36,7 +36,7 @@ async fn main() -> Result<(), errors::Error> {
     sse::init_sse_dispatcher(cancel_token.clone());
     let telegram_bot = telegram_bot::init_bot(cancel_token.clone());
     tokio::select! {
-        _ = cancel_token.cancelled() => {}
+        () = cancel_token.cancelled() => {}
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("Received Ctrl+C");
             cancel_token.cancel();

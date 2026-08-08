@@ -136,10 +136,7 @@ pub struct ProcessStatus {
 impl fmt::Display for ProcessStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let name = self.root_name.as_deref().unwrap_or("?");
-        let pid = self
-            .root_pid
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "?".into());
+        let pid = self.root_pid.map_or_else(|| "?".into(), |p| p.to_string());
         write!(
             f,
             "[{pid}] {name}  alive={} children={} work_done={}",
@@ -148,7 +145,7 @@ impl fmt::Display for ProcessStatus {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessSignal {
     Kill,
@@ -191,12 +188,13 @@ impl ProcessSignal {
     /// Returns `None` on Windows for any signal other than Kill,
     /// since only forceful termination is supported there.
     #[cfg(feature = "server")]
-    pub fn sysinfo_signal(&self) -> Option<sysinfo::Signal> {
+    #[must_use]
+    pub const fn sysinfo_signal(&self) -> Option<sysinfo::Signal> {
         #[cfg(windows)]
         {
             // Windows only supports Kill; everything else is a no-op.
             match self {
-                ProcessSignal::Kill => Some(sysinfo::Signal::Kill),
+                Self::Kill => Some(sysinfo::Signal::Kill),
                 _ => None,
             }
         }
@@ -204,21 +202,22 @@ impl ProcessSignal {
         #[cfg(not(windows))]
         {
             Some(match self {
-                ProcessSignal::Kill => sysinfo::Signal::Kill,
-                ProcessSignal::Interrupt => sysinfo::Signal::Interrupt,
-                ProcessSignal::Stop => sysinfo::Signal::Stop,
-                ProcessSignal::Continue => sysinfo::Signal::Continue,
-                ProcessSignal::Term => sysinfo::Signal::Term,
+                Self::Kill => sysinfo::Signal::Kill,
+                Self::Interrupt => sysinfo::Signal::Interrupt,
+                Self::Stop => sysinfo::Signal::Stop,
+                Self::Continue => sysinfo::Signal::Continue,
+                Self::Term => sysinfo::Signal::Term,
             })
         }
     }
 
     /// True if this signal is deliverable on the current platform.
-    pub fn is_supported(&self) -> bool {
+    #[must_use]
+    pub const fn is_supported(&self) -> bool {
         #[cfg(windows)]
         {
             // Windows only supports Kill; everything else is a no-op.
-            matches!(self, ProcessSignal::Kill)
+            matches!(self, Self::Kill)
         }
         #[cfg(not(windows))]
         {
@@ -227,7 +226,8 @@ impl ProcessSignal {
     }
 
     /// Returns a list of supported signal based on current platform.
-    pub fn get_supported_signals() -> Vec<ProcessSignal> {
+    #[must_use]
+    pub fn get_supported_signals() -> Vec<Self> {
         #[cfg(windows)]
         {
             // Windows only supports Kill; everything else is a no-op.
@@ -246,7 +246,7 @@ impl ProcessSignal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum ProcessState {
     Running,
     Sleeping,
@@ -260,9 +260,9 @@ impl From<sysinfo::ProcessStatus> for ProcessState {
         use sysinfo::ProcessStatus;
 
         match status {
-            ProcessStatus::Run => ProcessState::Running,
-            ProcessStatus::Sleep | ProcessStatus::Idle => ProcessState::Sleeping,
-            other => ProcessState::Other(format!("{other:?}")),
+            ProcessStatus::Run => Self::Running,
+            ProcessStatus::Sleep | ProcessStatus::Idle => Self::Sleeping,
+            other => Self::Other(format!("{other:?}")),
         }
     }
 }
@@ -270,10 +270,10 @@ impl From<sysinfo::ProcessStatus> for ProcessState {
 impl fmt::Display for ProcessState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProcessState::Running => write!(f, "running"),
-            ProcessState::Sleeping => write!(f, "sleeping"),
-            ProcessState::Other(s) => write!(f, "other({s})"),
-            ProcessState::Gone => write!(f, "gone"),
+            Self::Running => write!(f, "running"),
+            Self::Sleeping => write!(f, "sleeping"),
+            Self::Other(s) => write!(f, "other({s})"),
+            Self::Gone => write!(f, "gone"),
         }
     }
 }
@@ -289,10 +289,10 @@ pub enum FDType {
 impl fmt::Display for FDType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            FDType::File => "file",
-            FDType::Socket => "socket",
-            FDType::Pipe => "pipe",
-            FDType::Other => "other",
+            Self::File => "file",
+            Self::Socket => "socket",
+            Self::Pipe => "pipe",
+            Self::Other => "other",
         };
         write!(f, "{s}")
     }
@@ -311,7 +311,7 @@ impl From<procfs::process::FDTarget> for FDType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessesSortKey {
     Memory,
@@ -345,8 +345,11 @@ impl TryFrom<&str> for ProcessesSortKey {
 }
 
 #[cfg(feature = "server")]
-pub fn disk_usage_total(disk_usage: sysinfo::DiskUsage) -> u64 {
-    disk_usage.written_bytes + disk_usage.read_bytes
+#[must_use]
+pub const fn disk_usage_total(disk_usage: sysinfo::DiskUsage) -> u64 {
+    disk_usage
+        .written_bytes
+        .saturating_add(disk_usage.read_bytes)
 }
 
 #[cfg(feature = "server")]
@@ -365,7 +368,7 @@ fn collect_extended_process_info(_pid: u32) -> ExtendedProcessInfo {
 
 #[cfg(all(feature = "server", target_os = "linux"))]
 fn collect_extended_process_info(pid: u32) -> ExtendedProcessInfo {
-    let Ok(process) = procfs::process::Process::new(pid as i32) else {
+    let Ok(process) = procfs::process::Process::new(pid.cast_signed()) else {
         return ExtendedProcessInfo::default();
     };
     let cwd = process
@@ -379,7 +382,7 @@ fn collect_extended_process_info(pid: u32) -> ExtendedProcessInfo {
         open_files: process
             .fd()
             .ok()
-            .map(|fd| fd.flatten().map(|fd_info| fd_info.into()).collect())
+            .map(|fd| fd.flatten().map(Into::into).collect())
             .unwrap_or_default(),
         io_stats: process.io().ok().map(Into::into),
     }

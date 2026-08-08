@@ -2,3 +2,9 @@
 name = "kw-utils"
 version = "1.0.18"
 edition = "2024"
+
+[dependencies]
+num-traits = "0.2.19"
+
+[lints]
+workspace = true

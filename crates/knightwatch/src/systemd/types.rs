@@ -1,8 +1,8 @@
 use zbus::zvariant::OwnedObjectPath;
 
-/// Raw unit tuple returned by ListUnits():
-/// (name, description, load_state, active_state, sub_state, following,
-///  object_path, job_id, job_type, job_object_path)
+/// Raw unit tuple returned by `ListUnits()`:
+/// (name, description, `load_state`, `active_state`, `sub_state`, following,
+///  `object_path`, `job_id`, `job_type`, `job_object_path`)
 pub type RawUnit = (
     String,
     String,

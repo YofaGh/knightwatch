@@ -2,7 +2,10 @@ use std::sync::OnceLock;
 use tokio::{sync::mpsc, time::Duration};
 use xcap::Monitor;
 
-use super::{commands::*, screenshot::*};
+use super::{
+    commands::{ScreenCaptureChannels, ScreenCaptureCommand, ScreenCaptureQuery},
+    screenshot::Screenshot,
+};
 use crate::prelude::*;
 
 struct ScreenCapture {
@@ -24,16 +27,16 @@ impl ScreenCapture {
 
     async fn start_capturing_loop(mut self) -> Result<()> {
         self.handle_tick().await;
-        let mut query_rx = self
-            .channels
-            .take_query_rx()
-            .expect("Failed to take query receiver");
-        let mut command_rx = self
-            .channels
-            .take_command_rx()
-            .expect("Failed to take command receiver");
+        let mut query_rx = self.channels.take_query_rx()?;
+        let mut command_rx = self.channels.take_command_rx()?;
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         loop {
+            let tick = async {
+                match self.poll_interval_timer.as_mut() {
+                    Some(timer) => timer.tick().await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
                 Some(query) = query_rx.recv() => {
                     self.handle_query(query);
@@ -41,7 +44,7 @@ impl ScreenCapture {
                 Some(command) = command_rx.recv() => {
                     self.handle_command(command);
                 }
-                _ = async { self.poll_interval_timer.as_mut().unwrap().tick().await }, if self.poll_interval_timer.is_some() => {
+                _ = tick => {
                     self.handle_tick().await;
                 }
             }
@@ -84,7 +87,7 @@ impl ScreenCapture {
         match Self::screenshot_monitors().await {
             Ok(captures) => self.last_captures = captures,
             Err(err) => error!("Failed to capture screenshots: {err}"),
-        };
+        }
     }
 
     // Runs xcap (which calls zbus::blocking internally) on a dedicated
@@ -99,7 +102,7 @@ impl ScreenCapture {
     fn screenshot_monitors_blocking() -> Result<Vec<Screenshot>> {
         Self::get_monitors()?
             .into_iter()
-            .map(Self::take_screenshot)
+            .map(|monitor| Self::take_screenshot(&monitor))
             .collect()
     }
 
@@ -107,7 +110,7 @@ impl ScreenCapture {
         Monitor::all().map_err(|e| Error::Screen(format!("Failed to get monitors: {e}")))
     }
 
-    fn take_screenshot(monitor: Monitor) -> Result<Screenshot> {
+    fn take_screenshot(monitor: &Monitor) -> Result<Screenshot> {
         let rgba_img = monitor
             .capture_image()
             .map_err(|e| Error::Screen(format!("Failed to capture: {e}")))?;
@@ -144,13 +147,9 @@ pub fn init_screen_capture() {
         return;
     }
     let screen_capture = ScreenCapture::new();
-    SCREEN_CAPTURE_QUERY_SENDER
-        .set(screen_capture.channels.query_tx.clone())
-        .unwrap();
+    let _ = SCREEN_CAPTURE_QUERY_SENDER.set(screen_capture.channels.query_tx.clone());
     if config.args.allow_screen_commands {
-        SCREEN_CAPTURE_COMMAND_SENDER
-            .set(screen_capture.channels.command_tx.clone())
-            .unwrap();
+        let _ = SCREEN_CAPTURE_COMMAND_SENDER.set(screen_capture.channels.command_tx.clone());
     }
     tokio::spawn(async move {
         if let Err(e) = screen_capture.start_capturing_loop().await {

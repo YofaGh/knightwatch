@@ -34,7 +34,7 @@ pub struct LoginState {
 }
 
 impl LoginState {
-    pub fn new(cancellable: bool) -> Self {
+    pub const fn new(cancellable: bool) -> Self {
         Self {
             username: String::new(),
             password: String::new(),
@@ -111,8 +111,12 @@ impl LoginState {
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let box_width = 46u16.min(area.width.saturating_sub(4)).max(20);
         let box_height = 13u16.min(area.height.saturating_sub(2)).max(11);
-        let x = area.x + (area.width.saturating_sub(box_width)) / 2;
-        let y = area.y + (area.height.saturating_sub(box_height)) / 2;
+        let x = area
+            .x
+            .saturating_add((area.width.saturating_sub(box_width)) / 2);
+        let y = area
+            .y
+            .saturating_add((area.height.saturating_sub(box_height)) / 2);
         let box_area = Rect {
             x,
             y,
@@ -144,7 +148,7 @@ impl LoginState {
 
         // horizontal breathing room so fields don't touch the border
         let inner = Rect {
-            x: outer_inner.x + 1,
+            x: outer_inner.x.saturating_add(1),
             y: outer_inner.y,
             width: outer_inner.width.saturating_sub(2),
             height: outer_inner.height,
@@ -164,6 +168,10 @@ impl LoginState {
                 Constraint::Min(1),    // status/help
             ])
             .split(inner);
+
+        let Ok(rows): Result<[Rect; 9], _> = rows.as_ref().try_into() else {
+            return;
+        };
 
         frame.render_widget(
             Paragraph::new(Span::styled(

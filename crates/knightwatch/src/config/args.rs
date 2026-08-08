@@ -1,5 +1,6 @@
 use clap::Subcommand;
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(clap::Parser, Debug)]
 #[command(
     name = "knightwatch",
@@ -83,7 +84,7 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub allow_screen_commands: bool,
 
-    /// Allow system_resources commands
+    /// Allow `system_resources` commands
     #[arg(long, default_value_t = false)]
     pub allow_system_resources_commands: bool,
 
@@ -97,7 +98,8 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
-    pub fn is_blind(&self) -> bool {
+    #[allow(clippy::unused_self)]
+    pub const fn is_blind(&self) -> bool {
         #[cfg(feature = "screenshot")]
         return self.blind;
         #[cfg(not(feature = "screenshot"))]
@@ -136,21 +138,15 @@ pub enum ConfigAction {
 #[derive(Subcommand, Debug)]
 pub enum UsersAction {
     /// Add a new user
-    Add {
-        username: String,
-    },
+    Add { username: String },
     /// Remove a user
-    Remove {
-        username: String,
-    },
+    Remove { username: String },
     /// List all users
     List,
     /// Remove all users
     Clear,
     /// Show the Telegram authentication token for a user
-    Token {
-        username: String,
-    },
+    Token { username: String },
 }
 
 #[derive(Subcommand, Debug)]

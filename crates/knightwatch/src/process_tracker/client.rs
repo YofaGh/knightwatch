@@ -10,7 +10,7 @@ use crate::prelude::*;
 pub fn subscribe_events() -> Option<broadcast::Receiver<super::event::ProcessTrackerEvent>> {
     super::tracker::PROCESS_TRACKER_EVENT_SENDER
         .get()
-        .map(|tx| tx.subscribe())
+        .map(tokio::sync::broadcast::Sender::subscribe)
 }
 
 fn get_process_tracker_query_sender() -> Option<&'static mpsc::Sender<ProcessTrackerQuery>> {
@@ -118,7 +118,10 @@ pub async fn get_process_status(root_pid: u32) -> Option<ProcessStatus> {
 
 /// Get the top N processes sorted by the given key.
 /// Returns an empty vec if the tracker was not started.
-pub async fn get_top_processes(by: kw_types::process::ProcessesSortKey, limit: usize) -> Vec<ProcessSnapshot> {
+pub async fn get_top_processes(
+    by: kw_types::process::ProcessesSortKey,
+    limit: usize,
+) -> Vec<ProcessSnapshot> {
     let Some(tx_ref) = get_process_tracker_query_sender() else {
         return Vec::new();
     };
@@ -152,7 +155,7 @@ pub async fn kill_process(pid: u32, signal: kw_types::process::ProcessSignal) ->
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Kill a root process and every process in its descendant subtree (SIGKILL).
@@ -168,7 +171,7 @@ pub async fn kill_tree(root_pid: u32) -> Result<Vec<u32>> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Begin tracking a new root PID. A no-op if already tracked.
@@ -179,7 +182,7 @@ pub async fn track_pid(pid: u32) -> Result<()> {
     let _ = tx_ref
         .send(ProcessTrackerCommand::TrackPid { pid, response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Stop tracking a root PID and discard its accumulated state.
@@ -190,7 +193,7 @@ pub async fn untrack_pid(pid: u32) -> Result<()> {
     let _ = tx_ref
         .send(ProcessTrackerCommand::UntrackPid { pid, response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Change the polling interval and restart the tick timer immediately.
@@ -204,7 +207,7 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
             response: tx,
         })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Pause polling. The tracker continues to handle queries and commands,
@@ -216,7 +219,7 @@ pub async fn pause_poll() -> Result<()> {
     let _ = tx_ref
         .send(ProcessTrackerCommand::PausePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
@@ -227,5 +230,5 @@ pub async fn resume_poll() -> Result<()> {
     let _ = tx_ref
         .send(ProcessTrackerCommand::ResumePoll { response: tx })
         .await;
-    rx.await.map_err(Error::channel_closed)?
+    rx.await.map_err(|err| Error::channel_closed(&err))?
 }

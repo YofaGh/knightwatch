@@ -1,3 +1,5 @@
+#![allow(clippy::print_stdout)]
+
 use clap::Parser;
 use std::error::Error;
 
@@ -314,8 +316,8 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
                     &screen.data,
                 )?;
                 std::fs::write(&filename, bytes)?;
-                println!("Saved {}", filename);
-                println!("{}", screen);
+                println!("Saved {filename}");
+                println!("{screen}");
             }
         }
 
@@ -568,7 +570,7 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
         }
         Commands::Interactive => {
             // Handled before dispatch is called — should never reach here.
-            unreachable!()
+            // unreachable!()
         }
     }
     Ok(())
@@ -577,7 +579,7 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-    let api = kw_clients::ApiClient::new(cli.url, cli.token);
+    let api = kw_clients::ApiClient::new(&cli.url, cli.token);
 
     if matches!(cli.command, Commands::Interactive) {
         interactive::run_interactive(api).await;

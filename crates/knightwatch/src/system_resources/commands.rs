@@ -1,6 +1,9 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use kw_types::resources::*;
+use kw_types::resources::{
+    BatterySnapshot, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo, MemorySnapshot,
+    NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+};
 
 use crate::prelude::*;
 

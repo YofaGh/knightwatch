@@ -7,7 +7,7 @@ use crate::{prelude::*, utils::recv_or_pending};
 pub async fn event_notifier(
     bot: Bot,
     mut chat_state_rx: mpsc::Receiver<(ChatId, AuthState)>,
-    mut state: State,
+    state: State,
     cancel_token: tokio_util::sync::CancellationToken,
 ) {
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
@@ -24,7 +24,7 @@ pub async fn event_notifier(
     }
     loop {
         tokio::select! {
-            _ = cancel_token.cancelled() => {
+            () = cancel_token.cancelled() => {
                 info!("Cancelled while waiting for events");
                 return;
             }
@@ -34,29 +34,29 @@ pub async fn event_notifier(
             }
             event = recv_or_pending(&mut process_tracker_rx, "telegram: process tracker") => {
                 let message = super::utils::format_process_tracker_event(&event);
-                broadcast_message(&bot, &mut state, &message).await;
+                broadcast_message(&bot, &state, &message).await;
             }
             event = recv_or_pending(&mut system_resources_rx, "telegram: system resources") => {
                 let message = super::utils::format_system_resources_event(&event);
                 if let Some(msg) = message {
-                    broadcast_message(&bot, &mut state, &msg).await;
+                    broadcast_message(&bot, &state, &msg).await;
                 }
             }
             event = recv_or_pending(&mut systemd_rx, "telegram: systemd") => {
                 let message = super::utils::format_systemd_event(&event);
                 if let Some(msg) = message {
-                    broadcast_message(&bot, &mut state, &msg).await;
+                    broadcast_message(&bot, &state, &msg).await;
                 }
             }
             event = recv_or_pending(&mut docker_tracker_rx, "telegram: docker tracker") => {
                 let message = super::utils::format_docker_tracker_event(&event);
-                broadcast_message(&bot, &mut state, &message).await;
+                broadcast_message(&bot, &state, &message).await;
             }
         }
     }
 }
 
-async fn broadcast_message(bot: &Bot, state: &mut State, message: &str) {
+async fn broadcast_message(bot: &Bot, state: &State, message: &str) {
     let mut dead = vec![];
     let chat_ids = state.get_relevant_chat_ids();
     for (i, &chat_id) in chat_ids.iter().enumerate() {
@@ -69,8 +69,10 @@ async fn broadcast_message(bot: &Bot, state: &mut State, message: &str) {
             dead.push(i);
         }
     }
-    for i in dead.iter().rev() {
-        state.remove_chat(chat_ids[*i]);
+    for i in dead.into_iter().rev() {
+        if let Some(chat_id) = chat_ids.get(i) {
+            state.remove_chat(*chat_id);
+        }
     }
 }
 
