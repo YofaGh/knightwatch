@@ -8,7 +8,7 @@ A lightweight, real-time browser-based dashboard for monitoring system performan
 
 Knightwatch provides a sleek dark-mode web interface that streams system performance, live screen captures, and process telemetry directly in your browser. The backend is a Rust server built on [Tokio](https://tokio.rs/) and [Axum](https://github.com/tokio-rs/axum), keeping the footprint small and performance high — no heavy agents or desktop apps required.
 
-A companion `knightwatch-cli` client is also available for connecting to a remote or local knightwatch server through its API from the terminal.
+companions `knightwatch-cli` and `knightwatch-tui` clients are also available for connecting to a remote or local knightwatch server through its API from the terminal.
 
 ---
 
@@ -34,7 +34,7 @@ A companion `knightwatch-cli` client is also available for connecting to a remot
 
 ## Installation
 
-Knightwatch ships two binaries: the `knightwatch` server and the `knightwatch-cli` client, which connects to a remote or local knightwatch server through its API. Both are installed with the same scripts — just pick a package.
+Knightwatch ships three binaries: the `knightwatch` server, the `knightwatch-cli` and the `knightwatch-tui` clients, which connects to a remote or local knightwatch server through its API. They all can be installed with the same scripts — just pick a package.
 
 ### Shell (macOS & Linux)
 
@@ -44,6 +44,9 @@ curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/k
 
 # Install the CLI client
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.sh | sh -s -- --package knightwatch-cli
+
+# Install the TUI client
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.sh | sh -s -- --package knightwatch-tui
 ```
 
 You can also pin a specific version with `--version <VERSION>`.
@@ -55,11 +58,19 @@ You can also pin a specific version with `--version <VERSION>`.
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 | iex"
 ```
 
-Piping into `iex` can't forward `-Package`/`-Version` arguments, so to install the CLI (or pin a version), download the script and run it directly:
+Piping into `iex` can't forward `-Package`/`-Version` arguments, so to install the CLI/TUI (or pin a version), download the script and run it directly:
 
 ```powershell
 iwr -useb https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 -OutFile install.ps1
-.\install.ps1 -Package knightwatch-cli -Version 1.0.0
+
+# Pin a version
+.\install.ps1 -Package knightwatch -Version 1.0.5
+
+# Install the CLI client
+.\install.ps1 -Package knightwatch-cli
+
+# Install the TUI client
+.\install.ps1 -Package knightwatch-tui
 ```
 
 ### Homebrew (macOS)
@@ -70,6 +81,9 @@ brew install YofaGh/tap/knightwatch
 
 # Install the CLI client
 brew install YofaGh/tap/knightwatch-cli
+
+# Install the TUI client
+brew install YofaGh/tap/knightwatch-tui
 ```
 
 ### Linux Servers (Headless)
@@ -127,29 +141,29 @@ knightwatch --pid <PID> --allow-process-commands
 
 ### CLI Flags
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--pid <PID>` | — | PID of a process to track (repeatable, optional) |
-| `--host <HOST>` | `0.0.0.0` | Host address for the API server |
-| `--port <PORT>` / `-p` | `8083` | Port for the API server |
-| `--enable-auth` | `false` | Enable authentication |
-| `--enable-shutdown` | `false` | Enable app shutdown remotely |
-| `--no-api` | `false` | Disable the API server entirely |
-| `--no-dashboard` | `false` | Disable the web dashboard |
-| `--blind` | `false` | Disable screen capture |
-| `--system-resources` | `false` | Enable CPU, memory, disk, network, battery, and thermal monitoring |
-| `--systemd` | `false` | Enable systemd monitor (Linux only) |
-| `--docker` | `false` | Enable docker tracker |
-| `--telegram` | `false` | Enable the Telegram bot |
-| `--with-webhook` | `false` | Enable webhook dispatching |
-| `--webhook <URL>` | — | Webhook target URL (repeatable) |
-| `--top-processes` | `false` | Enable top processes tracker |
-| `--limit-processes <N>` | `5` | Number of top processes to track |
-| `--allow-process-commands` | `false` | Enable process command endpoints (kill, track, untrack, poll control) — **always requires authentication** |
-| `--allow-screen-commands` | `false` | Enable screen command endpoints (poll control) — **always requires authentication** |
-| `--allow-system-resources-commands` | `false` | Enable system resources command endpoints (set tresholds, refresh masks, poll control) — **always requires authentication** |
-| `--allow-systemd-commands` | `false` | Enable systemd command endpoints (poll control) — **always requires authentication** |
-| `--allow-docker-commands` | `false` | Enable docker command endpoints (manager containers, poll control) — **always requires authentication** |
+| Flag                                | Default   | Description                                                                                                                 |
+| ----------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `--pid <PID>`                       | —         | PID of a process to track (repeatable, optional)                                                                            |
+| `--host <HOST>`                     | `0.0.0.0` | Host address for the API server                                                                                             |
+| `--port <PORT>` / `-p`              | `8083`    | Port for the API server                                                                                                     |
+| `--enable-auth`                     | `false`   | Enable authentication                                                                                                       |
+| `--enable-shutdown`                 | `false`   | Enable app shutdown remotely                                                                                                |
+| `--no-api`                          | `false`   | Disable the API server entirely                                                                                             |
+| `--no-dashboard`                    | `false`   | Disable the web dashboard                                                                                                   |
+| `--blind`                           | `false`   | Disable screen capture                                                                                                      |
+| `--system-resources`                | `false`   | Enable CPU, memory, disk, network, battery, and thermal monitoring                                                          |
+| `--systemd`                         | `false`   | Enable systemd monitor (Linux only)                                                                                         |
+| `--docker`                          | `false`   | Enable docker tracker                                                                                                       |
+| `--telegram`                        | `false`   | Enable the Telegram bot                                                                                                     |
+| `--with-webhook`                    | `false`   | Enable webhook dispatching                                                                                                  |
+| `--webhook <URL>`                   | —         | Webhook target URL (repeatable)                                                                                             |
+| `--top-processes`                   | `false`   | Enable top processes tracker                                                                                                |
+| `--limit-processes <N>`             | `5`       | Number of top processes to track                                                                                            |
+| `--allow-process-commands`          | `false`   | Enable process command endpoints (kill, track, untrack, poll control) — **always requires authentication**                  |
+| `--allow-screen-commands`           | `false`   | Enable screen command endpoints (poll control) — **always requires authentication**                                         |
+| `--allow-system-resources-commands` | `false`   | Enable system resources command endpoints (set tresholds, refresh masks, poll control) — **always requires authentication** |
+| `--allow-systemd-commands`          | `false`   | Enable systemd command endpoints (poll control) — **always requires authentication**                                        |
+| `--allow-docker-commands`           | `false`   | Enable docker command endpoints (manager containers, poll control) — **always requires authentication**                     |
 
 > **Note:** `allowing commands` always requires authentication regardless of the `--enable-auth` flag. The auth session endpoints are automatically enabled when this flag is set.
 
@@ -177,6 +191,7 @@ Full reference documentation is available in the [Wiki](https://github.com/YofaG
 - [Authentication](https://github.com/YofaGh/knightwatch/wiki/Authentication) — User management and API auth
 - [Persistent Configuration](https://github.com/YofaGh/knightwatch/wiki/Persistent-Configuration) — Stored settings via `config` subcommand
 - [Knightwatch CLI](https://github.com/YofaGh/knightwatch/wiki/Knightwatch-cli) — Using `knightwatch-cli` to connect to a remote or local server
+- [Knightwatch TUI](https://github.com/YofaGh/knightwatch/wiki/Knightwatch-tui) — Using `knightwatch-tui` to connect to a remote or local server
 
 ---
 
