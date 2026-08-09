@@ -18,6 +18,6 @@ jobs:
       build_msi: true
       build_headless: false
       homebrew_class: KnightwatchTui
-      homebrew_desc: "Terminal user interface for knightwatch"
+      homebrew_desc: "Terminal user interface client for knightwatch"
       latest: false
     secrets: inherit
