@@ -1,6 +1,7 @@
 mod app;
 mod commands;
 mod confirm;
+mod connect;
 mod events;
 mod login;
 mod poll_panel;
@@ -17,7 +18,16 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui_image::picker::Picker;
-use std::io::{self, Write};
+use std::io;
+
+/// Cleanly leaves raw mode / the alternate screen. Called on the normal
+/// quit path as well as the early-quit-from-connect-screen path, so both
+/// restore the terminal the same way.
+fn restore_terminal() -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -42,41 +52,51 @@ async fn main() -> io::Result<()> {
         Picker::halfblocks()
     });
 
-    // Read this before `picker` is moved into `App::new` below.
-    // TODO: show in ui
-    // match picker.protocol_type() {
-    //     ratatui_image::picker::ProtocolType::Halfblocks => {
-    //         eprintln!("image protocol: halfblocks (fallback, always safe)");
-    //     }
-    //     proto => {
-    //         eprintln!(
-    //             "image protocol: {proto:?} (detected/guessed — may not render correctly on all terminals, e.g. VS Code)"
-    //         );
-    //     }
-    // }
-
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
 
-    let base_url = std::env::var("KW_URL").unwrap_or_else(|_| "http://localhost:8083".to_string());
     let token = std::env::var("KW_TOKEN").ok();
-    let api = std::sync::Arc::new(kw_clients::ApiClient::new(&base_url, token));
+    let initial_url =
+        std::env::var("KW_URL").unwrap_or_else(|_| "http://localhost:8083".to_string());
+    let mut connect_state = connect::ConnectState::new(initial_url);
 
-    let info = match api.info().await {
-        Ok(info) => info,
-        Err(e) => {
-            // Clean up the terminal before bailing — main hasn't set up
-            // the panic hook's cleanup path for this, and we're not
-            // panicking, so do it manually here.
-            disable_raw_mode()?;
-            execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-            let _ = writeln!(
-                io::stderr(),
-                "Failed to connect to knightwatch server at: {base_url} ({e})"
-            );
-            std::process::exit(1);
+    // Pre-connect screen: shown before `App` exists (it can't exist yet —
+    // building it needs `info`, which needs a live connection). This is a
+    // plain synchronous poll/draw loop, not the `AppEvent`-driven one,
+    // since there's nothing else to drive yet.
+    let (api, info) = loop {
+        terminal.draw(|frame| {
+            let area = frame.area();
+            connect_state.render(frame, area);
+        })?;
+
+        if !crossterm::event::poll(std::time::Duration::from_millis(100))? {
+            continue;
+        }
+
+        let event = crossterm::event::read()?;
+        match connect_state.handle_event(&event) {
+            connect::ConnectOutcome::Quit => {
+                restore_terminal()?;
+                return Ok(());
+            }
+            connect::ConnectOutcome::Submit(url) => {
+                // Redraw immediately so "connecting…" shows before we
+                // block this task on the request below.
+                terminal.draw(|frame| {
+                    let area = frame.area();
+                    connect_state.render(frame, area);
+                })?;
+
+                let api = std::sync::Arc::new(kw_clients::ApiClient::new(&url, token.clone()));
+                match api.info().await {
+                    Ok(info) => break (api, info),
+                    Err(e) => connect_state.fail(format!("failed to connect: {e}")),
+                }
+            }
+            connect::ConnectOutcome::None => {}
         }
     };
 
@@ -109,12 +129,7 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    restore_terminal()?;
     terminal.show_cursor()?;
 
     Ok(())
