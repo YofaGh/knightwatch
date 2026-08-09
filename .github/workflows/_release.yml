@@ -46,10 +46,10 @@ on:
         type: string
         default: ""
       latest:
-          description: "Mark this release as GitHub's 'latest'. Should be true only for the primary package."
-          required: false
-          type: boolean
-          default: false
+        description: "Mark this release as GitHub's 'latest'. Should be true only for the primary package."
+        required: false
+        type: boolean
+        default: false
     secrets:
       HOMEBREW_TAP_TOKEN:
         required: false
@@ -75,11 +75,42 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#*/}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
+  # Lint gate. Runs clippy against the default-feature build, and — for
+  # crates that ship a headless variant (build_headless) — also against
+  # --no-default-features, since that's a distinct compile path that can
+  # hide its own warnings/errors behind feature gates. `build` (and the
+  # headless build jobs) depend on this, so a lint failure stops the
+  # release before anything gets built or published.
+  # ---------------------------------------------------------------------
+  clippy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux build dependencies
+        if: inputs.linux_extra_deps != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ inputs.linux_extra_deps }}
+
+      - name: Run clippy (default features)
+        run: cargo clippy --locked --package ${{ env.PACKAGE }} --all-targets -- -D warnings
+
+      - name: Run clippy (no default features)
+        if: inputs.build_headless
+        run: cargo clippy --locked --package ${{ env.PACKAGE }} --no-default-features --all-targets -- -D warnings
+
+  # ---------------------------------------------------------------------
   # Build the default-feature binary for every platform, package it into
   # an archive, and hash it. Each job uploads its own artifact.
   # ---------------------------------------------------------------------
   build:
-    needs: prep
+    needs: [prep, clippy]
     strategy:
       fail-fast: false
       matrix:
@@ -195,6 +226,7 @@ jobs:
   # ---------------------------------------------------------------------
   build-x86_64-linux-headless:
     if: inputs.build_headless
+    needs: clippy
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -219,6 +251,7 @@ jobs:
 
   build-aarch64-linux-headless:
     if: inputs.build_headless
+    needs: clippy
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -258,7 +291,8 @@ jobs:
   # plus explicit result checks (success OR skipped) to allow that.
   # ---------------------------------------------------------------------
   create-release:
-    needs: [prep, build, build-x86_64-linux-headless, build-aarch64-linux-headless]
+    needs:
+      [prep, build, build-x86_64-linux-headless, build-aarch64-linux-headless]
     if: |
       always() &&
       needs.prep.result == 'success' &&
