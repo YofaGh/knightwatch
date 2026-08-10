@@ -40,7 +40,7 @@ Knightwatch ships three binaries: the `knightwatch` server, the `knightwatch-cli
 
 ```bash
 # Install the server (default package)
-curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.ps1 | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.sh | sh
 
 # Install the CLI client
 curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/YofaGh/knightwatch/master/scripts/install.sh | sh -s -- --package knightwatch-cli
