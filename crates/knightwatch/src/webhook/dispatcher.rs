@@ -1,9 +1,10 @@
 use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 
+use super::WebhookTarget;
 use crate::{events::EventPayload, prelude::*, utils::recv_or_pending};
 
-pub async fn run_dispatcher(urls: Vec<String>, cancel_token: CancellationToken) {
+pub async fn run_dispatcher(targets: Vec<WebhookTarget>, cancel_token: CancellationToken) {
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
     let mut system_resources_rx = crate::system_resources::subscribe_events();
     let mut systemd_rx = crate::systemd::subscribe_events();
@@ -37,8 +38,12 @@ pub async fn run_dispatcher(urls: Vec<String>, cancel_token: CancellationToken) 
                 EventPayload::from(&e)
             }
         };
-        for url in &urls {
-            fire_with_retry(&client, url, &payload, &cancel_token).await;
+        let is_tick = payload.is_tick();
+        for target in &targets {
+            if is_tick && !target.include_ticks {
+                continue;
+            }
+            fire_with_retry(&client, &target.url, &payload, &cancel_token).await;
         }
     }
 }

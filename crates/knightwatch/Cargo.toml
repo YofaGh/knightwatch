@@ -49,6 +49,7 @@ uuid = { version = "1.23.1", features = ["v4"] }
 xcap = { version = "0.9.4", optional = true }
 kw-types = { path = "../kw-types", features = ["server"] }
 kw-utils = { path = "../kw-utils" }
+url = "2.5.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5.15.0", features = ["tokio"] }

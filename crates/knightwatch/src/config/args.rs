@@ -48,7 +48,9 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub telegram: bool,
 
-    /// Webhook URLs to notify on process events (repeatable)
+    /// Webhook URLs to notify on process events (repeatable).
+    /// Append `?webhook_events=tick` to a URL to also receive Tick events
+    /// (excluded by default). Example: --webhook "<https://sth.com?webhook_events=tick>"
     #[arg(long = "webhook")]
     pub webhook_urls: Vec<String>,
 
@@ -156,6 +158,9 @@ pub enum ConfigField {
         #[arg(long, default_value_t = false, conflicts_with = "value")]
         clear: bool,
     },
+    /// Webhook URLs to notify on process events (repeatable).
+    /// Append `?webhook_events=tick` to a URL to also receive Tick events
+    /// (excluded by default). Example: --webhook "<https://sth.com?webhook_events=tick>"
     WebhookUrls {
         #[arg(long)]
         add: Vec<String>,

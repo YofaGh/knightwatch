@@ -96,11 +96,18 @@ fn handle_config_action(action: &ConfigAction) -> Result<()> {
                             }
                         }
                         for url in add {
-                            if persistent.webhook_urls.contains(url) {
-                                println!("webhook_url already exists: {url}");
-                            } else {
-                                persistent.webhook_urls.push(url.clone());
-                                println!("webhook_url added: {url}");
+                            match crate::webhook::WebhookTarget::parse(url) {
+                                Ok(_) => {
+                                    if persistent.webhook_urls.contains(url) {
+                                        println!("webhook_url already exists: {url}");
+                                    } else {
+                                        persistent.webhook_urls.push(url.clone());
+                                        println!("webhook_url added: {url}");
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("webhook_url invalid, not added: {url} ({e})");
+                                }
                             }
                         }
                     }

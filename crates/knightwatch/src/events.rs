@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum EventSource {
     ProcessTracker,
     SystemResources,
@@ -8,7 +9,7 @@ pub enum EventSource {
     DockerTracker,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EventPayload {
     pub version: &'static str,
     #[serde(skip)]
@@ -39,5 +40,8 @@ impl EventPayload {
     }
     pub fn is_docker_tracker(&self) -> bool {
         self.source == EventSource::DockerTracker
+    }
+    pub fn is_tick(&self) -> bool {
+        matches!(self.event, "resources.tick" | "systemd.tick")
     }
 }
