@@ -81,7 +81,7 @@ pub fn init_api_server(cancel_token: tokio_util::sync::CancellationToken) -> Res
         None
     } else {
         app = app.fallback(serve_dashboard);
-        crate::utils::start_dev_server().map(|child_process| Vite { child_process })
+        crate::utils::start_dev_server().map(Vite::new)
     };
     #[cfg(not(debug_assertions))]
     let vite = {
