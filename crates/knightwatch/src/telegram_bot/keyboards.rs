@@ -10,12 +10,13 @@ pub fn main_keyboard() -> KeyboardMarkup {
             KeyboardButton::new("📊 Top Processes"),
         ],
         vec![
-            KeyboardButton::new("🖼️ Screenshot"),
+            KeyboardButton::new("🚨 System Alarms"),
             KeyboardButton::new("🖥️ System Resources"),
         ],
         vec![
             KeyboardButton::new("🔧 Systemd"),
             KeyboardButton::new("🐳 Docker"),
+            KeyboardButton::new("🖼️ Screenshot"),
         ],
         vec![
             KeyboardButton::new("⚙️ Settings"),

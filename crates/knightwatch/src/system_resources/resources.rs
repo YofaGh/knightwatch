@@ -1,5 +1,5 @@
 use nvml_wrapper::Nvml;
-use std::sync::OnceLock;
+use std::{collections::HashMap, sync::OnceLock};
 use sysinfo::{Components, CpuRefreshKind, Disks, Networks, System};
 use tokio::{
     sync::{broadcast, mpsc},
@@ -15,20 +15,51 @@ use kw_utils::conv::u64_ratio_percent_f32;
 use super::{
     commands::{SystemResourcesChannels, SystemResourcesCommand, SystemResourcesQuery},
     event::SystemResourcesEvent,
-    system::StaticHostInfo,
+    system::{StaticHostInfo, ThresholdAlarm},
 };
 use crate::prelude::*;
+
+/// How far below the threshold a value must drop before we consider it "cleared".
+/// Prevents rapid on/off flapping when a value hovers right at the line.
+const THRESHOLD_HYSTERESIS: f32 = 5.0;
+
+/// Once alarmed, how long to wait before re-emitting the same alert if the
+/// condition is still active (instead of spamming every tick).
+const THRESHOLD_REPEAT_COOLDOWN: Duration = Duration::from_mins(5);
 
 struct SystemResourcesState {
     last_snapshot: Option<SystemSnapshot>,
     last_battery_state: Option<BatteryState>,
+    cpu_alarm: ThresholdAlarm,
+    memory_alarm: ThresholdAlarm,
+    disk_alarms: HashMap<String, ThresholdAlarm>,
+    battery_low_alarm: ThresholdAlarm,
 }
 
 impl SystemResourcesState {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             last_snapshot: None,
             last_battery_state: None,
+            cpu_alarm: ThresholdAlarm::default(),
+            memory_alarm: ThresholdAlarm::default(),
+            disk_alarms: HashMap::new(),
+            battery_low_alarm: ThresholdAlarm::default(),
+        }
+    }
+}
+
+impl From<&SystemResourcesState> for kw_types::resources::AlarmSnapshot {
+    fn from(s: &SystemResourcesState) -> Self {
+        Self {
+            cpu: (&s.cpu_alarm).into(),
+            memory: (&s.memory_alarm).into(),
+            disks: s
+                .disk_alarms
+                .iter()
+                .map(|(mount, alarm)| (mount.clone(), alarm.into()))
+                .collect(),
+            battery_low: (&s.battery_low_alarm).into(),
         }
     }
 }
@@ -169,6 +200,9 @@ impl SystemResources {
                         .unwrap_or_default(),
                 );
             }
+            SystemResourcesQuery::Alarms { response } => {
+                let _ = response.send((&self.state).into());
+            }
         }
     }
 
@@ -222,14 +256,22 @@ impl SystemResources {
         self.refresh_all();
         let snapshot = self.build_snapshot();
         // CPU
-        if snapshot.cpu.usage_percent >= self.thresholds.cpu_warn {
+        if Self::should_emit(
+            &mut self.state.cpu_alarm,
+            snapshot.cpu.usage_percent,
+            self.thresholds.cpu_warn,
+        ) {
             self.emit_event(SystemResourcesEvent::CpuThresholdExceeded {
                 usage_percent: snapshot.cpu.usage_percent,
                 threshold: self.thresholds.cpu_warn,
             });
         }
         // Memory
-        if snapshot.memory.used_percent >= self.thresholds.memory_warn {
+        if Self::should_emit(
+            &mut self.state.memory_alarm,
+            snapshot.memory.used_percent,
+            self.thresholds.memory_warn,
+        ) {
             self.emit_event(SystemResourcesEvent::MemoryThresholdExceeded {
                 used_percent: snapshot.memory.used_percent,
                 threshold: self.thresholds.memory_warn,
@@ -237,7 +279,12 @@ impl SystemResources {
         }
         // Disks
         for disk in &snapshot.disks {
-            if disk.used_percent >= self.thresholds.disk_warn {
+            let alarm = self
+                .state
+                .disk_alarms
+                .entry(disk.mount_point.clone())
+                .or_default();
+            if Self::should_emit(alarm, disk.used_percent, self.thresholds.disk_warn) {
                 self.emit_event(SystemResourcesEvent::DiskThresholdExceeded {
                     mount_point: disk.mount_point.clone(),
                     used_percent: disk.used_percent,
@@ -247,9 +294,13 @@ impl SystemResources {
         }
         // Battery
         if let Some(ref bat) = snapshot.battery {
-            if bat.state == BatteryState::Discharging
-                && bat.charge_percent <= self.thresholds.battery_low
-            {
+            let is_low = bat.state == BatteryState::Discharging
+                && bat.charge_percent <= self.thresholds.battery_low;
+            if Self::should_emit(
+                &mut self.state.battery_low_alarm,
+                if is_low { 1.0 } else { 0.0 },
+                1.0,
+            ) {
                 self.emit_event(SystemResourcesEvent::BatteryLow {
                     charge_percent: bat.charge_percent,
                     threshold: self.thresholds.battery_low,
@@ -418,6 +469,37 @@ impl SystemResources {
                 .uptime_baseline
                 .saturating_add(self.uptime_started.elapsed().as_secs()),
             process_count: self.sys.processes().len(),
+        }
+    }
+
+    fn should_emit(alarm: &mut ThresholdAlarm, value: f32, threshold: f32) -> bool {
+        let now = std::time::SystemTime::now();
+
+        if value >= threshold {
+            if alarm.exceeded {
+                // still exceeded — only re-notify after the cooldown
+                let should = alarm.last_emitted.is_none_or(|t| {
+                    now.duration_since(t).unwrap_or_default() >= THRESHOLD_REPEAT_COOLDOWN
+                });
+                if should {
+                    alarm.last_emitted = Some(now);
+                }
+                should
+            } else {
+                // rising edge — record when this alarm started, always emit
+                alarm.exceeded = true;
+                alarm.since = Some(now);
+                alarm.last_emitted = Some(now);
+                true
+            }
+        } else {
+            if value <= threshold - THRESHOLD_HYSTERESIS {
+                // cleared — reset everything so the next rise counts as a fresh edge
+                alarm.exceeded = false;
+                alarm.since = None;
+                alarm.last_emitted = None;
+            }
+            false
         }
     }
 }

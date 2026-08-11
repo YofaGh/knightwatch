@@ -153,6 +153,9 @@ async fn dispatch_core_menu(bot: &Bot, msg: &Message, state: &State, text: &str)
         "🖥️ System Resources" => {
             handle_system_resources(bot.clone(), msg.clone(), state.clone()).await?;
         }
+        "🚨 System Alarms" => {
+            handle_system_resources_alarms(bot.clone(), msg.clone(), state.clone()).await?;
+        }
         "📊 Process" => {
             handle_process(bot.clone(), msg.clone(), state.clone()).await?;
         }

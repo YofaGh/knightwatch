@@ -5,8 +5,8 @@ use super::{
     handlers::{
         handle_auth_prompt, handle_docker_callback, handle_help, handle_plain_message,
         handle_process, handle_process_callback, handle_screenshot, handle_start, handle_stop,
-        handle_system_resources, handle_system_resources_callback, handle_top_processes_menu,
-        send_auth_first_message,
+        handle_system_resources, handle_system_resources_alarms, handle_system_resources_callback,
+        handle_top_processes_menu, send_auth_first_message,
     },
     models::{
         Command, DockerCallbackAction, ProcessCallbackAction, State, SystemResourcesCallbackAction,
@@ -68,6 +68,7 @@ fn schema() -> teloxide::dispatching::UpdateHandler<Error> {
         .branch(dptree::case![Command::Auth].endpoint(handle_auth_prompt))
         .branch(dptree::case![Command::Screenshot].endpoint(handle_screenshot))
         .branch(dptree::case![Command::SystemSnapshot].endpoint(handle_system_resources))
+        .branch(dptree::case![Command::SystemAlarms].endpoint(handle_system_resources_alarms))
         .branch(dptree::case![Command::Process].endpoint(handle_process))
         .branch(dptree::case![Command::TopProcesses].endpoint(handle_top_processes_menu))
         .branch(dptree::case![Command::StopKnightWatch].endpoint(handle_stop));

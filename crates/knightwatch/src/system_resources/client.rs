@@ -1,8 +1,8 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use kw_types::resources::{
-    BatterySnapshot, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo, MemorySnapshot,
-    NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+    AlarmSnapshot, BatterySnapshot, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
+    MemorySnapshot, NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
 };
 
 use super::commands::{SystemResourcesCommand, SystemResourcesQuery};
@@ -105,6 +105,14 @@ pub async fn get_temperatures() -> Vec<ThermalSnapshot> {
         .send(SystemResourcesQuery::Temperatures { response: tx })
         .await;
     rx.await.unwrap_or_default()
+}
+
+pub async fn get_alarms() -> Option<AlarmSnapshot> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_system_resources_query_sender()?
+        .send(SystemResourcesQuery::Alarms { response: tx })
+        .await;
+    rx.await.ok()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

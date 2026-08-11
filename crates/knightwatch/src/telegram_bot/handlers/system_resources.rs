@@ -25,6 +25,21 @@ pub async fn handle_system_resources(bot: Bot, msg: Message, state: State) -> Re
     Ok(())
 }
 
+pub async fn handle_system_resources_alarms(bot: Bot, msg: Message, state: State) -> Result<()> {
+    if !state.is_authorized(msg.chat.id) {
+        return send_auth_first_message(bot, msg.chat.id).await;
+    }
+    let alarms_snapshot = system_resources::get_alarms().await;
+    let message = alarms_snapshot.map_or_else(
+        || "*No Alarms Snapshot found*".to_string(),
+        |snap| TelegramDisplay(&snap).to_string(),
+    );
+    bot.send_message(msg.chat.id, message)
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
+    Ok(())
+}
+
 pub async fn handle_system_resources_callback(
     bot: Bot,
     chat_id: ChatId,

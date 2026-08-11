@@ -6,18 +6,19 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     end_points::{
-        battery_snapshot, cpu_snapshot, disks_snapshots, docker_pause_poll, docker_resume_poll,
-        docker_set_poll_interval, failed_units, get_docker_container, gpus_snapshots, health,
-        host_info_snapshot, info, is_process_done, kill_container, kill_process, kill_tree,
-        list_docker_containers, login, logout, memory_snapshot, networks_snapshot, pause_container,
-        process_children, process_root, process_status, process_tracker_pause_poll,
-        process_tracker_resume_poll, process_tracker_set_poll_interval, process_tree,
-        process_trees, resources_pause_poll, resources_resume_poll, resources_set_poll_interval,
-        resources_set_refresh_mask, resources_set_thresholds, restart_container, root_pids,
-        screenshot, shutdown, start_container, stop_container, supported_signals, system_snapshot,
-        systemd_pause_poll, systemd_resume_poll, systemd_set_poll_interval, systemd_snapshot,
-        temperatures_snapshots, top_docker_containers, top_processes, track_pid, unit_snapshot,
-        units_by_active_state, unpause_container, untrack_pid,
+        alarms_snapshot, battery_snapshot, cpu_snapshot, disks_snapshots, docker_pause_poll,
+        docker_resume_poll, docker_set_poll_interval, failed_units, get_docker_container,
+        gpus_snapshots, health, host_info_snapshot, info, is_process_done, kill_container,
+        kill_process, kill_tree, list_docker_containers, login, logout, memory_snapshot,
+        networks_snapshot, pause_container, process_children, process_root, process_status,
+        process_tracker_pause_poll, process_tracker_resume_poll, process_tracker_set_poll_interval,
+        process_tree, process_trees, resources_pause_poll, resources_resume_poll,
+        resources_set_poll_interval, resources_set_refresh_mask, resources_set_thresholds,
+        restart_container, root_pids, screenshot, shutdown, start_container, stop_container,
+        supported_signals, system_snapshot, systemd_pause_poll, systemd_resume_poll,
+        systemd_set_poll_interval, systemd_snapshot, temperatures_snapshots, top_docker_containers,
+        top_processes, track_pid, unit_snapshot, units_by_active_state, unpause_container,
+        untrack_pid,
     },
     middleware::auth_middleware,
 };
@@ -67,6 +68,7 @@ fn create_api_router(
         .route("/battery", get(battery_snapshot)) // battery snapshot
         .route("/host-info", get(host_info_snapshot)) // host info snapshot
         .route("/temperatures", get(temperatures_snapshots)) // temperatures snapshot
+        .route("/alarms", get(alarms_snapshot)) // alarms snapshot
         // ── Systemd ───────────────────────────────────────────────────────
         .route("/systemd", get(systemd_snapshot)) // systemd snapshot
         .route("/unit/{unit_name}", get(unit_snapshot)) // unit snapshot

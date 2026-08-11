@@ -6,7 +6,7 @@ mod system;
 mod utils;
 
 pub use kw_types::resources::{
-    BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
+    AlarmSnapshot, BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
     MemorySnapshot, NetworkSnapshot, RefreshMask, SystemHealth, SystemSnapshot, ThermalSnapshot,
     Thresholds,
 };

@@ -1,8 +1,8 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use kw_types::resources::{
-    BatterySnapshot, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo, MemorySnapshot,
-    NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+    AlarmSnapshot, BatterySnapshot, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
+    MemorySnapshot, NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
 };
 
 use crate::prelude::*;
@@ -52,6 +52,11 @@ pub enum SystemResourcesQuery {
     /// Returns thermal readings (may be empty if unsupported).
     Temperatures {
         response: oneshot::Sender<Vec<ThermalSnapshot>>,
+    },
+    /// Returns the current state of all threshold alarms, independent of
+    /// event emission/cooldown timing.
+    Alarms {
+        response: oneshot::Sender<AlarmSnapshot>,
     },
 }
 

@@ -281,6 +281,46 @@ impl std::fmt::Display for TelegramDisplay<'_, crate::system_resources::SystemSn
     }
 }
 
+impl std::fmt::Display for TelegramDisplay<'_, kw_types::resources::AlarmSnapshot> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = self.0;
+
+        let mut items: Vec<(&str, &kw_types::resources::AlarmStatus)> = vec![
+            ("CPU", &s.cpu),
+            ("Memory", &s.memory),
+            ("Battery Low", &s.battery_low),
+        ];
+        for (mount, status) in &s.disks {
+            items.push((mount.as_str(), status));
+        }
+
+        let active_count = items.iter().filter(|(_, st)| st.active).count();
+        let emoji = if active_count == 0 { "✅" } else { "🚨" };
+
+        writeln!(f, "{emoji} *Alarms* — `{active_count}` active")?;
+
+        let last = items.len().saturating_sub(1);
+        for (i, (label, status)) in items.iter().enumerate() {
+            let connector = if i == last { "└" } else { "├" };
+            let icon = if status.active { "🔴" } else { "⚫" };
+            write!(f, "{connector} {icon} `{}`", escape_mdv2(label))?;
+            if status.active
+                && let Some(since) = status.since
+                && let Ok(elapsed) = since.elapsed()
+            {
+                write!(
+                    f,
+                    " — active `{}`",
+                    escape_mdv2(&format_time(elapsed.as_secs())),
+                )?;
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl std::fmt::Display for TelegramDisplay<'_, systemd::UnitSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let u = self.0;

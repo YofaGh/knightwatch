@@ -401,6 +401,17 @@ pub async fn temperatures_snapshots() -> Json<Vec<system_resources::ThermalSnaps
     Json(system_resources::get_temperatures().await)
 }
 
+/// `GET /alarms`
+///
+/// Returns the Alarm Snapshots.
+pub async fn alarms_snapshot() -> Result<Json<system_resources::AlarmSnapshot>, (StatusCode, String)>
+{
+    system_resources::get_alarms()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("No alarms Snapshot was found".to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // System Resources command endpoints (requires --allow-system-resources-commands)
 // ---------------------------------------------------------------------------

@@ -29,6 +29,8 @@ pub enum Command {
     TopProcesses,
     #[command(description = "Get System Snapshot")]
     SystemSnapshot,
+    #[command(description = "Get System Alerts")]
+    SystemAlarms,
     #[command(description = "Stop Knight Watch")]
     StopKnightWatch,
 }

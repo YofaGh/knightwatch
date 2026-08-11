@@ -676,3 +676,61 @@ impl fmt::Display for DiskKind {
         }
     }
 }
+
+/// Public, client-facing status for a single threshold alarm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlarmStatus {
+    pub active: bool,
+    /// When the alarm most recently transitioned into `active`.
+    /// None if it has never fired.
+    pub since: Option<std::time::SystemTime>,
+}
+
+/// Aggregate snapshot of all alarm state, queryable independently
+/// of the next tick's events.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AlarmSnapshot {
+    pub cpu: AlarmStatus,
+    pub memory: AlarmStatus,
+    pub disks: Vec<(String, AlarmStatus)>, // mount_point -> status, stable order
+    pub battery_low: AlarmStatus,
+}
+
+impl fmt::Display for AlarmStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.active {
+            return write!(f, "clear");
+        }
+        match self.since.and_then(|t| t.elapsed().ok()) {
+            Some(elapsed) => write!(f, "active (for {})", format_time(elapsed.as_secs())),
+            None => write!(f, "active"),
+        }
+    }
+}
+
+impl fmt::Display for AlarmSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut active: Vec<String> = Vec::new();
+
+        if self.cpu.active {
+            active.push(format!("cpu: {}", self.cpu));
+        }
+        if self.memory.active {
+            active.push(format!("memory: {}", self.memory));
+        }
+        if self.battery_low.active {
+            active.push(format!("battery: {}", self.battery_low));
+        }
+        for (mount, status) in &self.disks {
+            if status.active {
+                active.push(format!("disk[{mount}]: {status}"));
+            }
+        }
+
+        if active.is_empty() {
+            write!(f, "no active alarms")
+        } else {
+            write!(f, "{}", active.join(", "))
+        }
+    }
+}
