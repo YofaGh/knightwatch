@@ -473,6 +473,15 @@ impl ApiClient {
         self.get_typed("/temperatures").await
     }
 
+    /// Fetches snapshot of system alarms.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn alarms(&self) -> Result<resources::AlarmSnapshot> {
+        self.get_typed("/alarms").await
+    }
+
     // ── System resource commands ──────────────────────────────────────
 
     /// Sets the warning/low thresholds for CPU, memory, disk, and battery.
