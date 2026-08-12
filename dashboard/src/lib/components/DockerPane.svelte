@@ -154,13 +154,13 @@
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────
-  onMount(() => {
-    refresh();
-    pollTimer = setInterval(refresh, 2000);
-  });
-
-  onDestroy(() => {
-    clearInterval(pollTimer);
+  
+  $effect(() => {
+    if (enabled) {
+      refresh();
+      pollTimer = setInterval(refresh, 2000);
+      return () => clearInterval(pollTimer);
+    }
   });
 
   let canCommand = $derived(allowDockerCommands && isAuthenticated);
@@ -435,8 +435,8 @@
   .short-id {
     font-size: 0.65rem;
     color: var(--text-muted);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     letter-spacing: 0.04em;
   }
   .card-badges {
@@ -450,8 +450,8 @@
   .card-image {
     font-size: 0.68rem;
     color: var(--text-muted);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -462,8 +462,8 @@
   .health-badge {
     font-size: 0.62rem;
     font-weight: 700;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 0.15rem 0.5rem;
@@ -535,8 +535,8 @@
   }
   .stat-value {
     font-size: 0.75rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: var(--text-base);
     display: flex;
     align-items: baseline;

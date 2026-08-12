@@ -16,6 +16,9 @@
   let shutdownDisabled = $state(false);
   let shutdownLabel = $state("Shutdown");
 
+  // ── Alarms ────────────────────────────────────────────────────────
+  let alarms = $state(null);
+
   // ── Per-pane statuses ──────────────────────────────────────────────
   let paneStatuses = $state({
     screens: null,
@@ -31,14 +34,21 @@
   }
 
   // Derived: app-level overrides first, then active tab, then first error, then first non-null
-  let status = $derived((() => {
-    if (paneStatuses.app) return paneStatuses.app;
-    const active = paneStatuses[activeTab];
-    if (active) return active;
-    const errEntry = Object.values(paneStatuses).find(s => s?.error);
-    if (errEntry) return errEntry;
-    return Object.values(paneStatuses).find(s => s !== null) ?? { label: "Loading…", error: false };
-  })());
+  let status = $derived(
+    (() => {
+      if (paneStatuses.app) return paneStatuses.app;
+      const active = paneStatuses[activeTab];
+      if (active) return active;
+      const errEntry = Object.values(paneStatuses).find((s) => s?.error);
+      if (errEntry) return errEntry;
+      return (
+        Object.values(paneStatuses).find((s) => s !== null) ?? {
+          label: "Loading…",
+          error: false,
+        }
+      );
+    })(),
+  );
 
   let statusLabel = $derived(status.label);
   let statusError = $derived(status.error);
@@ -80,7 +90,10 @@
   let showSystem = $derived(!info || info.system_resources !== false);
   let showDocker = $derived(!info || info.docker !== false);
   let showProcesses = $derived(
-    !info || info.top_processes !== false || (info.pid && info.pid.length > 0),
+    !info ||
+      (info.pid && info.pid.length > 0) ||
+      info.top_processes === true ||
+      info.allow_process_commands === true,
   );
   let showSystemd = $derived(!info || info.systemd !== false);
 
@@ -119,6 +132,7 @@
         telegram_bot: false,
         system_resources: false,
         systemd: false,
+        docker: false,
         allow_process_commands: false,
         allow_screen_commands: false,
         allow_system_resources_commands: false,
@@ -147,6 +161,16 @@
     });
   }
 
+  async function loadAlarms() {
+    try {
+      const r = await apiFetch("/api/alarms");
+      if (!r.ok) throw new Error("alarms fetch failed");
+      alarms = await r.json();
+    } catch (e) {
+      if (e?.message === "Unauthorized") return;
+    }
+  }
+
   // ── Shutdown ──────────────────────────────────────────────────────
   async function handleShutdown() {
     if (!confirm("Shut down the server?")) return;
@@ -160,15 +184,21 @@
 
   // ── Init ──────────────────────────────────────────────────────────
   onMount(() => {
+    console.log("hey whatsup");
     const fromHash = (location.hash || "").replace("#", "");
     const initial = TAB_NAMES.includes(fromHash) ? fromHash : "screens";
     requestAnimationFrame(() => activateTab(initial));
 
     loadInfo();
+    loadAlarms();
+    const alarmsInterval = setInterval(loadAlarms, 10000);
 
     const onResize = () => topbar?.moveIndicator(activeTab);
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      clearInterval(alarmsInterval);
+    };
   });
 </script>
 
@@ -180,9 +210,10 @@
   <TopBar
     bind:this={topbar}
     {info}
+    {alarms}
     {activeTab}
     status={statusLabel}
-    statusError={statusError}
+    {statusError}
     {showScreens}
     {showSystem}
     {showProcesses}
@@ -198,77 +229,89 @@
 
   <div id="panes">
     {#if info}
-      <section
-        class="pane"
-        class:active={activeTab === "screens"}
-        role="tabpanel"
-      >
-        <ScreensPane
-          active={activeTab === "screens"}
-          enabled={!info.blind}
-          allowScreenCommands={info.allow_screen_commands ?? false}
-          isAuthenticated={!!$auth.token}
-          onstatus={(label, error) => setPaneStatus("screens", label, error)}
-        />
-      </section>
+      {#if showScreens}
+        <section
+          class="pane"
+          class:active={activeTab === "screens"}
+          role="tabpanel"
+        >
+          <ScreensPane
+            active={activeTab === "screens"}
+            enabled={!info.blind}
+            allowScreenCommands={info.allow_screen_commands ?? false}
+            isAuthenticated={!!$auth.token}
+            onstatus={(label, error) => setPaneStatus("screens", label, error)}
+          />
+        </section>
+      {/if}
 
-      <section
-        class="pane"
-        class:active={activeTab === "system"}
-        role="tabpanel"
-      >
-        <SystemResourcesPane
-          active={activeTab === "system"}
-          enabled={info.system_resources}
-          allowSystemResourcesCommands={info.allow_system_resources_commands ?? false}
-          isAuthenticated={!!$auth.token}
-          onstatus={(label, error) => setPaneStatus("system", label, error)}
-        />
-      </section>
+      {#if showSystem}
+        <section
+          class="pane"
+          class:active={activeTab === "system"}
+          role="tabpanel"
+        >
+          <SystemResourcesPane
+            active={activeTab === "system"}
+            enabled={info.system_resources}
+            allowSystemResourcesCommands={info.allow_system_resources_commands ??
+              false}
+            isAuthenticated={!!$auth.token}
+            onstatus={(label, error) => setPaneStatus("system", label, error)}
+          />
+        </section>
+      {/if}
 
-      <section
-        class="pane"
-        class:active={activeTab === "processes"}
-        role="tabpanel"
-      >
-        <ProcessesPane
-          active={activeTab === "processes"}
-          hasPids={info.pid && info.pid.length > 0}
-          hasTopProcesses={info.top_processes}
-          limitProcesses={info.limit_processes ?? 50}
-          allowProcessCommands={info.allow_process_commands ?? false}
-          isAuthenticated={!!$auth.token}
-          onstatus={(label, error) => setPaneStatus("processes", label, error)}
-        />
-      </section>
+      {#if showProcesses}
+        <section
+          class="pane"
+          class:active={activeTab === "processes"}
+          role="tabpanel"
+        >
+          <ProcessesPane
+            active={activeTab === "processes"}
+            hasPids={info.pid && info.pid.length > 0}
+            hasTopProcesses={info.top_processes}
+            limitProcesses={info.limit_processes ?? 50}
+            allowProcessCommands={info.allow_process_commands ?? false}
+            isAuthenticated={!!$auth.token}
+            onstatus={(label, error) =>
+              setPaneStatus("processes", label, error)}
+          />
+        </section>
+      {/if}
 
-      <section
-        class="pane"
-        class:active={activeTab === "systemd"}
-        role="tabpanel"
-      >
-        <SystemdPane
-          active={activeTab === "systemd"}
-          enabled={info.systemd}
-          allowSystemdCommands={info.allow_systemd_commands ?? false}
-          isAuthenticated={!!$auth.token}
-          onstatus={(label, error) => setPaneStatus("systemd", label, error)}
-        />
-      </section>
+      {#if showSystemd}
+        <section
+          class="pane"
+          class:active={activeTab === "systemd"}
+          role="tabpanel"
+        >
+          <SystemdPane
+            active={activeTab === "systemd"}
+            enabled={info.systemd}
+            allowSystemdCommands={info.allow_systemd_commands ?? false}
+            isAuthenticated={!!$auth.token}
+            onstatus={(label, error) => setPaneStatus("systemd", label, error)}
+          />
+        </section>
+      {/if}
 
-      <section
-        class="pane"
-        class:active={activeTab === "docker"}
-        role="tabpanel"
-      >
-        <DockerPane
-          active={activeTab === "docker"}
-          enabled={info.docker}
-          allowDockerCommands={info.allow_docker_commands ?? false}
-          isAuthenticated={!!$auth.token}
-          onstatus={(label, error) => setPaneStatus("docker", label, error)}
-        />
-      </section>
+      {#if showDocker}
+        <section
+          class="pane"
+          class:active={activeTab === "docker"}
+          role="tabpanel"
+        >
+          <DockerPane
+            active={activeTab === "docker"}
+            enabled={info.docker}
+            allowDockerCommands={info.allow_docker_commands ?? false}
+            isAuthenticated={!!$auth.token}
+            onstatus={(label, error) => setPaneStatus("docker", label, error)}
+          />
+        </section>
+      {/if}
     {/if}
   </div>
 {/if}

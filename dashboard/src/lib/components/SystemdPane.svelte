@@ -98,13 +98,16 @@
   // Whether commands are actually usable
   let canCommand = $derived(allowSystemdCommands && isAuthenticated);
 
-  onMount(() => {
-    if (!enabled) return;
-    refresh();
-    interval = setInterval(refresh, 3000);
-  });
+  let pollTimer = null;
 
-  onDestroy(() => clearInterval(interval));
+  // Use $effect so polling starts/stops reactively based on `enabled`
+  $effect(() => {
+    if (enabled) {
+      refresh();
+      pollTimer = setInterval(refresh, 2000);
+      return () => clearInterval(pollTimer);
+    }
+  });
 
   // ── Derived ───────────────────────────────────────────────────────
   let units = $derived(snap?.units ?? []);
@@ -241,7 +244,7 @@
     {/if}
     {#if allowSystemdCommands}
       {#if !isAuthenticated}
-          <SignInNotice name="systemd" />
+        <SignInNotice name="systemd" />
       {:else}
         <div class="poll-controls">
           <button
@@ -622,8 +625,8 @@
   .unit-name {
     flex: 1;
     font-size: 0.75rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: #d4d4d8;
     white-space: nowrap;
     overflow: hidden;
@@ -678,8 +681,8 @@
   }
   .detail-unit-name {
     font-size: 0.82rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: var(--text-base);
     font-weight: 600;
     word-break: break-all;
@@ -721,8 +724,8 @@
   .sys-kv .sv {
     font-size: 0.85rem;
     color: #e4e4e7;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

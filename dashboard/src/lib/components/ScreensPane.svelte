@@ -70,12 +70,15 @@
     }
   }
 
+  let pollTimer = null;
+
   // Use $effect so polling starts/stops reactively based on `enabled`
   $effect(() => {
-    if (!enabled) return;
-    refresh();
-    const id = setInterval(refresh, 2000);
-    return () => clearInterval(id);
+    if (enabled) {
+      refresh();
+      pollTimer = setInterval(refresh, 2000);
+      return () => clearInterval(pollTimer);
+    }
   });
 
   // Whether commands are actually usable

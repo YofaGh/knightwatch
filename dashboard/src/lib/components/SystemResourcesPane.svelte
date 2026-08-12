@@ -1,5 +1,5 @@
 <script>
-  import { formatBytes, formatUptime } from "../utils/format.js";
+  import { formatBytes, formatTime } from "../utils/format.js";
   import SignInNotice from "./SignInNotice.svelte";
   import { apiFetch } from "../api.js";
 
@@ -24,12 +24,15 @@
     }
   }
 
+  let pollTimer = null;
+
   // Use $effect so polling starts/stops reactively based on `enabled`
   $effect(() => {
-    if (!enabled) return;
-    refresh();
-    const id = setInterval(refresh, 2000);
-    return () => clearInterval(id);
+    if (enabled) {
+      refresh();
+      pollTimer = setInterval(refresh, 2000);
+      return () => clearInterval(pollTimer);
+    }
   });
 
   // Whether commands are actually usable
@@ -260,7 +263,7 @@
       <div class="sys-section">
         <div class="sys-section-title">Host</div>
         <div class="sys-grid">
-          {#each [["Hostname", snap.host.hostname], ["OS", snap.host.os_name], ["Kernel", snap.host.kernel_version], ["Arch", snap.host.cpu_arch], ["Uptime", formatUptime(snap.host.uptime_secs)], ["Procs", snap.host.process_count], ["Health", snap.health, healthClass(snap.health)]] as [label, value, cls]}
+          {#each [["Hostname", snap.host.hostname], ["OS", snap.host.os_name], ["Kernel", snap.host.kernel_version], ["Arch", snap.host.cpu_arch], ["Uptime", formatTime(snap.host.uptime_secs)], ["Procs", snap.host.process_count], ["Health", snap.health, healthClass(snap.health)]] as [label, value, cls]}
             <div class="sys-kv">
               <span class="sk">{label}</span>
               <span
@@ -574,14 +577,14 @@
             {#if snap.battery.time_to_empty_secs != null}
               <div class="sys-kv">
                 <span class="sk">Empty in</span><span class="sv"
-                  >{formatUptime(snap.battery.time_to_empty_secs)}</span
+                  >{formatTime(snap.battery.time_to_empty_secs)}</span
                 >
               </div>
             {/if}
             {#if snap.battery.time_to_full_secs != null}
               <div class="sys-kv">
                 <span class="sk">Full in</span><span class="sv"
-                  >{formatUptime(snap.battery.time_to_full_secs)}</span
+                  >{formatTime(snap.battery.time_to_full_secs)}</span
                 >
               </div>
             {/if}
@@ -822,8 +825,8 @@
   .sys-kv .sv {
     font-size: 0.85rem;
     color: #e4e4e7;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -879,8 +882,8 @@
   }
   .sys-bar-val {
     font-size: 0.72rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: #e4e4e7;
     min-width: 2.8rem;
     text-align: right;
@@ -913,8 +916,8 @@
   }
   .sys-item-name {
     font-size: 0.75rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: #d4d4d8;
     white-space: nowrap;
     overflow: hidden;
@@ -937,8 +940,8 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.7rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
   .sys-thermal-label {
     color: var(--text-muted);
@@ -966,8 +969,8 @@
     align-items: center;
     gap: 0.25rem;
     font-size: 0.7rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
   .sys-net-badge .dir {
     font-size: 0.6rem;

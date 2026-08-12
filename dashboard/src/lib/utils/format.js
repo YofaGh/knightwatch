@@ -11,7 +11,7 @@ export function formatBytes(bytes) {
   return bytes + " B";
 }
 
-export function formatUptime(secs) {
+export function formatTime(secs) {
   const days = Math.floor(secs / 86400);
   const hours = Math.floor((secs % 86400) / 3600);
   const mins = Math.floor((secs % 3600) / 60);
