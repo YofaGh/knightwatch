@@ -149,6 +149,8 @@ enum Commands {
     HostInfo,
     /// Temperature snapshots
     Temperatures,
+    /// System Alarms
+    Alarms,
 
     // ── System resource commands ──────────────────────────────────────────
     /// Set alert thresholds
@@ -437,6 +439,9 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
             for t in &v {
                 println!("{t}");
             }
+        }
+        Commands::Alarms => {
+            println!("{}", api.alarms().await?);
         }
 
         // ── System resource commands ──────────────────────────────────────
