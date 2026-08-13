@@ -144,6 +144,10 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     let inner_content = content_block.inner(content_area);
     frame.render_widget(content_block, content_area);
 
+    // Global alarm banner — shown above whichever tab is active, since
+    // alarm state isn't tied to any one tab.
+    let inner_content = crate::ui_helpers::alarm_banner(frame, inner_content, app.alarms.as_ref());
+
     // No login screen showing => either auth is off, or the user already
     // has a session. Either way, commands are runnable.
     let logged_in = app.authenticated;

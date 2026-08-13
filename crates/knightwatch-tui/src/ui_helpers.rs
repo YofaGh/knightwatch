@@ -212,3 +212,48 @@ pub fn command_login_banner(
 
     rest_area
 }
+
+/// Reserves a one-line banner at the top of `area` when there are active
+/// alarms, and returns the remaining `Rect`. Shown above the tab content
+/// regardless of which tab is selected, since alarm state is global.
+/// If there's no snapshot yet or nothing is active, `area` is unchanged.
+pub fn alarm_banner(
+    frame: &mut Frame,
+    area: Rect,
+    alarms: Option<&kw_types::resources::AlarmSnapshot>,
+) -> Rect {
+    let Some(alarms) = alarms else { return area };
+    let any_active = alarms.cpu.active
+        || alarms.memory.active
+        || alarms.battery_low.active
+        || alarms.disks.iter().any(|(_, s)| s.active);
+    if !any_active {
+        return area;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(area);
+    let [banner_area, rest_area] = chunks.as_ref() else {
+        return area;
+    };
+    let banner_area = *banner_area;
+    let rest_area = *rest_area;
+
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!("{} ", icon::WARNING),
+                Style::default()
+                    .fg(theme::DANGER)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(alarms.to_string(), Style::default().fg(theme::DANGER)),
+        ]))
+        .alignment(Alignment::Center),
+        banner_area,
+    );
+
+    rest_area
+}

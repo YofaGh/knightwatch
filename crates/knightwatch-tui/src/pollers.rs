@@ -122,6 +122,23 @@ pub fn spawn_system_resources_poller(
     });
 }
 
+pub fn spawn_system_alarms_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let alarms = api
+                .alarms()
+                .await
+                .map_or(None, |alarms| Some(AppEvent::AlarmSnapshot(alarms)));
+            if let Some(event) = alarms
+                && tx.send(event).await.is_err()
+            {
+                break;
+            }
+        }
+    });
+}
+
 pub fn spawn_docker_poller(
     tx: Sender<AppEvent>,
     api: Arc<ApiClient>,

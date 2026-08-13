@@ -16,6 +16,9 @@ pub enum AppEvent {
     /// A fresh systemd snapshot, for the systemd tab.
     SystemdSnapshot(kw_types::systemd::SystemdSnapshot),
 
+    /// A fresh alarm snapshot, shown as a global banner regardless of tab.
+    AlarmSnapshot(kw_types::resources::AlarmSnapshot),
+
     /// A fresh process trees, for the systemd tab.
     ProcessTrees(Vec<kw_types::process::ProcessTree>),
 

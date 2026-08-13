@@ -20,6 +20,7 @@ pub struct App {
     pub selected_tab: usize,
     pub tab_hit_rects: Vec<(u16, u16)>,
     pub tabs: Vec<Box<dyn Tab>>,
+    pub alarms: Option<kw_types::resources::AlarmSnapshot>,
     /// Set whenever something happened that changed what should be on
     /// screen. The main loop checks this after every event and only calls
     /// `terminal.draw` when it's true — that's what makes this genuinely
@@ -87,6 +88,7 @@ impl App {
         if info.system_resources {
             let control = PollControl::new_arc(2000);
             pollers::spawn_system_resources_poller(tx.clone(), api.clone(), control.clone());
+            pollers::spawn_system_alarms_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::SystemResourcesTab::new(
                 info.allow_system_resources_commands,
                 api.clone(),
@@ -106,7 +108,7 @@ impl App {
             )));
         }
         // --- Docker tab ---
-        if info.docker || info.allow_docker_commands {
+        if info.docker {
             let control = PollControl::new_arc(2000);
             pollers::spawn_docker_poller(tx.clone(), api.clone(), control.clone());
             tabs.push(Box::new(tabs::DockerTab::new(
@@ -148,6 +150,7 @@ impl App {
             selected_tab: 0,
             tab_hit_rects: Vec::new(),
             tabs,
+            alarms: None,
             dirty: false,
             login,
             api,
@@ -211,6 +214,10 @@ impl App {
                 {
                     self.dirty = true;
                 }
+            }
+            AppEvent::AlarmSnapshot(snap) => {
+                self.alarms = Some(snap);
+                self.dirty = true;
             }
             AppEvent::DockerContainers(_) => {
                 if let Some(tab) = self.get_tab_by_name("Docker")
