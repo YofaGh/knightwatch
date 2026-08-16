@@ -128,6 +128,11 @@ stage_dir="${tmpdir}/${BIN_NAME}-${target}"
 mkdir -p "$INSTALL_DIR"
 install -m 755 "${stage_dir}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
 
+if [ "$BIN_NAME" = "knightwatch" ] && [ "$os" = "unknown-linux-gnu" ] && [ -f "${stage_dir}/kw-systemd-helper" ]; then
+  install -m 755 "${stage_dir}/kw-systemd-helper" "${INSTALL_DIR}/kw-systemd-helper"
+  echo "Installed kw-systemd-helper (privileged systemd command helper) to ${INSTALL_DIR}/kw-systemd-helper"
+fi
+
 echo "Installed ${BIN_NAME} (${tag}) to ${INSTALL_DIR}/${BIN_NAME}"
 
 case ":$PATH:" in

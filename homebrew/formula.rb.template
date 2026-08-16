@@ -28,6 +28,7 @@ class __CLASS__ < Formula
 
   def install
     bin.install "__BIN__"
+    bin.install "kw-systemd-helper" if OS.linux? && File.exist?("kw-systemd-helper")
   end
 
   test do

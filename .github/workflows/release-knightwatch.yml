@@ -17,6 +17,7 @@ jobs:
       linux_extra_deps: "libwayland-dev libpipewire-0.3-dev libegl-dev libgbm-dev"
       build_msi: true
       build_headless: true
+      bundle_helper: true
       homebrew_class: Knightwatch
       homebrew_desc: "System Monitoring tool"
       latest: true

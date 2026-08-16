@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: false
+      bundle_helper:
+        description: "Also build kw-systemd-helper and bundle it into the Linux archives (knightwatch only)."
+        required: false
+        type: boolean
+        default: false
       homebrew_class:
         description: "Homebrew formula Ruby class name, e.g. Knightwatch. Empty = skip the Homebrew job entirely."
         required: false
@@ -75,9 +80,9 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#*/}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
-  # Lint gate. Runs clippy against the default-feature build, and — for
-  # crates that ship a headless variant (build_headless) — also against
-  # --no-default-features, since that's a distinct compile path that can
+  # Lint gate. Runs clippy against the default-feature build, the release
+  # profile, and — for crates that ship a headless variant (build_headless)
+  # also against --no-default-features, since that's a distinct compile path that can
   # hide its own warnings/errors behind feature gates. `build` (and the
   # headless build jobs) depend on this, so a lint failure stops the
   # release before anything gets built or published.
@@ -101,9 +106,16 @@ jobs:
       - name: Run clippy (default features)
         run: cargo clippy --locked --package ${{ env.PACKAGE }} --all-targets -- -D warnings
 
+      - name: Run clippy (release)
+        run: cargo clippy --locked --package ${{ env.PACKAGE }} --release --all-targets -- -D warnings
+
       - name: Run clippy (no default features)
         if: inputs.build_headless
         run: cargo clippy --locked --package ${{ env.PACKAGE }} --no-default-features --all-targets -- -D warnings
+
+      - name: Run clippy (systemd helper)
+        if: inputs.bundle_helper
+        run: cargo clippy --locked --package kw-systemd-helper --all-targets -- -D warnings
 
   # ---------------------------------------------------------------------
   # Build the default-feature binary for every platform, package it into
@@ -148,6 +160,10 @@ jobs:
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} --package ${{ env.PACKAGE }}
 
+      - name: Build systemd helper (Linux only)
+        if: runner.os == 'Linux' && inputs.bundle_helper
+        run: cargo build --release --locked --target ${{ matrix.target }} --package kw-systemd-helper
+
       - name: Package (unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -156,6 +172,9 @@ jobs:
           stage="${BIN_NAME}-${{ matrix.target }}"
           mkdir -p "$stage"
           cp "target/${{ matrix.target }}/release/${BIN_NAME}" "$stage/"
+          if [ "${{ inputs.bundle_helper }}" = "true" ] && [ -f "target/${{ matrix.target }}/release/kw-systemd-helper" ]; then
+            cp "target/${{ matrix.target }}/release/kw-systemd-helper" "$stage/"
+          fi
           cp LICENSE README.md "$stage/" 2>/dev/null || true
           tar -czf "${stage}.tar.gz" "$stage"
           if command -v sha256sum >/dev/null 2>&1; then
@@ -234,11 +253,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Build headless binary
         run: cargo build --release --locked --no-default-features --package ${{ env.PACKAGE }}
+      - name: Build systemd helper
+        if: inputs.bundle_helper
+        run: cargo build --release --locked --package kw-systemd-helper
       - name: Package
         run: |
+          set -euo pipefail
           cp target/release/${BIN_NAME} target/release/${BIN_NAME}-headless
-          tar -czf ${BIN_NAME}-headless-x86_64-unknown-linux.tar.gz \
-            -C target/release ${BIN_NAME}-headless \
+
+          files=("${BIN_NAME}-headless")
+          if [ -f "target/release/kw-systemd-helper" ]; then
+            files+=("kw-systemd-helper")
+          fi
+
+          tar -czf "${BIN_NAME}-headless-x86_64-unknown-linux.tar.gz" \
+            -C target/release "${files[@]}" \
             -C "$GITHUB_WORKSPACE" LICENSE README.md
           sha256sum ${BIN_NAME}-headless-x86_64-unknown-linux.tar.gz > ${BIN_NAME}-headless-x86_64-unknown-linux.tar.gz.sha256
       - name: Upload artifact
@@ -267,11 +296,23 @@ jobs:
         run: cargo build --release --locked --no-default-features --target aarch64-unknown-linux-gnu --package ${{ env.PACKAGE }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      - name: Build systemd helper
+        if: inputs.bundle_helper
+        run: cargo build --release --locked --target aarch64-unknown-linux-gnu --package kw-systemd-helper
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
       - name: Package
         run: |
+          set -euo pipefail
           cp target/aarch64-unknown-linux-gnu/release/${BIN_NAME} target/aarch64-unknown-linux-gnu/release/${BIN_NAME}-headless
-          tar -czf ${BIN_NAME}-headless-aarch64-unknown-linux.tar.gz \
-            -C target/aarch64-unknown-linux-gnu/release ${BIN_NAME}-headless \
+
+          files=("${BIN_NAME}-headless")
+          if [ -f "target/aarch64-unknown-linux-gnu/release/kw-systemd-helper" ]; then
+            files+=("kw-systemd-helper")
+          fi
+
+          tar -czf "${BIN_NAME}-headless-aarch64-unknown-linux.tar.gz" \
+            -C target/aarch64-unknown-linux-gnu/release "${files[@]}" \
             -C "$GITHUB_WORKSPACE" LICENSE README.md
           sha256sum ${BIN_NAME}-headless-aarch64-unknown-linux.tar.gz > ${BIN_NAME}-headless-aarch64-unknown-linux.tar.gz.sha256
       - name: Upload artifact
