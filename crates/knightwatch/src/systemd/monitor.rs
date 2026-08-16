@@ -1,9 +1,9 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::OnceLock,
+    sync::{Arc, OnceLock},
 };
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::{OnceCell, broadcast, mpsc},
     time::Duration,
 };
 use zbus::{Connection, zvariant::OwnedObjectPath};
@@ -14,6 +14,7 @@ use kw_utils::conv::{u64_to_u32_saturating, usize_to_u32_saturating};
 use super::{
     commands::{SystemdCommand, SystemdMonitorChannels, SystemdQuery},
     event::SystemdEvent,
+    helper_client::SystemdHelperClient,
     proxies::{SystemdManagerProxy, SystemdServiceProxy, SystemdUnitProxy},
     systemd_snap::UnitFilter,
     types::{ServiceDetails, ServiceProperties, UnitProperties},
@@ -45,6 +46,7 @@ pub struct SystemdMonitor {
     poll_interval_timer: Option<tokio::time::Interval>,
     filter: UnitFilter,
     first_tick: bool,
+    helper: Arc<OnceCell<SystemdHelperClient>>,
 }
 
 impl SystemdMonitor {
@@ -60,6 +62,7 @@ impl SystemdMonitor {
             poll_interval_timer: None,
             filter: UnitFilter::default(),
             first_tick: true,
+            helper: Arc::new(OnceCell::new()),
         })
     }
 
@@ -153,6 +156,22 @@ impl SystemdMonitor {
                 info!("polling resumed");
                 let _ = response.send(Ok(()));
             }
+            SystemdCommand::Control {
+                unit_name,
+                action,
+                response,
+            } => {
+                let helper = self.helper.clone();
+                tokio::spawn(async move {
+                    let result = match helper.get() {
+                        Some(h) => h.control(&unit_name, action).await,
+                        None => Err(Error::Systemd(
+                            "systemd command helper is not ready (auth pending, cancelled, or unavailable)".into(),
+                        )),
+                    };
+                    let _ = response.send(result);
+                });
+            }
         }
     }
 
@@ -190,6 +209,9 @@ impl SystemdMonitor {
         // Units that appeared since last tick
         for name in current_names.difference(&previous_names) {
             if let Some(unit) = snapshot.units.iter().find(|u| &u.unit_name == name) {
+                // if !self.first_tick {
+                //     info!(unit_name = %name, "systemd unit appeared");
+                // }
                 info!(unit_name = %name, "systemd unit appeared");
                 self.emit_event(SystemdEvent::UnitAppeared { unit: unit.clone() });
             }
@@ -417,6 +439,12 @@ impl SystemdMonitor {
                 (pid, mem, cpu, restarts)
             })
         })
+    }
+
+    /// Handle used by `init_systemd_monitor` to inject the helper once
+    /// `pkexec` resolves, without blocking the monitor loop while waiting.
+    pub fn helper_handle(&self) -> Arc<OnceCell<SystemdHelperClient>> {
+        self.helper.clone()
     }
 }
 

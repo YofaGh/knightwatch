@@ -1,7 +1,13 @@
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, KeyboardMarkup};
 
-use super::models::{DockerCallbackAction, ProcessCallbackAction, SystemResourcesCallbackAction};
-use crate::system_resources::{RefreshMask, Thresholds};
+use super::models::{
+    DockerCallbackAction, ProcessCallbackAction, SystemResourcesCallbackAction,
+    SystemdCallbackAction,
+};
+use crate::{
+    system_resources::{RefreshMask, Thresholds},
+    systemd::ServiceAction,
+};
 
 pub fn main_keyboard() -> KeyboardMarkup {
     KeyboardMarkup::new([
@@ -170,6 +176,43 @@ pub fn system_resources_keyboard() -> InlineKeyboardMarkup {
             ),
         ],
     ])
+}
+
+pub fn unit_control_keyboard(unit_name: &str) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new([[
+        InlineKeyboardButton::callback(
+            "▶️ Start",
+            SystemdCallbackAction::Control {
+                unit_name: unit_name.to_string(),
+                action: ServiceAction::Start,
+            }
+            .encode(),
+        ),
+        InlineKeyboardButton::callback(
+            "⏹️ Stop",
+            SystemdCallbackAction::Control {
+                unit_name: unit_name.to_string(),
+                action: ServiceAction::Stop,
+            }
+            .encode(),
+        ),
+        InlineKeyboardButton::callback(
+            "🔄 Restart",
+            SystemdCallbackAction::Control {
+                unit_name: unit_name.to_string(),
+                action: ServiceAction::Restart,
+            }
+            .encode(),
+        ),
+        InlineKeyboardButton::callback(
+            "🔃 Reload",
+            SystemdCallbackAction::Control {
+                unit_name: unit_name.to_string(),
+                action: ServiceAction::Reload,
+            }
+            .encode(),
+        ),
+    ]])
 }
 
 pub fn docker_keyboard() -> KeyboardMarkup {

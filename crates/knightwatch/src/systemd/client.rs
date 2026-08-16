@@ -1,6 +1,6 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use kw_types::systemd::{SystemdSnapshot, UnitActiveState, UnitSnapshot};
+use kw_types::systemd::{ServiceAction, SystemdSnapshot, UnitActiveState, UnitSnapshot};
 
 use super::{
     commands::{SystemdCommand, SystemdQuery},
@@ -90,6 +90,19 @@ pub async fn get_failed_units() -> Vec<UnitSnapshot> {
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutating commands
 // ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn control_unit(unit_name: String, action: ServiceAction) -> Result<()> {
+    let tx_ref = get_systemd_command_sender().ok_or_else(Error::systemd_commands_disabled)?;
+    let (tx, rx) = oneshot::channel();
+    let _ = tx_ref
+        .send(SystemdCommand::Control {
+            unit_name,
+            action,
+            response: tx,
+        })
+        .await;
+    rx.await.map_err(|err| Error::channel_closed(&err))?
+}
 
 /// Change the polling interval and restart the tick timer immediately.
 pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {

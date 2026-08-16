@@ -2555,6 +2555,7 @@ dependencies = [
  "futures",
  "kw-types",
  "kw-utils",
+ "libc",
  "mime_guess",
  "native-tls",
  "nvml-wrapper",
@@ -2622,6 +2623,23 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "kw-systemd-helper"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "kw-types",
+ "kw-utils",
+ "libc",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
 ]
 
 [[package]]

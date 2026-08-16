@@ -1,0 +1,25 @@
+[package]
+name = "kw-systemd-helper"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "kw-systemd-helper"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { workspace = true }
+futures = { workspace = true }
+libc = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+zbus = { workspace = true }
+kw-types = { path = "../kw-types", features = ["server"] }
+kw-utils = { path = "../kw-utils" }
+
+[lints]
+workspace = true

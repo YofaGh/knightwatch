@@ -6,11 +6,11 @@ use super::{
         handle_auth_prompt, handle_docker_callback, handle_help, handle_plain_message,
         handle_process, handle_process_callback, handle_screenshot, handle_start, handle_stop,
         handle_system_resources, handle_system_resources_alarms, handle_system_resources_callback,
-        handle_top_processes_menu, send_auth_first_message,
+        handle_systemd_callback, handle_top_processes_menu, send_auth_first_message,
     },
     models::{
         Command, DockerCallbackAction, ProcessCallbackAction, State, SystemResourcesCallbackAction,
-        TelegramBot,
+        SystemdCallbackAction, TelegramBot,
     },
 };
 use crate::prelude::*;
@@ -100,6 +100,9 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
     }
     if let Some(action) = SystemResourcesCallbackAction::decode(data) {
         return handle_system_resources_callback(bot, chat_id, action).await;
+    }
+    if let Some(action) = SystemdCallbackAction::decode(data) {
+        return handle_systemd_callback(bot, chat_id, action).await;
     }
     if let Some(action) = DockerCallbackAction::decode(data) {
         return handle_docker_callback(bot, chat_id, action).await;

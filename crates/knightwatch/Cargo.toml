@@ -43,8 +43,8 @@ teloxide = { version = "0.17.0", features = ["macros"] }
 tokio = { workspace = true }
 tokio-stream = { version = "0.1.18", features = ["sync"] }
 tokio-util = { version = "0.7.18", features = ["rt"] }
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 uuid = { version = "1.23.1", features = ["v4"] }
 xcap = { version = "0.9.4", optional = true }
 kw-types = { path = "../kw-types", features = ["server"] }
@@ -52,7 +52,8 @@ kw-utils = { path = "../kw-utils" }
 url = "2.5.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "5.15.0", features = ["tokio"] }
+libc = { workspace = true }
+zbus = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

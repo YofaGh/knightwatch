@@ -522,6 +522,18 @@ pub async fn failed_units() -> Json<Vec<UnitSnapshot>> {
 // Systemd command endpoints (requires --allow-systemd-commands)
 // ---------------------------------------------------------------------------
 
+/// `POST /systemd/control_unit`
+///
+/// Returns the result of control action.
+pub async fn control_unit(
+    Json(body): Json<kw_types::api::ControlUnitParams>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    systemd::control_unit(body.unit_name, body.action)
+        .await
+        .map_err(|error| internal_server_error(&error))?;
+    Ok(StatusCode::OK)
+}
+
 /// `POST /systemd/poll/pause`
 pub async fn systemd_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
     systemd::pause_poll()

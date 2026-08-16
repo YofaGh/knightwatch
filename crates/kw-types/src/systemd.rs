@@ -177,3 +177,38 @@ impl UnitType {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceAction {
+    Start,
+    Stop,
+    Restart,
+    Reload,
+}
+
+impl ServiceAction {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Restart => "restart",
+            Self::Reload => "reload",
+        }
+    }
+}
+
+impl TryFrom<String> for ServiceAction {
+    type Error = String;
+
+    fn try_from(action: String) -> Result<Self, String> {
+        match action.as_str() {
+            "start" => Ok(Self::Start),
+            "stop" => Ok(Self::Stop),
+            "restart" => Ok(Self::Restart),
+            "reload" => Ok(Self::Reload),
+            _ => Err(format!("Invalid action: '{action}'.")),
+        }
+    }
+}

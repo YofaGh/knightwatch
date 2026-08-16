@@ -2,7 +2,8 @@
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use kw_types::systemd::{SystemdSnapshot, UnitSnapshot};
+use kw_types::systemd::{ServiceAction, SystemdSnapshot, UnitSnapshot};
+
 use crate::prelude::*;
 
 pub enum SystemdQuery {
@@ -34,6 +35,13 @@ pub enum SystemdCommand {
     },
     /// Resume ticking at the current poll interval.
     ResumePoll {
+        response: oneshot::Sender<Result<()>>,
+    },
+    /// Restart/start/stop/reload a unit. Requires the privileged helper —
+    /// fails cleanly if it isn't ready or wasn't authorized.
+    Control {
+        unit_name: String,
+        action: ServiceAction,
         response: oneshot::Sender<Result<()>>,
     },
 }

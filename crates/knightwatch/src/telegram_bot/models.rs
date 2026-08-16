@@ -8,6 +8,7 @@ use crate::{
     prelude::*,
     process_tracker::ProcessSignal,
     system_resources::{RefreshMask, Thresholds},
+    systemd::ServiceAction,
 };
 
 #[derive(teloxide::utils::command::BotCommands, Clone)]
@@ -294,6 +295,40 @@ impl SystemResourcesCallbackAction {
                 temperatures: *temperatures != "0",
                 gpus: *gpus != "0",
             })),
+            _ => None,
+        }
+    }
+}
+
+/// Inline-button callback actions for systemd unit control.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SystemdCallbackAction {
+    /// `"sd_control:nginx.service:restart"`
+    Control {
+        unit_name: String,
+        action: ServiceAction,
+    },
+}
+
+impl SystemdCallbackAction {
+    pub fn encode(&self) -> String {
+        match self {
+            Self::Control { unit_name, action } => {
+                format!("sd_control:{}:{}", unit_name, action.as_str())
+            }
+        }
+    }
+
+    pub fn decode(s: &str) -> Option<Self> {
+        let parts: Vec<&str> = s.splitn(3, ':').collect();
+        match parts.as_slice() {
+            ["sd_control", unit_name, action] => {
+                let action = ServiceAction::try_from(action.to_string()).ok()?;
+                Some(Self::Control {
+                    unit_name: unit_name.to_string(),
+                    action,
+                })
+            }
             _ => None,
         }
     }

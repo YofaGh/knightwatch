@@ -158,6 +158,12 @@ pub struct SetRefreshMaskRequest {
     pub gpus: bool,
 }
 
+#[derive(Deserialize)]
+pub struct ControlUnitParams {
+    pub unit_name: String, 
+    pub action: crate::systemd::ServiceAction
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TopContainersParams {
     pub sort: crate::docker::DockerSortKey,
