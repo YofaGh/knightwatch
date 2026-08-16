@@ -26,6 +26,9 @@
   let pollPaused = $state(false);
   let pollIntervalInput = $state("3000");
   let pollCmdError = $state(null);
+  let unitCmdPending = $state(false);
+  let unitCmdError = $state(null);
+  let unitCmdSuccess = $state(null);
 
   let interval = null;
 
@@ -39,15 +42,14 @@
       ]);
       if (snapRes.ok) snap = await snapRes.json();
       if (failedRes.ok) failedUnits = await failedRes.json();
-      onstatus("● LIVE", false);
-    } catch {
-      onstatus(`● OFFLINE · ${new Date().toLocaleTimeString()}`, true);
-    }
+    } catch {}
   }
 
   async function openUnit(unitName) {
     detailLoading = true;
     selectedUnit = null;
+    unitCmdError = null;
+    unitCmdSuccess = null;
     try {
       const r = await apiFetch(`/api/unit/${encodeURIComponent(unitName)}`);
       if (r.ok) selectedUnit = await r.json();
@@ -92,6 +94,34 @@
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
     } catch (e) {
       pollCmdError = e.message;
+    }
+  }
+
+  // ── Unit control ───────────────────────────────────────────────────
+  const SERVICE_ACTIONS = ["start", "stop", "restart", "reload"];
+
+  async function controlUnit(action) {
+    if (!selectedUnit) return;
+    unitCmdError = null;
+    unitCmdSuccess = null;
+    unitCmdPending = true;
+    try {
+      const r = await apiFetch("/api/systemd/control-unit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unit_name: selectedUnit.unit_name, action }),
+      });
+      if (!r.ok) throw new Error((await r.json()).message ?? "failed");
+      unitCmdSuccess = action;
+      // Refresh detail after a short delay so systemd state has propagated
+      setTimeout(() => {
+        openUnit(selectedUnit.unit_name);
+        refresh();
+      }, 800);
+    } catch (e) {
+      unitCmdError = e.message;
+    } finally {
+      unitCmdPending = false;
     }
   }
 
@@ -358,6 +388,27 @@
             <span class="detail-unit-name">{u.unit_name}</span>
           </div>
           <p class="detail-description">{u.description || "—"}</p>
+
+          {#if canCommand}
+            <div class="unit-actions">
+              {#each SERVICE_ACTIONS as action}
+                <button
+                  class="action-btn action-{action}"
+                  disabled={unitCmdPending}
+                  onclick={() => controlUnit(action)}
+                >
+                  {action}
+                </button>
+              {/each}
+              {#if unitCmdPending}
+                <span class="cmd-feedback cmd-pending">⏳ working…</span>
+              {:else if unitCmdSuccess}
+                <span class="cmd-feedback cmd-ok">✔ {unitCmdSuccess}</span>
+              {:else if unitCmdError}
+                <span class="cmd-feedback cmd-err">{unitCmdError}</span>
+              {/if}
+            </div>
+          {/if}
 
           <div class="detail-grid">
             <div class="sys-kv">
@@ -831,5 +882,75 @@
   }
   .control-input:focus {
     border-color: var(--accent);
+  }
+
+  /* ── Unit action buttons ─────────────────────────────────────────── */
+  .unit-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    padding: 0.6rem 0;
+    border-top: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .action-btn {
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-radius: 5px;
+    padding: 0.22rem 0.65rem;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-muted);
+    transition:
+      background 0.12s,
+      border-color 0.12s,
+      color 0.12s;
+  }
+  .action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .action-btn:not(:disabled):hover {
+    color: var(--text-base);
+    border-color: var(--accent);
+  }
+  .action-start:not(:disabled):hover {
+    color: var(--success);
+    border-color: var(--success);
+    background: rgba(16, 185, 129, 0.08);
+  }
+  .action-stop:not(:disabled):hover {
+    color: var(--error);
+    border-color: var(--error);
+    background: rgba(239, 68, 68, 0.08);
+  }
+  .action-restart:not(:disabled):hover {
+    color: var(--warning);
+    border-color: var(--warning);
+    background: rgba(245, 158, 11, 0.08);
+  }
+  .action-reload:not(:disabled):hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(99, 102, 241, 0.08);
+  }
+  .cmd-feedback {
+    font-size: 0.68rem;
+    font-family: ui-monospace, monospace;
+    margin-left: 0.25rem;
+  }
+  .cmd-pending {
+    color: var(--text-muted);
+  }
+  .cmd-ok {
+    color: var(--success);
+  }
+  .cmd-err {
+    color: #f87171;
   }
 </style>
