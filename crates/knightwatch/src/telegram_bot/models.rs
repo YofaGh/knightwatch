@@ -323,7 +323,7 @@ impl SystemdCallbackAction {
         let parts: Vec<&str> = s.splitn(3, ':').collect();
         match parts.as_slice() {
             ["sd_control", unit_name, action] => {
-                let action = ServiceAction::try_from(action.to_string()).ok()?;
+                let action = ServiceAction::try_from(*action).ok()?;
                 Some(Self::Control {
                     unit_name: unit_name.to_string(),
                     action,

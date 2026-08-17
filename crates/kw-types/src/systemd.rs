@@ -199,11 +199,11 @@ impl ServiceAction {
     }
 }
 
-impl TryFrom<String> for ServiceAction {
+impl TryFrom<&str> for ServiceAction {
     type Error = String;
 
-    fn try_from(action: String) -> Result<Self, String> {
-        match action.as_str() {
+    fn try_from(action: &str) -> Result<Self, String> {
+        match action {
             "start" => Ok(Self::Start),
             "stop" => Ok(Self::Stop),
             "restart" => Ok(Self::Restart),
