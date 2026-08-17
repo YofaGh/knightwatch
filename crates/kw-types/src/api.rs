@@ -158,10 +158,10 @@ pub struct SetRefreshMaskRequest {
     pub gpus: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ControlUnitParams {
-    pub unit_name: String, 
-    pub action: crate::systemd::ServiceAction
+    pub unit_name: String,
+    pub action: crate::systemd::ServiceAction,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

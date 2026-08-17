@@ -612,6 +612,27 @@ impl ApiClient {
 
     // ── Systemd commands ──────────────────────────────────────
 
+    /// Controls a unit with given name and action. returns the result of action
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the server responds with a non-success status.
+    pub async fn control_unit(
+        &self,
+        unit_name: &str,
+        action: kw_types::systemd::ServiceAction,
+    ) -> Result<()> {
+        self.post(
+            "/systemd/control-unit",
+            kw_types::api::ControlUnitParams {
+                unit_name: unit_name.to_string(),
+                action,
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Pauses periodic systemd polling.
     ///
     /// # Errors

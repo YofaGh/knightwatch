@@ -6,6 +6,7 @@ use std::error::Error;
 use kw_types::{
     docker::DockerSortKey,
     process::{ProcessSignal, ProcessesSortKey},
+    systemd::ServiceAction,
 };
 
 mod colors;
@@ -201,6 +202,14 @@ enum Commands {
     },
     /// List failed units
     FailedUnits,
+
+    // ── Systemd commands ──────────────────────────────────────────────────
+    /// control a unit
+    ControlUnit {
+        unit_name: String,
+        #[arg(long, default_value = "start", value_parser = |s: &str| ServiceAction::try_from(s))]
+        action: ServiceAction,
+    },
     /// Pause the systemd poll loop
     SystemdPollPause,
     /// Resume the systemd poll loop
@@ -498,6 +507,12 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
             for u in &v {
                 println!("{u}");
             }
+        }
+
+        // ── Systemd commands ──────────────────────────────────────────────
+        Commands::ControlUnit { unit_name, action } => {
+            api.control_unit(&unit_name, action).await?;
+            ok();
         }
         Commands::SystemdPollPause => {
             api.systemd_poll_pause().await?;
