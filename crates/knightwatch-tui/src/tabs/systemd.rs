@@ -7,14 +7,19 @@ use ratatui::{
     widgets::{Cell, List, ListItem, Paragraph, Row, Table},
 };
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc::Sender;
 
-use kw_types::systemd::{UnitActiveState, UnitLoadState, UnitSnapshot};
-use kw_utils::format_bytes;
+use kw_clients::ApiClient;
+use kw_types::systemd::{ServiceAction, UnitActiveState, UnitLoadState, UnitSnapshot};
+use kw_utils::{conv, format_bytes};
 
 use crate::{
-    events::AppEvent,
+    events::{AppEvent, CommandOutcome},
     poll_panel::PollPanel,
-    ui_helpers::{bordered_block, empty_note, icon, mouse_hit, theme, waiting_placeholder},
+    ui_helpers::{
+        bordered_block, bordered_block_focused, empty_note, icon, mouse_hit, result_line, theme,
+        waiting_placeholder,
+    },
 };
 
 pub struct SystemdTab {
@@ -32,24 +37,26 @@ pub struct SystemdTab {
     scroll_offset: usize,
     commands_allowed: bool,
     poll_panel: PollPanel,
+    actions: UnitActionsPanel,
 }
 
 impl SystemdTab {
     pub fn new(
         allow_systemd_commands: bool,
-        api: Arc<kw_clients::ApiClient>,
-        tx: tokio::sync::mpsc::Sender<AppEvent>,
+        api: Arc<ApiClient>,
+        tx: Sender<AppEvent>,
         control: Arc<Mutex<crate::pollers::PollControl>>,
     ) -> Self {
         let poll_panel = PollPanel::new(
             "Systemd",
             control,
-            api,
-            tx,
+            api.clone(),
+            tx.clone(),
             |api| Box::pin(async move { api.systemd_poll_pause().await }),
             |api| Box::pin(async move { api.systemd_poll_resume().await }),
             |api, ms| Box::pin(async move { api.systemd_poll_interval(ms).await }),
         );
+        let actions = UnitActionsPanel::new("Systemd", api, tx);
         Self {
             units: Vec::new(),
             failed_count: 0,
@@ -60,6 +67,7 @@ impl SystemdTab {
             scroll_offset: 0,
             commands_allowed: allow_systemd_commands,
             poll_panel,
+            actions,
         }
     }
 
@@ -92,15 +100,40 @@ impl super::Tab for SystemdTab {
     }
 
     fn handle_event(&mut self, event: &Event, logged_in: bool) -> bool {
-        if self.commands_allowed && logged_in && self.poll_panel.handle_event(event) {
-            return true;
+        if self.commands_allowed && logged_in {
+            if matches!(event, Event::Mouse(_)) {
+                if self
+                    .actions
+                    .handle_event(event, self.selected_name.as_deref())
+                {
+                    return true;
+                }
+                // fall through: mouse missed the actions panel, let it
+                // hit the unit table below.
+            } else if self.actions.focused {
+                // Keyboard: while focused, the actions panel owns all key input.
+                return self
+                    .actions
+                    .handle_event(event, self.selected_name.as_deref());
+            } else if self.poll_panel.handle_event(event) {
+                return true;
+            } else if let Event::Key(key) = event
+                && key.kind == KeyEventKind::Press
+                && key.code == KeyCode::Right
+                && self.selected_name.is_some()
+            {
+                self.actions.focused = true;
+                return true;
+            }
         }
+
         match event {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     for (rect, name) in &self.row_hit_rects {
                         if mouse_hit(*mouse, *rect) {
                             self.selected_name = Some(name.clone());
+                            self.actions.focused = false;
                             return true;
                         }
                     }
@@ -145,8 +178,14 @@ impl super::Tab for SystemdTab {
                 self.inactive_count = snapshot.inactive_count;
                 true
             }
-            AppEvent::CommandResult { label, result, .. } => {
-                self.poll_panel.apply_result(label, result);
+            AppEvent::CommandResult { tab, label, result } => {
+                if *tab != "Systemd" {
+                    return false;
+                }
+                match *label {
+                    "pause" | "resume" | "interval" => self.poll_panel.apply_result(label, result),
+                    _ => self.actions.apply_result(label, result),
+                }
                 true
             }
             _ => false,
@@ -215,7 +254,23 @@ impl super::Tab for SystemdTab {
         let Some(selected_unit) = self.units.get(selected_idx) else {
             return;
         };
-        render_detail(frame, main[1], selected_unit);
+
+        if self.commands_allowed && logged_in {
+            let right = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(UnitActionsPanel::height()),
+                ])
+                .split(main[1]);
+            let Ok(right): Result<[Rect; 2], _> = right.as_ref().try_into() else {
+                return;
+            };
+            render_detail(frame, right[0], selected_unit);
+            self.actions.render(frame, right[1]);
+        } else {
+            render_detail(frame, main[1], selected_unit);
+        }
     }
 }
 
@@ -375,7 +430,7 @@ fn render_table(
         .filter_map(|(visible_i, u)| {
             let y = inner
                 .y
-                .saturating_add(kw_utils::conv::usize_to_u16_saturating(visible_i))
+                .saturating_add(conv::usize_to_u16_saturating(visible_i))
                 .saturating_add(1);
             if y >= inner.y.saturating_add(inner.height) {
                 return None;
@@ -527,5 +582,239 @@ fn render_detail(frame: &mut Frame, area: Rect, unit: &UnitSnapshot) {
         None => {
             empty_note(frame, rows[11], "no fragment path reported");
         }
+    }
+}
+
+/// One entry in the actions list: its shortcut key and what it does.
+const ALL_UNIT_ACTIONS: &[(char, ServiceAction, &str)] = &[
+    ('a', ServiceAction::Start, "Start"),
+    ('s', ServiceAction::Stop, "Stop"),
+    ('r', ServiceAction::Restart, "Restart"),
+    ('l', ServiceAction::Reload, "Reload"),
+];
+
+/// Interrupts a running unit and so gets a confirm step.
+const fn is_destructive(action: ServiceAction) -> bool {
+    matches!(action, ServiceAction::Stop | ServiceAction::Restart)
+}
+
+/// Persistent, always-visible command list for the currently selected
+/// unit, keyed by unit name (String). Mirrors `ContainerActionsPanel`
+/// in the Docker tab.
+pub struct UnitActionsPanel {
+    tab: &'static str,
+    api: Arc<ApiClient>,
+    tx: Sender<AppEvent>,
+    pub focused: bool,
+    selected: usize,
+    confirm_pending: Option<usize>,
+    hit_rects: Vec<(Rect, usize)>,
+    last_result: Option<(String, bool)>,
+}
+
+impl UnitActionsPanel {
+    pub const fn new(tab: &'static str, api: Arc<ApiClient>, tx: Sender<AppEvent>) -> Self {
+        Self {
+            tab,
+            api,
+            tx,
+            focused: false,
+            selected: 0,
+            confirm_pending: None,
+            hit_rects: Vec::new(),
+            last_result: None,
+        }
+    }
+
+    /// Rows + border + one status line; used by the tab to size the
+    /// layout chunk this panel renders into.
+    pub fn height() -> u16 {
+        conv::usize_to_u16_saturating(ALL_UNIT_ACTIONS.len()).saturating_add(3)
+    }
+
+    /// Call from the tab's `handle_event`, only when commands are
+    /// allowed and the user is logged in. `selected_name` is the
+    /// currently-selected unit name.
+    pub fn handle_event(&mut self, event: &Event, selected_name: Option<&str>) -> bool {
+        let Some(name) = selected_name else {
+            return false;
+        };
+
+        if let Event::Mouse(mouse) = event {
+            if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+                for (rect, idx) in &self.hit_rects {
+                    if mouse_hit(*mouse, *rect) {
+                        self.focused = true;
+                        self.selected = *idx;
+                        self.confirm_pending = None;
+                        self.trigger(name, *idx);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if !self.focused {
+            return false;
+        }
+
+        let Event::Key(key) = event else { return false };
+        if key.kind != KeyEventKind::Press {
+            return false;
+        }
+
+        if let Some(idx) = self.confirm_pending {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
+                    self.confirm_pending = None;
+                    self.fire_confirmed(name, idx);
+                }
+                _ => self.confirm_pending = None,
+            }
+            return true;
+        }
+
+        let len = ALL_UNIT_ACTIONS.len();
+        match key.code {
+            KeyCode::Left | KeyCode::Esc => {
+                self.focused = false;
+                true
+            }
+            KeyCode::Right => false,
+            KeyCode::Up if len > 0 => {
+                self.selected = self
+                    .selected
+                    .saturating_add(len)
+                    .saturating_sub(1)
+                    .checked_rem(len)
+                    .unwrap_or(0);
+                true
+            }
+            KeyCode::Down if len > 0 => {
+                self.selected = self
+                    .selected
+                    .saturating_add(1)
+                    .checked_rem(len)
+                    .unwrap_or(0);
+                true
+            }
+            KeyCode::Enter => {
+                self.trigger(name, self.selected);
+                true
+            }
+            KeyCode::Char(c) => {
+                if let Some(idx) = ALL_UNIT_ACTIONS.iter().position(|(k, _, _)| *k == c) {
+                    self.selected = idx;
+                    self.trigger(name, idx);
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+
+    fn trigger(&mut self, name: &str, idx: usize) {
+        let Some((_, action, _)) = ALL_UNIT_ACTIONS.get(idx).copied() else {
+            return;
+        };
+        if is_destructive(action) {
+            self.confirm_pending = Some(idx);
+        } else {
+            self.fire(name, action);
+        }
+    }
+
+    fn fire_confirmed(&self, name: &str, idx: usize) {
+        if let Some((_, action, _)) = ALL_UNIT_ACTIONS.get(idx).copied() {
+            self.fire(name, action);
+        }
+    }
+
+    fn fire(&self, name: &str, action: ServiceAction) {
+        let name = name.to_string();
+        let api = self.api.clone();
+        let fut = Box::pin(async move { api.control_unit(&name, action).await });
+        crate::commands::spawn_command(self.tx.clone(), self.tab, "control-unit", fut, |()| {
+            CommandOutcome::Ack
+        });
+    }
+
+    /// Call from the tab's `handle_app_event` for any `CommandResult`
+    /// whose label isn't one of the poll panel's.
+    pub fn apply_result(&mut self, label: &str, result: &Result<CommandOutcome, String>) {
+        self.last_result = Some(match result {
+            Ok(_) => (format!("{label}: ok"), false),
+            Err(e) => (format!("{label} failed: {e}"), true),
+        });
+    }
+
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        let title = if self.focused {
+            format!("{} Actions", icon::CURSOR)
+        } else {
+            "Actions".to_string()
+        };
+        let inner = bordered_block_focused(frame, area, &title, self.focused);
+
+        let mut hit_rects = Vec::with_capacity(ALL_UNIT_ACTIONS.len());
+
+        for (i, (key, action, label)) in ALL_UNIT_ACTIONS.iter().enumerate() {
+            let y = inner.y.saturating_add(conv::usize_to_u16_saturating(i));
+            if y >= inner.y.saturating_add(inner.height) {
+                break;
+            }
+            let rect = Rect {
+                x: inner.x,
+                y,
+                width: inner.width,
+                height: 1,
+            };
+
+            let is_confirming = self.confirm_pending == Some(i);
+            let is_selected = self.focused && self.selected == i;
+
+            let (text, style) = if is_confirming {
+                (
+                    format!(" {} {label} — confirm? [Enter] / [Esc]", icon::WARNING),
+                    Style::default()
+                        .fg(theme::TEXT)
+                        .bg(theme::DANGER)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                let marker = if is_selected { icon::CURSOR } else { " " };
+                let style = if is_selected {
+                    Style::default()
+                        .fg(theme::ACCENT)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme::TEXT_DIM)
+                };
+                let _ = action; // action itself only matters for `fire`
+                (format!("{marker} [{key}] {label}"), style)
+            };
+
+            frame.render_widget(Paragraph::new(text).style(style), rect);
+            hit_rects.push((rect, i));
+        }
+
+        if let Some(status_y) = (inner
+            .y
+            .saturating_add(conv::usize_to_u16_saturating(ALL_UNIT_ACTIONS.len()))
+            ..inner.y.saturating_add(inner.height))
+            .next()
+            && let Some((msg, is_err)) = &self.last_result
+        {
+            let rect = Rect {
+                x: inner.x,
+                y: status_y,
+                width: inner.width,
+                height: 1,
+            };
+            frame.render_widget(Paragraph::new(result_line(msg, *is_err)), rect);
+        }
+
+        self.hit_rects = hit_rects;
     }
 }
