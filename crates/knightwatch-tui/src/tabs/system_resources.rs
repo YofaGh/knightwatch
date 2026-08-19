@@ -265,25 +265,24 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // brand/freq/load line
-            Constraint::Length(3), // gauge + sparkline
-            Constraint::Min(0),    // per-core list
+            Constraint::Min(3),    // gauge + sparkline
         ])
         .split(inner);
-    let [info_area, gauge_area, cores_area] = rows.as_ref() else {
+    let [info_area, gauge_area] = rows.as_ref() else {
         return;
     };
     let info_area = *info_area;
     let gauge_area = *gauge_area;
-    let cores_area = *cores_area;
 
     let cpu = &snap.cpu;
     let load = load_avg_line(cpu);
     let info_line = format!(
-        "{}   {} MHz   {} physical cores{}",
+        "{}   {} MHz   {} physical cores ({} logical){}",
         cpu.brand,
         cpu.frequency_mhz,
         cpu.physical_core_count
             .map_or_else(|| "?".into(), |n| n.to_string()),
+        cpu.cores.len(),
         if load.is_empty() {
             String::new()
         } else {
@@ -323,23 +322,6 @@ fn render_cpu(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &Ve
         .max(100)
         .style(Style::default().fg(theme::ACCENT));
     frame.render_widget(sparkline, sparkline_col);
-
-    let items: Vec<ListItem> = cpu
-        .cores
-        .iter()
-        .map(|c| {
-            let line = format!(
-                "{:<8} {} {:>5.1}%  {:>5} MHz",
-                c.name,
-                bar(f64::from(c.usage_percent), 20),
-                c.usage_percent,
-                c.frequency_mhz
-            );
-            ListItem::new(line)
-                .style(Style::default().fg(percent_color(f64::from(c.usage_percent))))
-        })
-        .collect();
-    frame.render_widget(List::new(items), cores_area);
 }
 
 fn render_memory(frame: &mut Frame, area: Rect, snap: &SystemSnapshot, history: &VecDeque<u64>) {
