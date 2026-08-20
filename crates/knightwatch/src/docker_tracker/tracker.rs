@@ -598,7 +598,7 @@ pub static DOCKER_TRACKER_COMMAND_SENDER: OnceLock<mpsc::Sender<DockerTrackerCom
 
 pub fn init_docker_tracker() {
     let config = get_config();
-    if !(config.args.docker || config.args.allow_docker_commands) {
+    if !(config.args.docker) {
         return;
     }
     let docker = match Docker::connect_with_local_defaults() {
