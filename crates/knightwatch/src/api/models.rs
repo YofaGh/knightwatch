@@ -12,6 +12,7 @@ pub struct Vite {
 }
 
 impl Vite {
+    #[cfg(debug_assertions)]
     pub const fn new(child_process: Child) -> Self {
         Self { child_process }
     }

@@ -51,21 +51,21 @@ async fn serve_dashboard(uri: axum::http::Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let is_spa_route = path == "dashboard" || path == "index.html" || path.is_empty();
     let asset_path = if is_spa_route { "index.html" } else { path };
-    match super::models::DashboardAssets::get(asset_path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(asset_path)
-                .first_or_octet_stream()
-                .to_string();
-            Response::builder()
-                .status(StatusCode::OK)
-                .header(reqwest::header::CONTENT_TYPE, mime)
-                .body(Body::from(content.data))
-                .expect("OK response is valid")
+    if let Some(content) = super::models::DashboardAssets::get(asset_path) {
+        let mime = mime_guess::from_path(asset_path)
+            .first_or_octet_stream()
+            .to_string();
+        let mut response = Response::new(Body::from(content.data));
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&mime) {
+            response
+                .headers_mut()
+                .insert(reqwest::header::CONTENT_TYPE, value);
         }
-        None => Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("404 Not Found"))
-            .expect("NOT_FOUND response is valid"),
+        response
+    } else {
+        let mut response = Response::new(Body::from("404 Not Found"));
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        response
     }
 }
 
