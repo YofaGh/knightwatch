@@ -115,6 +115,14 @@ pub async fn get_alarms() -> Option<AlarmSnapshot> {
     rx.await.ok()
 }
 
+pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_system_resources_query_sender()?
+        .send(SystemResourcesQuery::PollStatus { response: tx })
+        .await;
+    rx.await.unwrap_or(None)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutating commands
 // ─────────────────────────────────────────────────────────────────────────────

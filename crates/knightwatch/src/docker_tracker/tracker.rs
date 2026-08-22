@@ -80,7 +80,7 @@ impl DockerTracker {
         self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
         // Spawn the Docker event stream listener as a separate task that
         // forwards OOM events onto the broadcast bus via a dedicated channel.
-        let (oom_tx, mut oom_rx) = mpsc::channel::<(String, String)>(32);
+        let (oom_tx, mut oom_rx) = mpsc::channel(32);
         tokio::spawn(docker_event_listener(self.docker.clone(), oom_tx));
 
         loop {
@@ -344,6 +344,12 @@ impl DockerTracker {
                     .filter_map(|id| self.state.containers.get(id).cloned())
                     .collect();
                 let _ = response.send(result);
+            }
+            DockerTrackerQuery::PollStatus { response } => {
+                let _ = response.send(kw_types::polling::PollStatus::new_some(
+                    self.poll_interval,
+                    self.poll_interval_timer.is_none(),
+                ));
             }
         }
     }

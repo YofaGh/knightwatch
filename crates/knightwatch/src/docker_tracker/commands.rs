@@ -24,6 +24,9 @@ pub enum DockerTrackerQuery {
         limit: usize,
         response: oneshot::Sender<Vec<ContainerSnapshot>>,
     },
+    PollStatus {
+        response: oneshot::Sender<Option<kw_types::polling::PollStatus>>,
+    },
 }
 
 // ============================================================================

@@ -87,6 +87,14 @@ pub async fn get_failed_units() -> Vec<UnitSnapshot> {
     rx.await.unwrap_or_default()
 }
 
+pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_systemd_query_sender()?
+        .send(SystemdQuery::PollStatus { response: tx })
+        .await;
+    rx.await.unwrap_or(None)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutating commands
 // ─────────────────────────────────────────────────────────────────────────────

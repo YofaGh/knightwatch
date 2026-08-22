@@ -18,6 +18,9 @@ pub enum SystemdQuery {
         state: kw_types::systemd::UnitActiveState,
         response: oneshot::Sender<Vec<UnitSnapshot>>,
     },
+    PollStatus {
+        response: oneshot::Sender<Option<kw_types::polling::PollStatus>>,
+    },
 }
 
 /// Mutating commands that alter systemd state.

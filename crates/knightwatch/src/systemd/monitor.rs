@@ -132,6 +132,12 @@ impl SystemdMonitor {
                     .unwrap_or_default();
                 let _ = response.send(units);
             }
+            SystemdQuery::PollStatus { response } => {
+                let _ = response.send(kw_types::polling::PollStatus::new_some(
+                    self.poll_interval,
+                    self.poll_interval_timer.is_none(),
+                ));
+            }
         }
     }
 

@@ -58,6 +58,9 @@ pub enum SystemResourcesQuery {
     Alarms {
         response: oneshot::Sender<AlarmSnapshot>,
     },
+    PollStatus {
+        response: oneshot::Sender<Option<kw_types::polling::PollStatus>>,
+    },
 }
 
 #[derive(Debug)]

@@ -136,6 +136,14 @@ pub async fn get_top_processes(
     rx.await.unwrap_or_default()
 }
 
+pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_process_tracker_query_sender()?
+        .send(ProcessTrackerQuery::PollStatus { response: tx })
+        .await;
+    rx.await.unwrap_or(None)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutating commands
 // ─────────────────────────────────────────────────────────────────────────────

@@ -7,15 +7,17 @@ use tokio_util::sync::CancellationToken;
 use super::{
     end_points::{
         alarms_snapshot, battery_snapshot, control_unit, cpu_snapshot, disks_snapshots,
-        docker_pause_poll, docker_resume_poll, docker_set_poll_interval, failed_units,
-        get_docker_container, gpus_snapshots, health, host_info_snapshot, info, is_process_done,
-        kill_container, kill_process, kill_tree, list_docker_containers, login, logout,
-        memory_snapshot, networks_snapshot, pause_container, process_children, process_root,
-        process_status, process_tracker_pause_poll, process_tracker_resume_poll,
+        docker_pause_poll, docker_resume_poll, docker_set_poll_interval,
+        docker_tracker_poll_status, failed_units, get_docker_container, gpus_snapshots, health,
+        host_info_snapshot, info, is_process_done, kill_container, kill_process, kill_tree,
+        list_docker_containers, login, logout, memory_snapshot, networks_snapshot, pause_container,
+        process_children, process_root, process_status, process_tracker_pause_poll,
+        process_tracker_poll_status, process_tracker_resume_poll,
         process_tracker_set_poll_interval, process_tree, process_trees, resources_pause_poll,
         resources_resume_poll, resources_set_poll_interval, resources_set_refresh_mask,
-        resources_set_thresholds, restart_container, root_pids, screenshot, shutdown,
-        start_container, stop_container, supported_signals, system_snapshot, systemd_pause_poll,
+        resources_set_thresholds, restart_container, root_pids, screen_capture_poll_status,
+        screenshot, shutdown, start_container, stop_container, supported_signals,
+        system_resources_poll_status, system_snapshot, systemd_pause_poll, systemd_poll_status,
         systemd_resume_poll, systemd_set_poll_interval, systemd_snapshot, temperatures_snapshots,
         top_docker_containers, top_processes, track_pid, unit_snapshot, units_by_active_state,
         unpause_container, untrack_pid,
@@ -48,6 +50,7 @@ fn create_api_router(
     let mut api = Router::new()
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
+        .route("/screen/poll/status", get(screen_capture_poll_status)) // screen capture poll status
         // ── Process tracking ──────────────────────────────────────────────
         .route("/root_pids", get(root_pids)) // root pids
         .route("/process/{root_pid}", get(process_tree)) // full tree
@@ -58,6 +61,7 @@ fn create_api_router(
         .route("/process/trees", get(process_trees)) // all process trees
         .route("/top-processes", get(top_processes)) // top processes
         .route("/supported-signals", get(supported_signals)) // supported signals
+        .route("/process/poll/status", get(process_tracker_poll_status)) // process tracker poll status
         // ── System Resources ──────────────────────────────────────────────
         .route("/system", get(system_snapshot)) // full system snapshot
         .route("/cpu", get(cpu_snapshot)) // cpu snapshot
@@ -69,15 +73,18 @@ fn create_api_router(
         .route("/host-info", get(host_info_snapshot)) // host info snapshot
         .route("/temperatures", get(temperatures_snapshots)) // temperatures snapshot
         .route("/alarms", get(alarms_snapshot)) // alarms snapshot
+        .route("/resources/poll/status", get(system_resources_poll_status)) // system resources poll status
         // ── Systemd ───────────────────────────────────────────────────────
         .route("/systemd", get(systemd_snapshot)) // systemd snapshot
         .route("/unit/{unit_name}", get(unit_snapshot)) // unit snapshot
         .route("/units/{unit_state}", get(units_by_active_state)) // units by active state
         .route("/failed_units", get(failed_units)) // failed_units
+        .route("/systemd/poll/status", get(systemd_poll_status)) // systemd poll status
         // ── Docker Containers ───────────────────────────────────────────────────────
         .route("/docker-containers", get(list_docker_containers)) // docker containers
         .route("/container/{id_or_name}", get(get_docker_container)) // container by name or id
         .route("/top-containers", get(top_docker_containers)) // top containers
+        .route("/docker/poll/status", get(docker_tracker_poll_status)) // docker tracker poll status
         // ── SSE ───────────────────────────────────────────────────────
         .route("/sse", get(sse_stream))
         .route("/sse/process-tracker", get(sse_stream_process))

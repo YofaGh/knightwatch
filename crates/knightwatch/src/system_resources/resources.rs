@@ -203,6 +203,12 @@ impl SystemResources {
             SystemResourcesQuery::Alarms { response } => {
                 let _ = response.send((&self.state).into());
             }
+            SystemResourcesQuery::PollStatus { response } => {
+                let _ = response.send(kw_types::polling::PollStatus::new_some(
+                    self.poll_interval,
+                    self.poll_interval_timer.is_none(),
+                ));
+            }
         }
     }
 

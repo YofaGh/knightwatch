@@ -35,6 +35,14 @@ pub async fn get_screenshots() -> Vec<super::screenshot::Screenshot> {
     rx.await.unwrap_or_default()
 }
 
+pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_screen_capture_query_sender()?
+        .send(ScreenCaptureQuery::PollStatus { response: tx })
+        .await;
+    rx.await.unwrap_or(None)
+}
+
 /// Change the polling interval and restart the tick timer immediately.
 pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
     let tx_ref = get_screen_capture_command_sender().ok_or_else(Error::screen_commands_disabled)?;

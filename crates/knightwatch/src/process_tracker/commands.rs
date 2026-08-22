@@ -39,6 +39,9 @@ pub enum ProcessTrackerQuery {
         root_pid: u32,
         response: oneshot::Sender<Option<kw_types::process::ProcessStatus>>,
     },
+    PollStatus {
+        response: oneshot::Sender<Option<kw_types::polling::PollStatus>>,
+    },
 }
 
 #[derive(Debug)]

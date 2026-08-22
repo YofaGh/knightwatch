@@ -6,11 +6,14 @@ use axum::{
 use axum_extra::{TypedHeader, headers};
 use std::time::Duration;
 
-use kw_types::api::{
-    ContainerRequest, ContainerTimeoutRequest, HealthResponse, InfoResponse, KillContainerRequest,
-    KillProcessRequest, LoginRequest, LoginResponse, ScreenshotImage, ScreenshotResponse,
-    SetPollIntervalRequest, SetRefreshMaskRequest, SetThresholdsRequest, TopContainersParams,
-    TopProcessesParams,
+use kw_types::{
+    api::{
+        ContainerRequest, ContainerTimeoutRequest, HealthResponse, InfoResponse,
+        KillContainerRequest, KillProcessRequest, LoginRequest, LoginResponse, ScreenshotImage,
+        ScreenshotResponse, SetPollIntervalRequest, SetRefreshMaskRequest, SetThresholdsRequest,
+        TopContainersParams, TopProcessesParams,
+    },
+    polling::PollStatus,
 };
 
 use super::utils::{bad_request, internal_server_error, not_found};
@@ -108,6 +111,14 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Strin
     let screens: Vec<ScreenshotImage> = images.into_iter().map(Into::into).collect();
     let count = screens.len();
     Ok(Json(ScreenshotResponse { screens, count }))
+}
+
+/// `GET /screen/poll/status`
+pub async fn screen_capture_poll_status() -> Result<Json<PollStatus>, (StatusCode, String)> {
+    screen_capture::get_poll_status()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("Screen capture is not running".to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +254,14 @@ pub async fn top_processes(
 /// Returns a list of supported signal based on current platform.
 pub async fn supported_signals() -> Json<Vec<ProcessSignal>> {
     Json(ProcessSignal::get_supported_signals())
+}
+
+/// `GET /process/poll/status`
+pub async fn process_tracker_poll_status() -> Result<Json<PollStatus>, (StatusCode, String)> {
+    process_tracker::get_poll_status()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("Process tracker is not running".to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +431,14 @@ pub async fn alarms_snapshot() -> Result<Json<system_resources::AlarmSnapshot>, 
         .ok_or_else(|| not_found("No alarms Snapshot was found".to_string()))
 }
 
+/// `GET /resources/poll/status`
+pub async fn system_resources_poll_status() -> Result<Json<PollStatus>, (StatusCode, String)> {
+    system_resources::get_poll_status()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("System resources is not running".to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // System Resources command endpoints (requires --allow-system-resources-commands)
 // ---------------------------------------------------------------------------
@@ -518,6 +545,14 @@ pub async fn failed_units() -> Json<Vec<UnitSnapshot>> {
     Json(systemd::get_failed_units().await)
 }
 
+/// `GET /systemd/poll/status`
+pub async fn systemd_poll_status() -> Result<Json<PollStatus>, (StatusCode, String)> {
+    systemd::get_poll_status()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("Systemd is not running".to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // Systemd command endpoints (requires --allow-systemd-commands)
 // ---------------------------------------------------------------------------
@@ -591,6 +626,14 @@ pub async fn top_docker_containers(
     Ok(Json(
         docker_tracker::get_top_containers(params.sort, params.limit.unwrap_or(0)).await,
     ))
+}
+
+/// `GET /docker/poll/status`
+pub async fn docker_tracker_poll_status() -> Result<Json<PollStatus>, (StatusCode, String)> {
+    docker_tracker::get_poll_status()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("Docker tracker is not running".to_string()))
 }
 
 // ---------------------------------------------------------------------------
