@@ -3,12 +3,12 @@ use std::{
     sync::OnceLock,
 };
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
-use tokio::{
-    sync::{broadcast, mpsc},
-    time::Duration,
-};
+use tokio::sync::{broadcast, mpsc};
 
-use kw_types::process::{ProcessSnapshot, ProcessState, ProcessesSortKey};
+use kw_types::{
+    polling::Poll,
+    process::{ProcessSnapshot, ProcessState, ProcessesSortKey},
+};
 
 use super::{
     commands::{ProcessTrackerChannels, ProcessTrackerCommand, ProcessTrackerQuery},
@@ -44,8 +44,7 @@ struct ProcessTracker {
     state: ProcessTrackerState,
     channels: ProcessTrackerChannels,
     sys: System,
-    poll_interval: Duration,
-    poll_interval_timer: Option<tokio::time::Interval>,
+    poll: Poll,
     track_top_processes: bool,
     limit_processes: usize,
 }
@@ -57,8 +56,7 @@ impl ProcessTracker {
             state: ProcessTrackerState::new(pids),
             channels: ProcessTrackerChannels::new(),
             sys: System::new(),
-            poll_interval: Duration::from_secs(2),
-            poll_interval_timer: None,
+            poll: Poll::new(2),
             track_top_processes: config.args.top_processes,
             limit_processes: config.args.limit_processes,
         }
@@ -78,10 +76,10 @@ impl ProcessTracker {
     async fn start_tracking_loop(mut self) -> Result<()> {
         let mut query_rx = self.channels.take_query_rx()?;
         let mut command_rx = self.channels.take_command_rx()?;
-        self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
+        self.poll.resume();
         loop {
             let tick = async {
-                match self.poll_interval_timer.as_mut() {
+                match self.poll.interval_timer.as_mut() {
                     Some(timer) => timer.tick().await,
                     None => std::future::pending().await,
                 }
@@ -162,10 +160,7 @@ impl ProcessTracker {
                 let _ = response.send(result);
             }
             ProcessTrackerQuery::PollStatus { response } => {
-                let _ = response.send(kw_types::polling::PollStatus::new_some(
-                    self.poll_interval,
-                    self.poll_interval_timer.is_none(),
-                ));
+                let _ = response.send(Some((&self.poll).into()));
             }
         }
     }
@@ -265,19 +260,21 @@ impl ProcessTracker {
             // Polling control.
             // ----------------------------------------------------------------
             ProcessTrackerCommand::SetPollInterval { interval, response } => {
-                self.poll_interval = interval;
-                self.poll_interval_timer = Some(tokio::time::interval(interval));
-                info!(ms = interval.as_millis(), "poll interval updated");
+                self.poll.set_interval(interval);
+                info!(
+                    ms = interval.as_millis(),
+                    "process tracker poll interval updated"
+                );
                 let _ = response.send(Ok(()));
             }
             ProcessTrackerCommand::PausePoll { response } => {
-                self.poll_interval_timer = None;
-                info!("polling paused");
+                self.poll.pause();
+                info!("process tracker polling paused");
                 let _ = response.send(Ok(()));
             }
             ProcessTrackerCommand::ResumePoll { response } => {
-                self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
-                info!("polling resumed");
+                self.poll.resume();
+                info!("process tracker polling resumed");
                 let _ = response.send(Ok(()));
             }
         }

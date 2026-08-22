@@ -6,9 +6,12 @@ use tokio::{
     time::Duration,
 };
 
-use kw_types::resources::{
-    BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
-    MemorySnapshot, NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+use kw_types::{
+    polling::Poll,
+    resources::{
+        BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
+        MemorySnapshot, NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
+    },
 };
 use kw_utils::conv::u64_ratio_percent_f32;
 
@@ -72,8 +75,7 @@ struct SystemResources {
     networks: Networks,
     components: Components,
     nvml: Option<Nvml>,
-    poll_interval: Duration,
-    poll_interval_timer: Option<tokio::time::Interval>,
+    poll: Poll,
     thresholds: Thresholds,
     first_tick: bool,
     static_host_info: StaticHostInfo,
@@ -97,8 +99,7 @@ impl SystemResources {
             networks: Networks::new_with_refreshed_list(),
             components: Components::new_with_refreshed_list(),
             nvml: Nvml::init().ok(),
-            poll_interval: Duration::from_secs(1),
-            poll_interval_timer: None,
+            poll: Poll::new(1),
             thresholds: Thresholds::default(),
             first_tick: true,
             static_host_info: super::utils::get_static_host_info(),
@@ -116,10 +117,10 @@ impl SystemResources {
     async fn start_resource_loop(mut self) -> Result<()> {
         let mut query_rx = self.channels.take_query_rx()?;
         let mut command_rx = self.channels.take_command_rx()?;
-        self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
+        self.poll.resume();
         loop {
             let tick = async {
-                match self.poll_interval_timer.as_mut() {
+                match self.poll.interval_timer.as_mut() {
                     Some(timer) => timer.tick().await,
                     None => std::future::pending().await,
                 }
@@ -204,10 +205,7 @@ impl SystemResources {
                 let _ = response.send((&self.state).into());
             }
             SystemResourcesQuery::PollStatus { response } => {
-                let _ = response.send(kw_types::polling::PollStatus::new_some(
-                    self.poll_interval,
-                    self.poll_interval_timer.is_none(),
-                ));
+                let _ = response.send(Some((&self.poll).into()));
             }
         }
     }
@@ -236,19 +234,21 @@ impl SystemResources {
                 let _ = response.send(Ok(()));
             }
             SystemResourcesCommand::SetPollInterval { interval, response } => {
-                self.poll_interval = interval;
-                self.poll_interval_timer = Some(tokio::time::interval(interval));
-                info!(ms = interval.as_millis(), "poll interval updated");
+                self.poll.set_interval(interval);
+                info!(
+                    ms = interval.as_millis(),
+                    "system resources poll interval updated"
+                );
                 let _ = response.send(Ok(()));
             }
             SystemResourcesCommand::PausePoll { response } => {
-                self.poll_interval_timer = None;
-                info!("polling paused");
+                self.poll.pause();
+                info!("system resources polling paused");
                 let _ = response.send(Ok(()));
             }
             SystemResourcesCommand::ResumePoll { response } => {
-                self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
-                info!("polling resumed");
+                self.poll.resume();
+                info!("system resources polling resumed");
                 let _ = response.send(Ok(()));
             }
         }

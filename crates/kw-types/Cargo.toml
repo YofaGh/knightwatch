@@ -4,7 +4,7 @@ version = "1.0.21"
 edition = "2024"
 
 [features]
-server = ["bollard", "nvml-wrapper", "procfs", "starship-battery", "sysinfo"]
+server = ["bollard", "nvml-wrapper", "procfs", "starship-battery", "sysinfo", "tokio"]
 
 [dependencies]
 bollard = { workspace = true, optional = true }
@@ -12,6 +12,7 @@ nvml-wrapper = { workspace = true, optional = true }
 serde = { workspace = true }
 starship-battery = { workspace = true, optional = true }
 sysinfo = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 kw-utils = { path = "../kw-utils" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -2,13 +2,13 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
 };
-use tokio::{
-    sync::{OnceCell, broadcast, mpsc},
-    time::Duration,
-};
+use tokio::sync::{OnceCell, broadcast, mpsc};
 use zbus::{Connection, zvariant::OwnedObjectPath};
 
-use kw_types::systemd::{SystemdSnapshot, UnitActiveState, UnitLoadState, UnitSnapshot, UnitType};
+use kw_types::{
+    polling::Poll,
+    systemd::{SystemdSnapshot, UnitActiveState, UnitLoadState, UnitSnapshot, UnitType},
+};
 use kw_utils::conv::{u64_to_u32_saturating, usize_to_u32_saturating};
 
 use super::{
@@ -42,8 +42,7 @@ pub struct SystemdMonitor {
     state: SystemdMonitorState,
     pub channels: SystemdMonitorChannels,
     conn: Connection,
-    poll_interval: Duration,
-    poll_interval_timer: Option<tokio::time::Interval>,
+    poll: Poll,
     filter: UnitFilter,
     first_tick: bool,
     helper: Arc<OnceCell<SystemdHelperClient>>,
@@ -58,8 +57,7 @@ impl SystemdMonitor {
             state: SystemdMonitorState::new(),
             channels: SystemdMonitorChannels::new(),
             conn,
-            poll_interval: Duration::from_secs(5),
-            poll_interval_timer: None,
+            poll: Poll::new(5),
             filter: UnitFilter::default(),
             first_tick: true,
             helper: Arc::new(OnceCell::new()),
@@ -79,10 +77,10 @@ impl SystemdMonitor {
     pub async fn start_monitor_loop(mut self) -> Result<()> {
         let mut query_rx = self.channels.take_query_rx()?;
         let mut command_rx = self.channels.take_command_rx()?;
-        self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
+        self.poll.resume();
         loop {
             let tick = async {
-                match self.poll_interval_timer.as_mut() {
+                match self.poll.interval_timer.as_mut() {
                     Some(timer) => timer.tick().await,
                     None => std::future::pending().await,
                 }
@@ -133,10 +131,7 @@ impl SystemdMonitor {
                 let _ = response.send(units);
             }
             SystemdQuery::PollStatus { response } => {
-                let _ = response.send(kw_types::polling::PollStatus::new_some(
-                    self.poll_interval,
-                    self.poll_interval_timer.is_none(),
-                ));
+                let _ = response.send(Some((&self.poll).into()));
             }
         }
     }
@@ -147,19 +142,18 @@ impl SystemdMonitor {
             // Polling control.
             // ----------------------------------------------------------------
             SystemdCommand::SetPollInterval { interval, response } => {
-                self.poll_interval = interval;
-                self.poll_interval_timer = Some(tokio::time::interval(interval));
-                info!(ms = interval.as_millis(), "poll interval updated");
+                self.poll.set_interval(interval);
+                info!(ms = interval.as_millis(), "systemd poll interval updated");
                 let _ = response.send(Ok(()));
             }
             SystemdCommand::PausePoll { response } => {
-                self.poll_interval_timer = None;
-                info!("polling paused");
+                self.poll.pause();
+                info!("systemd polling paused");
                 let _ = response.send(Ok(()));
             }
             SystemdCommand::ResumePoll { response } => {
-                self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
-                info!("polling resumed");
+                self.poll.resume();
+                info!("systemd polling resumed");
                 let _ = response.send(Ok(()));
             }
             SystemdCommand::Control {

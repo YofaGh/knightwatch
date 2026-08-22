@@ -4,12 +4,12 @@ use std::{
     collections::{HashMap, HashSet},
     sync::OnceLock,
 };
-use tokio::{
-    sync::{broadcast, mpsc},
-    time::Duration,
-};
+use tokio::sync::{broadcast, mpsc};
 
-use kw_types::docker::{ContainerSnapshot, ContainerStats, ContainerStatus, DockerSortKey};
+use kw_types::{
+    docker::{ContainerSnapshot, ContainerStats, ContainerStatus, DockerSortKey},
+    polling::Poll,
+};
 
 use super::{
     commands::{DockerTrackerChannels, DockerTrackerCommand, DockerTrackerQuery},
@@ -48,8 +48,7 @@ struct DockerTracker {
     docker: Docker,
     state: DockerTrackerState,
     channels: DockerTrackerChannels,
-    poll_interval: Duration,
-    poll_interval_timer: Option<tokio::time::Interval>,
+    poll: Poll,
     limit_containers: usize,
 }
 
@@ -59,8 +58,7 @@ impl DockerTracker {
             docker,
             state: DockerTrackerState::new(),
             channels: DockerTrackerChannels::new(),
-            poll_interval: Duration::from_secs(5),
-            poll_interval_timer: None,
+            poll: Poll::new(5),
             limit_containers: 20,
         }
     }
@@ -77,7 +75,7 @@ impl DockerTracker {
     async fn start_tracking_loop(mut self) -> Result<()> {
         let mut query_rx = self.channels.take_query_rx()?;
         let mut command_rx = self.channels.take_command_rx()?;
-        self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
+        self.poll.resume();
         // Spawn the Docker event stream listener as a separate task that
         // forwards OOM events onto the broadcast bus via a dedicated channel.
         let (oom_tx, mut oom_rx) = mpsc::channel(32);
@@ -85,7 +83,7 @@ impl DockerTracker {
 
         loop {
             let tick = async {
-                match self.poll_interval_timer.as_mut() {
+                match self.poll.interval_timer.as_mut() {
                     Some(timer) => timer.tick().await,
                     None => std::future::pending().await,
                 }
@@ -346,10 +344,7 @@ impl DockerTracker {
                 let _ = response.send(result);
             }
             DockerTrackerQuery::PollStatus { response } => {
-                let _ = response.send(kw_types::polling::PollStatus::new_some(
-                    self.poll_interval,
-                    self.poll_interval_timer.is_none(),
-                ));
+                let _ = response.send(Some((&self.poll).into()));
             }
         }
     }
@@ -483,21 +478,23 @@ impl DockerTracker {
             }
 
             DockerTrackerCommand::SetPollInterval { interval, response } => {
-                self.poll_interval = interval;
-                self.poll_interval_timer = Some(tokio::time::interval(interval));
-                info!(ms = interval.as_millis(), "docker poll interval updated");
+                self.poll.set_interval(interval);
+                info!(
+                    ms = interval.as_millis(),
+                    "docker tracker poll interval updated"
+                );
                 let _ = response.send(Ok(()));
             }
 
             DockerTrackerCommand::PausePoll { response } => {
-                self.poll_interval_timer = None;
-                info!("docker polling paused");
+                self.poll.pause();
+                info!("docker tracker polling paused");
                 let _ = response.send(Ok(()));
             }
 
             DockerTrackerCommand::ResumePoll { response } => {
-                self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
-                info!("docker polling resumed");
+                self.poll.resume();
+                info!("docker tracker polling resumed");
                 let _ = response.send(Ok(()));
             }
         }
@@ -580,7 +577,7 @@ async fn docker_event_listener(docker: Docker, oom_tx: mpsc::Sender<(String, Str
             }
             Err(e) => {
                 error!(?e, "docker event stream error; reconnecting in 5 s");
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 break;
             }
         }

@@ -1,6 +1,8 @@
 use std::sync::OnceLock;
-use tokio::{sync::mpsc, time::Duration};
+use tokio::sync::mpsc;
 use xcap::Monitor;
+
+use kw_types::polling::Poll;
 
 use super::{
     commands::{ScreenCaptureChannels, ScreenCaptureCommand, ScreenCaptureQuery},
@@ -11,8 +13,7 @@ use crate::prelude::*;
 struct ScreenCapture {
     last_captures: Vec<Screenshot>,
     channels: ScreenCaptureChannels,
-    poll_interval: Duration,
-    poll_interval_timer: Option<tokio::time::Interval>,
+    poll: Poll,
 }
 
 impl ScreenCapture {
@@ -20,8 +21,7 @@ impl ScreenCapture {
         Self {
             last_captures: Vec::new(),
             channels: ScreenCaptureChannels::new(),
-            poll_interval: Duration::from_secs(2),
-            poll_interval_timer: None,
+            poll: Poll::new(5),
         }
     }
 
@@ -29,10 +29,10 @@ impl ScreenCapture {
         self.handle_tick().await;
         let mut query_rx = self.channels.take_query_rx()?;
         let mut command_rx = self.channels.take_command_rx()?;
-        self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
+        self.poll.resume();
         loop {
             let tick = async {
-                match self.poll_interval_timer.as_mut() {
+                match self.poll.interval_timer.as_mut() {
                     Some(timer) => timer.tick().await,
                     None => std::future::pending().await,
                 }
@@ -57,10 +57,7 @@ impl ScreenCapture {
                 let _ = response.send(self.last_captures.clone());
             }
             ScreenCaptureQuery::PollStatus { response } => {
-                let _ = response.send(kw_types::polling::PollStatus::new_some(
-                    self.poll_interval,
-                    self.poll_interval_timer.is_none(),
-                ));
+                let _ = response.send(Some((&self.poll).into()));
             }
         }
     }
@@ -71,19 +68,21 @@ impl ScreenCapture {
             // Polling control.
             // ----------------------------------------------------------------
             ScreenCaptureCommand::SetPollInterval { interval, response } => {
-                self.poll_interval = interval;
-                self.poll_interval_timer = Some(tokio::time::interval(interval));
-                info!(ms = interval.as_millis(), "poll interval updated");
+                self.poll.set_interval(interval);
+                info!(
+                    ms = interval.as_millis(),
+                    "screen capture poll interval updated"
+                );
                 let _ = response.send(Ok(()));
             }
             ScreenCaptureCommand::PausePoll { response } => {
-                self.poll_interval_timer = None;
-                info!("polling paused");
+                self.poll.pause();
+                info!("screen capture polling paused");
                 let _ = response.send(Ok(()));
             }
             ScreenCaptureCommand::ResumePoll { response } => {
-                self.poll_interval_timer = Some(tokio::time::interval(self.poll_interval));
-                info!("polling resumed");
+                self.poll.resume();
+                info!("screen capture polling resumed");
                 let _ = response.send(Ok(()));
             }
         }

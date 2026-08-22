@@ -2653,6 +2653,7 @@ dependencies = [
  "serde",
  "starship-battery",
  "sysinfo",
+ "tokio",
 ]
 
 [[package]]
