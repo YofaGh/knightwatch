@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use kw_types::{
     api::{ContainerRequest, ContainerTimeoutRequest, SetPollIntervalRequest},
     docker::ContainerSnapshot,
+    polling::PollStatus,
     process::{ProcessSignal, ProcessSnapshot, ProcessTree},
     resources,
     systemd::UnitSnapshot,
@@ -179,6 +180,15 @@ impl ApiClient {
         self.get_typed("/screenshot").await
     }
 
+    /// Fetches poll status of screen capture.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn screen_capture_poll_status(&self) -> Result<PollStatus> {
+        self.get_typed("/screen/poll/status").await
+    }
+
     // ── Screen capture commands ───────────────────────────────────────
 
     /// Pauses periodic screen capture polling.
@@ -306,6 +316,15 @@ impl ApiClient {
     /// Returns an error if the request fails or the response cannot be deserialized.
     pub async fn supported_signals(&self) -> Result<Vec<ProcessSignal>> {
         self.get_typed("/supported-signals").await
+    }
+
+    /// Fetches poll status of process tracker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn process_tracker_poll_status(&self) -> Result<PollStatus> {
+        self.get_typed("/process/poll/status").await
     }
 
     // ── Process commands ──────────────────────────────────────────────
@@ -482,6 +501,15 @@ impl ApiClient {
         self.get_typed("/alarms").await
     }
 
+    /// Fetches poll status of system resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn system_resources_poll_status(&self) -> Result<PollStatus> {
+        self.get_typed("/resources/poll/status").await
+    }
+
     // ── System resource commands ──────────────────────────────────────
 
     /// Sets the warning/low thresholds for CPU, memory, disk, and battery.
@@ -610,6 +638,15 @@ impl ApiClient {
         self.get_typed("/failed_units").await
     }
 
+    /// Fetches poll status of systemd.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn systemd_poll_status(&self) -> Result<PollStatus> {
+        self.get_typed("/systemd/poll/status").await
+    }
+
     // ── Systemd commands ──────────────────────────────────────
 
     /// Controls a unit with given name and action. returns the result of action
@@ -702,6 +739,15 @@ impl ApiClient {
             kw_types::api::TopContainersParams { sort, limit },
         )
         .await
+    }
+
+    /// Fetches poll status of docker tracker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn docker_tracker_poll_status(&self) -> Result<PollStatus> {
+        self.get_typed("/docker/poll/status").await
     }
 
     // ── Docker commands ───────────────────────────────────────────────

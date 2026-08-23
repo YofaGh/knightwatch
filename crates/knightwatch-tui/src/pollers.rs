@@ -78,6 +78,39 @@ where
     });
 }
 
+/// Periodically fetches server-side poll status for one tab and syncs it
+/// into the shared `PollControl` in place, so pause/resume/interval changes
+/// made elsewhere (another client, a server-side default) are reflected
+/// here too. Runs an immediate check on startup, then every `check_interval`.
+fn spawn_poll_status_sync<F, Fut>(
+    tx: Sender<AppEvent>,
+    tab: &'static str,
+    control: Arc<Mutex<PollControl>>,
+    check_interval: Duration,
+    mut fetch_status: F,
+) where
+    F: FnMut() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Option<kw_types::polling::PollStatus>> + Send,
+{
+    tokio::spawn(async move {
+        loop {
+            if let Some(status) = fetch_status().await {
+                {
+                    let mut ctrl = control
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    ctrl.paused = status.paused;
+                    ctrl.interval_ms = u64::try_from(status.interval).unwrap_or(u64::MAX);
+                }
+                if tx.send(AppEvent::PollStatusSynced { tab }).await.is_err() {
+                    break;
+                }
+            }
+            tokio::time::sleep(check_interval).await;
+        }
+    });
+}
+
 pub fn spawn_input(tx: Sender<AppEvent>) {
     tokio::spawn(async move {
         let mut stream = crossterm::event::EventStream::new();
@@ -107,6 +140,17 @@ pub fn spawn_screen_poller(
     });
 }
 
+pub fn spawn_screen_poll_status_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poll_status_sync(tx, "Screen", control, Duration::from_secs(5), move || {
+        let api = api.clone();
+        async move { api.screen_capture_poll_status().await.ok() }
+    });
+}
+
 pub fn spawn_system_resources_poller(
     tx: Sender<AppEvent>,
     api: Arc<ApiClient>,
@@ -120,6 +164,23 @@ pub fn spawn_system_resources_poller(
             })
         }
     });
+}
+
+pub fn spawn_system_resources_poll_status_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poll_status_sync(
+        tx,
+        "System Resources",
+        control,
+        Duration::from_secs(5),
+        move || {
+            let api = api.clone();
+            async move { api.system_resources_poll_status().await.ok() }
+        },
+    );
 }
 
 pub fn spawn_system_alarms_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
@@ -154,6 +215,17 @@ pub fn spawn_docker_poller(
     });
 }
 
+pub fn spawn_docker_poll_status_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poll_status_sync(tx, "Docker", control, Duration::from_secs(5), move || {
+        let api = api.clone();
+        async move { api.docker_tracker_poll_status().await.ok() }
+    });
+}
+
 pub fn spawn_systemd_poller(
     tx: Sender<AppEvent>,
     api: Arc<ApiClient>,
@@ -166,6 +238,17 @@ pub fn spawn_systemd_poller(
                 .await
                 .map_or(None, |snapshot| Some(AppEvent::SystemdSnapshot(snapshot)))
         }
+    });
+}
+
+pub fn spawn_systemd_poll_status_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poll_status_sync(tx, "Systemd", control, Duration::from_secs(5), move || {
+        let api = api.clone();
+        async move { api.systemd_poll_status().await.ok() }
     });
 }
 
@@ -182,6 +265,23 @@ pub fn spawn_process_trees_poller(
             })
         }
     });
+}
+
+pub fn spawn_processes_poll_status_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poll_status_sync(
+        tx,
+        "Processes",
+        control,
+        Duration::from_secs(5),
+        move || {
+            let api = api.clone();
+            async move { api.process_tracker_poll_status().await.ok() }
+        },
+    );
 }
 
 pub fn spawn_top_processes_poller(
@@ -204,4 +304,21 @@ pub fn spawn_top_processes_poller(
                 })
         }
     });
+}
+
+pub fn spawn_top_processes_poll_status_poller(
+    tx: Sender<AppEvent>,
+    api: Arc<ApiClient>,
+    control: Arc<Mutex<PollControl>>,
+) {
+    spawn_poll_status_sync(
+        tx,
+        "Top Processes",
+        control,
+        Duration::from_secs(5),
+        move || {
+            let api = api.clone();
+            async move { api.process_tracker_poll_status().await.ok() }
+        },
+    );
 }

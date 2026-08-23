@@ -1,9 +1,7 @@
-use std::time::Duration;
-
 #[cfg(feature = "server")]
 #[derive(Debug)]
 pub struct Poll {
-    pub interval: Duration,
+    pub interval: std::time::Duration,
     pub interval_timer: Option<tokio::time::Interval>,
 }
 
@@ -12,7 +10,7 @@ impl Poll {
     #[must_use]
     pub const fn new(secs: u64) -> Self {
         Self {
-            interval: Duration::from_secs(secs),
+            interval: std::time::Duration::from_secs(secs),
             interval_timer: None,
         }
     }
@@ -25,7 +23,7 @@ impl Poll {
         self.interval_timer = Some(tokio::time::interval(self.interval));
     }
 
-    pub fn set_interval(&mut self, interval: Duration) {
+    pub fn set_interval(&mut self, interval: std::time::Duration) {
         self.interval = interval;
         if !self.is_paused() {
             self.interval_timer = Some(tokio::time::interval(self.interval));
@@ -42,6 +40,17 @@ impl Poll {
 pub struct PollStatus {
     pub interval: u128,
     pub paused: bool,
+}
+
+impl std::fmt::Display for PollStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "interval: {}(ms) {}",
+            self.interval,
+            if self.paused { "paused" } else { "resumed" }
+        )
+    }
 }
 
 #[cfg(feature = "server")]

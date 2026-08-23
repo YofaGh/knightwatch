@@ -63,8 +63,9 @@ impl App {
 
         // --- Screen tab ---
         if !info.blind {
-            let control = PollControl::new_arc(2000);
+            let control = PollControl::new_arc(5000);
             pollers::spawn_screen_poller(tx.clone(), api.clone(), control.clone());
+            pollers::spawn_screen_poll_status_poller(tx.clone(), api.clone(), control.clone());
             tabs.push(Box::new(tabs::ScreenTab::new(
                 picker,
                 info.allow_screen_commands,
@@ -77,6 +78,11 @@ impl App {
         // --- Process Trees tab ---
         if !info.pid.is_empty() || info.allow_process_commands {
             pollers::spawn_process_trees_poller(tx.clone(), api.clone(), processes_control.clone());
+            pollers::spawn_processes_poll_status_poller(
+                tx.clone(),
+                api.clone(),
+                processes_control.clone(),
+            );
             tabs.push(Box::new(tabs::ProcessesTab::new(
                 info.allow_process_commands,
                 api.clone(),
@@ -86,8 +92,13 @@ impl App {
         }
         // --- System Resources tab ---
         if info.system_resources {
-            let control = PollControl::new_arc(2000);
+            let control = PollControl::new_arc(1000);
             pollers::spawn_system_resources_poller(tx.clone(), api.clone(), control.clone());
+            pollers::spawn_system_resources_poll_status_poller(
+                tx.clone(),
+                api.clone(),
+                control.clone(),
+            );
             pollers::spawn_system_alarms_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::SystemResourcesTab::new(
                 info.allow_system_resources_commands,
@@ -98,8 +109,9 @@ impl App {
         }
         // --- Systemd tab ---
         if info.systemd {
-            let control = PollControl::new_arc(2000);
+            let control = PollControl::new_arc(5000);
             pollers::spawn_systemd_poller(tx.clone(), api.clone(), control.clone());
+            pollers::spawn_systemd_poll_status_poller(tx.clone(), api.clone(), control.clone());
             tabs.push(Box::new(tabs::SystemdTab::new(
                 info.allow_systemd_commands,
                 api.clone(),
@@ -109,8 +121,9 @@ impl App {
         }
         // --- Docker tab ---
         if info.docker {
-            let control = PollControl::new_arc(2000);
+            let control = PollControl::new_arc(5000);
             pollers::spawn_docker_poller(tx.clone(), api.clone(), control.clone());
+            pollers::spawn_docker_poll_status_poller(tx.clone(), api.clone(), control.clone());
             tabs.push(Box::new(tabs::DockerTab::new(
                 info.allow_docker_commands,
                 api.clone(),
@@ -127,6 +140,11 @@ impl App {
                 tx.clone(),
                 api.clone(),
                 poll_config.clone(),
+                processes_control.clone(),
+            );
+            pollers::spawn_top_processes_poll_status_poller(
+                tx.clone(),
+                api.clone(),
                 processes_control.clone(),
             );
             tabs.push(Box::new(tabs::TopProcessesTab::new(
@@ -253,6 +271,9 @@ impl App {
                 {
                     self.dirty = true;
                 }
+            }
+            AppEvent::PollStatusSynced { tab: _tab } => {
+                self.dirty = true;
             }
         }
     }

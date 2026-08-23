@@ -55,6 +55,9 @@ enum Commands {
     /// Fetch the latest screenshots (base64 JSON)
     Screenshot,
 
+    /// Fetch screen capture poll status
+    ScreenCapturePollStatus,
+
     // ── Process tracking ──────────────────────────────────────────────────
     /// List tracked root PIDs
     RootPids,
@@ -91,6 +94,9 @@ enum Commands {
     },
     /// List signals supported on this platform
     SupportedSignals,
+
+    /// Fetch process tracker poll status
+    ProcessTrackerPollStatus,
 
     // ── Process commands ──────────────────────────────────────────────────
     /// Send a signal to a process
@@ -153,6 +159,9 @@ enum Commands {
     /// System Alarms
     Alarms,
 
+    /// Fetch system resources poll status
+    SystemResourcesPollStatus,
+
     // ── System resource commands ──────────────────────────────────────────
     /// Set alert thresholds
     SetThresholds {
@@ -203,6 +212,9 @@ enum Commands {
     /// List failed units
     FailedUnits,
 
+    /// Fetch systemd poll status
+    SystemdPollStatus,
+
     // ── Systemd commands ──────────────────────────────────────────────────
     /// control a unit
     ControlUnit {
@@ -234,6 +246,9 @@ enum Commands {
         #[arg(long)]
         limit: Option<usize>,
     },
+
+    /// Fetch docker tracker poll status
+    DockerTrackerPollStatus,
 
     // ── Docker commands ───────────────────────────────────────────────────
     /// Stop a container
@@ -331,6 +346,9 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
                 println!("{screen}");
             }
         }
+        Commands::ScreenCapturePollStatus => {
+            println!("screen capture poll status: {}", api.screen_capture_poll_status().await?);
+        }
 
         // ── Screen capture commands ───────────────────────────────────────
         Commands::ScreenPollPause => {
@@ -378,6 +396,9 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
         }
         Commands::SupportedSignals => {
             print(&api.supported_signals().await?);
+        }
+        Commands::ProcessTrackerPollStatus => {
+            println!("process tracker poll status: {}", api.process_tracker_poll_status().await?);
         }
 
         // ── Process commands ──────────────────────────────────────────────
@@ -452,6 +473,9 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
         Commands::Alarms => {
             println!("{}", api.alarms().await?);
         }
+        Commands::SystemResourcesPollStatus => {
+            println!("screen capture poll status: {}", api.system_resources_poll_status().await?);
+        }
 
         // ── System resource commands ──────────────────────────────────────
         Commands::SetThresholds {
@@ -508,6 +532,9 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
                 println!("{u}");
             }
         }
+        Commands::SystemdPollStatus => {
+            println!("systemd poll status: {}", api.systemd_poll_status().await?);
+        }
 
         // ── Systemd commands ──────────────────────────────────────────────
         Commands::ControlUnit { unit_name, action } => {
@@ -543,6 +570,9 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
             for c in &v {
                 println!("{c}");
             }
+        }
+        Commands::DockerTrackerPollStatus => {
+            println!("docker tracker poll status: {}", api.docker_tracker_poll_status().await?);
         }
 
         // ── Docker commands ───────────────────────────────────────────────
