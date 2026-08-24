@@ -1,5 +1,4 @@
 <script>
-  import { onMount, onDestroy } from "svelte";
   import ProcessCard from "./ProcessCard.svelte";
   import SignInNotice from "./SignInNotice.svelte";
   import { apiFetch } from "../api.js";
@@ -42,11 +41,17 @@
 
   // ── Poll controls ─────────────────────────────────────────────────
   let pollPaused = $state(false);
+  let pollInterval = $state(2000); // current server-reported poll interval (ms), shared by tracked + top
   let pollIntervalInput = $state("2000");
   let pollCmdError = $state(null);
 
+  // How often we re-check /api/process/poll/status to notice changes made
+  // elsewhere (another client pausing/resuming or changing the interval).
+  const STATUS_CHECK_MS = 3000;
+
   let processInterval = null;
   let topInterval = null;
+  let statusTimer = null;
 
   // ── Tracked fetch ─────────────────────────────────────────────────
   async function refreshTracked() {
@@ -89,6 +94,23 @@
     }
   }
 
+  // ── Poll status ────────────────────────────────────────────────────
+  /** @typedef {{interval: number, paused: boolean}} PollStatus */
+  async function fetchPollStatus() {
+    try {
+      const r = await apiFetch("/api/process/poll/status");
+      if (!r.ok) throw new Error("HTTP error");
+      /** @type {PollStatus} */
+      const status = await r.json();
+      pollPaused = status.paused;
+      pollInterval = status.interval;
+      pollIntervalInput = String(status.interval);
+    } catch {
+      // transient failure fetching status — keep last known values,
+      // the next scheduled check will retry.
+    }
+  }
+
   // ── Poll commands ─────────────────────────────────────────────────
   async function togglePoll() {
     pollCmdError = null;
@@ -98,7 +120,7 @@
     try {
       const r = await apiFetch(ep, { method: "POST" });
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
-      pollPaused = !pollPaused;
+      await fetchPollStatus();
     } catch (e) {
       pollCmdError = e.message;
     }
@@ -118,6 +140,7 @@
         body: JSON.stringify({ interval_ms: ms }),
       });
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
+      await fetchPollStatus();
     } catch (e) {
       pollCmdError = e.message;
     }
@@ -140,19 +163,31 @@
       });
   });
 
-  onMount(() => {
-    refreshTracked();
-    processInterval = setInterval(refreshTracked, 2000);
-
-    if (hasTopProcesses) {
-      refreshTop();
-      topInterval = setInterval(refreshTop, 2000);
-    }
+  // Fetch the server's poll status once up front, then keep re-checking it
+  // periodically so we notice if another client pauses/resumes or changes
+  // the interval.
+  $effect(() => {
+    fetchPollStatus();
+    statusTimer = setInterval(fetchPollStatus, STATUS_CHECK_MS);
+    return () => clearInterval(statusTimer);
   });
 
-  onDestroy(() => {
-    clearInterval(processInterval);
-    clearInterval(topInterval);
+  // Tracked process tree refresh loop — restarts whenever pollInterval or
+  // pollPaused change (e.g. after fetchPollStatus picks up a change made
+  // elsewhere).
+  $effect(() => {
+    if (pollPaused) return;
+    refreshTracked();
+    processInterval = setInterval(refreshTracked, pollInterval);
+    return () => clearInterval(processInterval);
+  });
+
+  // Top processes share the same poll interval as the tracked tree.
+  $effect(() => {
+    if (!hasTopProcesses || pollPaused) return;
+    refreshTop();
+    topInterval = setInterval(refreshTop, pollInterval);
+    return () => clearInterval(topInterval);
   });
 
   // Re-fetch top when sort/limit change

@@ -17,8 +17,13 @@
 
   // ── Poll controls ─────────────────────────────────────────────────
   let pollPaused = $state(false);
-  let pollIntervalInput = $state("2000");
+  let pollInterval = $state(5000); // current server-reported poll interval (ms)
+  let pollIntervalInput = $state("5000");
   let pollCmdError = $state(/** @type {string|null} */ (null));
+
+  // How often we re-check /api/docker/poll/status to notice changes made
+  // elsewhere (another client pausing/resuming or changing the interval).
+  const STATUS_CHECK_MS = 5000;
 
   // ── Per-container action feedback ─────────────────────────────────
   // Map of container id → { pending: bool, error: string|null }
@@ -27,6 +32,7 @@
   );
 
   let pollTimer = null;
+  let statusTimer = null;
 
   // ── Helpers ───────────────────────────────────────────────────────
   function fmt(n, unit = "") {
@@ -88,6 +94,21 @@
     }
   }
 
+  // ── Poll status ────────────────────────────────────────────────────
+  async function fetchPollStatus() {
+    try {
+      const r = await apiFetch("/api/docker/poll/status");
+      if (!r.ok) throw new Error("HTTP error");
+      const status = await r.json();
+      pollPaused = status.paused;
+      pollInterval = status.interval;
+      pollIntervalInput = String(status.interval);
+    } catch {
+      // transient failure fetching status — keep last known values,
+      // the next scheduled check will retry.
+    }
+  }
+
   // ── Poll commands ─────────────────────────────────────────────────
   async function togglePoll() {
     pollCmdError = null;
@@ -97,7 +118,7 @@
     try {
       const r = await apiFetch(ep, { method: "POST" });
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
-      pollPaused = !pollPaused;
+      await fetchPollStatus();
     } catch (e) {
       pollCmdError = e.message;
     }
@@ -117,6 +138,7 @@
         body: JSON.stringify({ interval_ms: ms }),
       });
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
+      await fetchPollStatus();
     } catch (e) {
       pollCmdError = e.message;
     }
@@ -155,6 +177,24 @@
 
   // ── Lifecycle ────────────────────────────────────────────────────
   
+  $effect(() => {
+    if (!enabled) return;
+    fetchPollStatus();
+    statusTimer = setInterval(fetchPollStatus, STATUS_CHECK_MS);
+    return () => clearInterval(statusTimer);
+  });
+
+  // Drive the actual container-list refresh loop off the current known
+  // interval/paused state. Re-runs (restarting the timer) whenever
+  // pollInterval or pollPaused change, e.g. after fetchPollStatus picks up
+  // a change made elsewhere.
+  $effect(() => {
+    if (!enabled || pollPaused) return;
+    refresh();
+    pollTimer = setInterval(refresh, pollInterval);
+    return () => clearInterval(pollTimer);
+  });
+
   $effect(() => {
     if (enabled) {
       refresh();

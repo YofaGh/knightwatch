@@ -25,14 +25,26 @@
   }
 
   let pollTimer = null;
+  let statusTimer = null;
 
-  // Use $effect so polling starts/stops reactively based on `enabled`
+  // ── Lifecycle ────────────────────────────────────────────────────
+
   $effect(() => {
-    if (enabled) {
-      refresh();
-      pollTimer = setInterval(refresh, 2000);
-      return () => clearInterval(pollTimer);
-    }
+    if (!enabled) return;
+    fetchPollStatus();
+    statusTimer = setInterval(fetchPollStatus, STATUS_CHECK_MS);
+    return () => clearInterval(statusTimer);
+  });
+
+  // Drive the actual container-list refresh loop off the current known
+  // interval/paused state. Re-runs (restarting the timer) whenever
+  // pollInterval or pollPaused change, e.g. after fetchPollStatus picks up
+  // a change made elsewhere.
+  $effect(() => {
+    if (!enabled || pollPaused) return;
+    refresh();
+    pollTimer = setInterval(refresh, pollInterval);
+    return () => clearInterval(pollTimer);
   });
 
   // Whether commands are actually usable
@@ -40,8 +52,13 @@
 
   // ── Poll controls ─────────────────────────────────────────────────
   let pollPaused = $state(false);
-  let pollIntervalInput = $state("2000");
+  let pollInterval = $state(1000); // current server-reported poll interval (ms)
+  let pollIntervalInput = $state("1000");
   let pollCmdError = $state(null);
+
+  // How often we re-check /api/docker/poll/status to notice changes made
+  // elsewhere (another client pausing/resuming or changing the interval).
+  const STATUS_CHECK_MS = 5000;
 
   async function togglePoll() {
     pollCmdError = null;
@@ -51,9 +68,24 @@
     try {
       const r = await apiFetch(ep, { method: "POST" });
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
-      pollPaused = !pollPaused;
+      await fetchPollStatus();
     } catch (e) {
       pollCmdError = e.message;
+    }
+  }
+
+  // ── Poll status ────────────────────────────────────────────────────
+  async function fetchPollStatus() {
+    try {
+      const r = await apiFetch("/api/resources/poll/status");
+      if (!r.ok) throw new Error("HTTP error");
+      const status = await r.json();
+      pollPaused = status.paused;
+      pollInterval = status.interval;
+      pollIntervalInput = String(status.interval);
+    } catch {
+      // transient failure fetching status — keep last known values,
+      // the next scheduled check will retry.
     }
   }
 
@@ -71,6 +103,7 @@
         body: JSON.stringify({ interval_ms: ms }),
       });
       if (!r.ok) throw new Error((await r.json()).message ?? "failed");
+      await fetchPollStatus();
     } catch (e) {
       pollCmdError = e.message;
     }
