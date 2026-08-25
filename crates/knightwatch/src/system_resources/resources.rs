@@ -207,6 +207,12 @@ impl SystemResources {
             SystemResourcesQuery::PollStatus { response } => {
                 let _ = response.send(Some((&self.poll).into()));
             }
+            SystemResourcesQuery::GetThresholds { response } => {
+                let _ = response.send(Some(self.thresholds.clone()));
+            }
+            SystemResourcesQuery::GetRefreshMask { response } => {
+                let _ = response.send(Some(self.refresh_mask.clone()));
+            }
         }
     }
 

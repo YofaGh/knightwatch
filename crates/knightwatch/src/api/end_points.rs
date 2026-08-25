@@ -20,7 +20,8 @@ use super::utils::{bad_request, internal_server_error, not_found};
 use crate::{
     docker_tracker::{self, ContainerSnapshot},
     process_tracker::{self, ProcessSignal, ProcessSnapshot, ProcessTree},
-    screen_capture, system_resources,
+    screen_capture,
+    system_resources::{self, RefreshMask, Thresholds},
     systemd::{self, UnitSnapshot},
 };
 
@@ -168,7 +169,8 @@ pub async fn root_pids() -> Json<Vec<u32>> {
 /// `GET /process/{pid}`
 ///
 /// Returns the full process tree of a given root pid: root + all live descendants, plus a
-/// `work_done` flag. Useful for dashboards or external orchestration. Returns 404 if the root process has exited and is no longer tracked.
+/// `work_done` flag. Useful for dashboards or external orchestration.
+/// Returns 404 if the root process has exited and is no longer tracked.
 pub async fn process_tree(
     Path(root_pid): Path<u32>,
 ) -> Result<Json<ProcessTree>, (StatusCode, String)> {
@@ -439,6 +441,22 @@ pub async fn system_resources_poll_status() -> Result<Json<PollStatus>, (StatusC
         .ok_or_else(|| not_found("System resources is not running".to_string()))
 }
 
+/// `GET /resources/thresholds`
+pub async fn thresholds() -> Result<Json<Thresholds>, (StatusCode, String)> {
+    system_resources::get_thresholds()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("No thresholds were found".to_string()))
+}
+
+/// `GET /resources/refresh-mask`
+pub async fn refresh_mask() -> Result<Json<RefreshMask>, (StatusCode, String)> {
+    system_resources::get_refresh_mask()
+        .await
+        .map(Json)
+        .ok_or_else(|| not_found("No refresh mask were found".to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // System Resources command endpoints (requires --allow-system-resources-commands)
 // ---------------------------------------------------------------------------
@@ -449,7 +467,7 @@ pub async fn system_resources_poll_status() -> Result<Json<PollStatus>, (StatusC
 pub async fn resources_set_thresholds(
     Json(body): Json<SetThresholdsRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::set_thresholds(system_resources::Thresholds {
+    system_resources::set_thresholds(Thresholds {
         cpu_warn: body.cpu_warn,
         memory_warn: body.memory_warn,
         disk_warn: body.disk_warn,
@@ -466,7 +484,7 @@ pub async fn resources_set_thresholds(
 pub async fn resources_set_refresh_mask(
     Json(body): Json<SetRefreshMaskRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::set_refresh_mask(system_resources::RefreshMask {
+    system_resources::set_refresh_mask(RefreshMask {
         cpu: body.cpu,
         memory: body.memory,
         disks: body.disks,

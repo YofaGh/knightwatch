@@ -14,10 +14,14 @@ pub async fn handle_system_resources(bot: Bot, msg: Message, state: State) -> Re
         return send_auth_first_message(bot, msg.chat.id).await;
     }
     let system_snapshot = system_resources::get_snapshot().await;
-    let message = system_snapshot.map_or_else(
+    let mut message = system_snapshot.map_or_else(
         || "*No System Snapshot found*".to_string(),
         |snap| TelegramDisplay(&snap).to_string(),
     );
+    let thresholds = get_thresholds().await;
+    let mask = get_refresh_mask().await;
+    message.push_str(&format!("\n\n⚠️ *Thresholds*\n{}", thresholds));
+    message.push_str(&format!("\n🔄 *Refresh Mask*: `{}`", mask));
     bot.send_message(msg.chat.id, message)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(system_resources_keyboard())
@@ -66,4 +70,49 @@ pub async fn handle_system_resources_callback(
         }
     }
     Ok(())
+}
+
+async fn get_thresholds() -> String {
+    let thresholds = system_resources::get_thresholds().await;
+    let Some(t) = thresholds else {
+        return "└ `unavailable`".to_string();
+    };
+    format!(
+        "├ CPU: `{cpu:.1}%`\n├ Mem: `{mem:.1}%`\n├ Disk: `{disk:.1}%`\n└ Battery: `{batt:.1}%`",
+        cpu = t.cpu_warn,
+        mem = t.memory_warn,
+        disk = t.disk_warn,
+        batt = t.battery_low,
+    )
+}
+
+async fn get_refresh_mask() -> String {
+    let mask = system_resources::get_refresh_mask().await;
+    let Some(mask) = mask else {
+        return "unavailable".to_string();
+    };
+    let mut on = Vec::new();
+    if mask.cpu {
+        on.push("CPU");
+    }
+    if mask.memory {
+        on.push("Mem");
+    }
+    if mask.disks {
+        on.push("Disks");
+    }
+    if mask.networks {
+        on.push("Net");
+    }
+    if mask.temperatures {
+        on.push("Temp");
+    }
+    if mask.gpus {
+        on.push("GPU");
+    }
+    if on.is_empty() {
+        "none".to_string()
+    } else {
+        on.join(", ")
+    }
 }

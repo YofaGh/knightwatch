@@ -61,6 +61,12 @@ pub enum SystemResourcesQuery {
     PollStatus {
         response: oneshot::Sender<Option<kw_types::polling::PollStatus>>,
     },
+    GetThresholds {
+        response: oneshot::Sender<Option<Thresholds>>,
+    },
+    GetRefreshMask {
+        response: oneshot::Sender<Option<RefreshMask>>,
+    },
 }
 
 #[derive(Debug)]

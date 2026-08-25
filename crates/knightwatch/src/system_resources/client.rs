@@ -123,6 +123,22 @@ pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
     rx.await.unwrap_or(None)
 }
 
+pub async fn get_thresholds() -> Option<Thresholds> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_system_resources_query_sender()?
+        .send(SystemResourcesQuery::GetThresholds { response: tx })
+        .await;
+    rx.await.unwrap_or(None)
+}
+
+pub async fn get_refresh_mask() -> Option<RefreshMask> {
+    let (tx, rx) = oneshot::channel();
+    let _ = get_system_resources_query_sender()?
+        .send(SystemResourcesQuery::GetRefreshMask { response: tx })
+        .await;
+    rx.await.unwrap_or(None)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutating commands
 // ─────────────────────────────────────────────────────────────────────────────
