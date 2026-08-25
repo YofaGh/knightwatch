@@ -12,6 +12,9 @@ use super::super::{
 use crate::{prelude::*, systemd};
 
 pub async fn handle_systemd_menu(bot: Bot, msg: Message, state: State) -> Result<()> {
+    if !state.is_authorized(msg.chat.id) {
+        return super::send_auth_first_message(bot, msg.chat.id).await;
+    }
     state.set_chat_state_idle(msg.chat.id);
     bot.send_message(msg.chat.id, "🔧 *Systemd* — choose an action:")
         .parse_mode(ParseMode::MarkdownV2)

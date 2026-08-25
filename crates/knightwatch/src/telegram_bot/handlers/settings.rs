@@ -14,9 +14,6 @@ use crate::{
 };
 
 pub async fn handle_settings_menu(bot: Bot, msg: Message, state: State) -> Result<()> {
-    if !state.is_authorized_to_commmand(msg.chat.id) {
-        return send_auth_first_message(bot, msg.chat.id).await;
-    }
     state.set_chat_state_idle(msg.chat.id);
     bot.send_message(msg.chat.id, "⚙️ *Settings*")
         .parse_mode(ParseMode::MarkdownV2)
@@ -26,16 +23,36 @@ pub async fn handle_settings_menu(bot: Bot, msg: Message, state: State) -> Resul
 }
 
 pub async fn handle_polling_menu(bot: Bot, msg: Message, state: State) -> Result<()> {
-    if !state.is_authorized_to_commmand(msg.chat.id) {
-        return send_auth_first_message(bot, msg.chat.id).await;
-    }
     state.set_chat_state_idle(msg.chat.id);
-    bot.send_message(msg.chat.id, "⏱️ *Polling* — choose a subsystem:")
-        .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(ReplyMarkup::Keyboard(
-            keyboards::polling_subsystem_keyboard(),
-        ))
-        .await?;
+
+    let subsystems = [
+        Subsystem::ProcessTracker,
+        Subsystem::ScreenCapture,
+        Subsystem::SystemResources,
+        Subsystem::Systemd,
+        Subsystem::DockerTracker,
+    ];
+    let mut lines = Vec::with_capacity(subsystems.len());
+    for s in &subsystems {
+        lines.push(format!(
+            "├ *{}*: `{}`",
+            escape_mdv2(s.label()),
+            get_poll_status(s).await,
+        ));
+    }
+    if let Some(last) = lines.last_mut() {
+        *last = last.replacen('├', "└", 1);
+    }
+
+    bot.send_message(
+        msg.chat.id,
+        format!("⏱️ *Polling* — choose a subsystem:\n\n{}", lines.join("\n")),
+    )
+    .parse_mode(ParseMode::MarkdownV2)
+    .reply_markup(ReplyMarkup::Keyboard(
+        keyboards::polling_subsystem_keyboard(),
+    ))
+    .await?;
     Ok(())
 }
 
@@ -45,14 +62,15 @@ pub async fn handle_subsystem_polling_menu(
     state: State,
     subsystem: Subsystem,
 ) -> Result<()> {
-    if !state.is_authorized_to_commmand(msg.chat.id) {
-        return send_auth_first_message(bot, msg.chat.id).await;
-    }
     state.set_chat_state_idle(msg.chat.id);
     let label = subsystem.label();
     bot.send_message(
         msg.chat.id,
-        format!("⏱️ *{label} Polling*", label = escape_mdv2(label)),
+        format!(
+            "⏱️ *{label} Polling*\n└ `{}`",
+            get_poll_status(&subsystem).await,
+            label = escape_mdv2(label),
+        ),
     )
     .parse_mode(ParseMode::MarkdownV2)
     .reply_markup(ReplyMarkup::Keyboard(subsystem_polling_keyboard(
@@ -185,4 +203,16 @@ pub async fn handle_poll_interval_input(
         )))
         .await?;
     Ok(())
+}
+
+/// Fetches the current PollStatus for a given subsystem.
+async fn get_poll_status(subsystem: &Subsystem) -> String {
+    match subsystem {
+        Subsystem::ProcessTracker => process_tracker::get_poll_status().await,
+        Subsystem::ScreenCapture => screen_capture::get_poll_status().await,
+        Subsystem::SystemResources => system_resources::get_poll_status().await,
+        Subsystem::Systemd => systemd::get_poll_status().await,
+        Subsystem::DockerTracker => docker_tracker::get_poll_status().await,
+    }
+    .map_or_else(|| "unavailable".to_string(), |s| s.to_string())
 }
