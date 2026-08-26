@@ -31,8 +31,13 @@
 
   $effect(() => {
     if (!enabled) return;
-    fetchPollStatus();
-    statusTimer = setInterval(fetchPollStatus, STATUS_CHECK_MS);
+    const pollAll = () => {
+      fetchPollStatus();
+      fetchThresholds();
+      fetchMask();
+    };
+    pollAll();
+    statusTimer = setInterval(pollAll, STATUS_CHECK_MS);
     return () => clearInterval(statusTimer);
   });
 
@@ -119,6 +124,28 @@
   let thresholdError = $state(null);
   let thresholdSuccess = $state(false);
   let showThresholds = $state(false);
+
+  // ── Thresholds ────────────
+  async function fetchThresholds() {
+    try {
+      const r = await apiFetch("/api/resources/thresholds");
+      if (!r.ok) throw new Error("HTTP error");
+      thresholds = await r.json();
+    } catch {
+      // transient failure — keep last known values, next scheduled check retries
+    }
+  }
+
+  // ── Refresh mask ───────────
+  async function fetchMask() {
+    try {
+      const r = await apiFetch("/api/resources/refresh-mask");
+      if (!r.ok) throw new Error("HTTP error");
+      mask = await r.json();
+    } catch {
+      // transient failure — keep last known values, next scheduled check retries
+    }
+  }
 
   async function applyThresholds() {
     thresholdError = null;
