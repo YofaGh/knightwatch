@@ -111,6 +111,33 @@ fn spawn_poll_status_sync<F, Fut>(
     });
 }
 
+/// Periodically fetches some value from the server and forwards it as an
+/// `AppEvent`, so settings changed elsewhere (another client, a server
+/// restart to defaults, etc.) are reflected here too. Runs an immediate
+/// fetch on startup, then every `interval`.
+fn spawn_value_sync<F, Fut, T, E>(
+    tx: Sender<AppEvent>,
+    interval: Duration,
+    mut fetch: F,
+    mut to_event: E,
+) where
+    F: FnMut() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Option<T>> + Send,
+    T: Send + 'static,
+    E: FnMut(T) -> AppEvent + Send + 'static,
+{
+    tokio::spawn(async move {
+        loop {
+            if let Some(value) = fetch().await
+                && tx.send(to_event(value)).await.is_err()
+            {
+                break;
+            }
+            tokio::time::sleep(interval).await;
+        }
+    });
+}
+
 pub fn spawn_input(tx: Sender<AppEvent>) {
     tokio::spawn(async move {
         let mut stream = crossterm::event::EventStream::new();
@@ -320,5 +347,29 @@ pub fn spawn_top_processes_poll_status_poller(
             let api = api.clone();
             async move { api.process_tracker_poll_status().await.ok() }
         },
+    );
+}
+
+pub fn spawn_system_resources_thresholds_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
+    spawn_value_sync(
+        tx,
+        Duration::from_secs(5),
+        move || {
+            let api = api.clone();
+            async move { api.system_resources_thresholds().await.ok() }
+        },
+        AppEvent::ThresholdsSynced,
+    );
+}
+
+pub fn spawn_system_resources_refresh_mask_poller(tx: Sender<AppEvent>, api: Arc<ApiClient>) {
+    spawn_value_sync(
+        tx,
+        Duration::from_secs(5),
+        move || {
+            let api = api.clone();
+            async move { api.system_resources_refresh_mask().await.ok() }
+        },
+        AppEvent::RefreshMaskSynced,
     );
 }

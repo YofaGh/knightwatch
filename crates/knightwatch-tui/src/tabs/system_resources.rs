@@ -129,6 +129,14 @@ impl super::Tab for SystemResourcesTab {
                 }
                 true
             }
+            AppEvent::ThresholdsSynced(t) => {
+                self.settings.thresholds = t.clone();
+                true
+            }
+            AppEvent::RefreshMaskSynced(m) => {
+                self.settings.mask = m.clone();
+                true
+            }
             _ => false,
         }
     }

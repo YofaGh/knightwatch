@@ -3,6 +3,7 @@
 use clap::Parser;
 use std::error::Error;
 
+use kw_clients::ApiClient;
 use kw_types::{
     docker::DockerSortKey,
     process::{ProcessSignal, ProcessesSortKey},
@@ -161,6 +162,10 @@ enum Commands {
 
     /// Fetch system resources poll status
     SystemResourcesPollStatus,
+    /// Fetch system resources thresholds
+    SystemResourcesThresholds,
+    /// Fetch system resources refresh mask
+    SystemResourcesRefreshMask,
 
     // ── System resource commands ──────────────────────────────────────────
     /// Set alert thresholds
@@ -300,7 +305,7 @@ fn ok() {
     println!("OK");
 }
 
-async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), Box<dyn Error>> {
+async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Error>> {
     match command {
         // ── Common ────────────────────────────────────────────────────────
         Commands::Health => {
@@ -476,6 +481,12 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
         Commands::SystemResourcesPollStatus => {
             println!("screen capture poll status: {}", api.system_resources_poll_status().await?);
         }
+        Commands::SystemResourcesThresholds => {
+            print(&api.system_resources_thresholds().await?);
+        }
+        Commands::SystemResourcesRefreshMask => {
+            print(&api.system_resources_refresh_mask().await?);
+        }
 
         // ── System resource commands ──────────────────────────────────────
         Commands::SetThresholds {
@@ -629,7 +640,7 @@ async fn dispatch(command: Commands, api: &kw_clients::ApiClient) -> Result<(), 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
-    let api = kw_clients::ApiClient::new(&cli.url, cli.token);
+    let api = ApiClient::new(&cli.url, cli.token);
 
     if matches!(cli.command, Commands::Interactive) {
         interactive::run_interactive(api).await;

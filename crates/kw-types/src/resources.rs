@@ -553,7 +553,7 @@ impl fmt::Display for HostInfo {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Thresholds {
     pub cpu_warn: f32,
     pub memory_warn: f32,
@@ -573,7 +573,7 @@ impl Default for Thresholds {
 }
 
 /// Controls which subsystems are collected on each tick.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RefreshMask {
     pub cpu: bool,
     pub memory: bool,

@@ -510,6 +510,24 @@ impl ApiClient {
         self.get_typed("/resources/poll/status").await
     }
 
+    /// Fetches thresholds of system resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn system_resources_thresholds(&self) -> Result<kw_types::resources::Thresholds> {
+        self.get_typed("/resources/thresholds").await
+    }
+
+    /// Fetches refresh mask of system resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be deserialized.
+    pub async fn system_resources_refresh_mask(&self) -> Result<kw_types::resources::RefreshMask> {
+        self.get_typed("/resources/refresh-mask").await
+    }
+
     // ── System resource commands ──────────────────────────────────────
 
     /// Sets the warning/low thresholds for CPU, memory, disk, and battery.

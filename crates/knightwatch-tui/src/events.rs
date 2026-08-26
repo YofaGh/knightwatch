@@ -47,6 +47,12 @@ pub enum AppEvent {
     /// in place. Carries no data — the shared `PollControl` is already
     /// updated by the time this arrives; it only exists to trigger a redraw.
     PollStatusSynced { tab: &'static str },
+
+    /// A fresh thresholds snapshot for System Resources, from periodic sync.
+    ThresholdsSynced(kw_types::resources::Thresholds),
+
+    /// A fresh refresh-mask snapshot for System Resources, from periodic sync.
+    RefreshMaskSynced(kw_types::resources::RefreshMask),
 }
 
 /// Payload of a completed command. Most are `Ack`; a few endpoints return

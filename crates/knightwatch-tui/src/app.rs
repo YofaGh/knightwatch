@@ -100,6 +100,8 @@ impl App {
                 control.clone(),
             );
             pollers::spawn_system_alarms_poller(tx.clone(), api.clone());
+            pollers::spawn_system_resources_thresholds_poller(tx.clone(), api.clone());
+            pollers::spawn_system_resources_refresh_mask_poller(tx.clone(), api.clone());
             tabs.push(Box::new(tabs::SystemResourcesTab::new(
                 info.allow_system_resources_commands,
                 api.clone(),
@@ -236,6 +238,20 @@ impl App {
             AppEvent::AlarmSnapshot(snap) => {
                 self.alarms = Some(snap);
                 self.dirty = true;
+            }
+            AppEvent::ThresholdsSynced(_) => {
+                if let Some(tab) = self.get_tab_by_name("System Resources")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
+            }
+            AppEvent::RefreshMaskSynced(_) => {
+                if let Some(tab) = self.get_tab_by_name("System Resources")
+                    && tab.handle_app_event(&event)
+                {
+                    self.dirty = true;
+                }
             }
             AppEvent::DockerContainers(_) => {
                 if let Some(tab) = self.get_tab_by_name("Docker")
