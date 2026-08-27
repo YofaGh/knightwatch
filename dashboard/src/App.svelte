@@ -184,20 +184,21 @@
 
   // ── Init ──────────────────────────────────────────────────────────
   onMount(() => {
-    console.log("hey whatsup");
     const fromHash = (location.hash || "").replace("#", "");
     const initial = TAB_NAMES.includes(fromHash) ? fromHash : "screens";
     requestAnimationFrame(() => activateTab(initial));
-
-    loadInfo();
-    loadAlarms();
-    const alarmsInterval = setInterval(loadAlarms, 10000);
-
+    let alarmsInterval = null;
+    loadInfo().then(() => {
+      if (info?.system_resources) {
+        loadAlarms();
+        alarmsInterval = setInterval(loadAlarms, 10000);
+      }
+    });
     const onResize = () => topbar?.moveIndicator(activeTab);
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
-      clearInterval(alarmsInterval);
+      if (alarmsInterval) clearInterval(alarmsInterval);
     };
   });
 </script>
