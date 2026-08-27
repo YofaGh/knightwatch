@@ -228,7 +228,9 @@ impl App {
                     self.dirty = true;
                 }
             }
-            AppEvent::SystemSnapshot(_) => {
+            AppEvent::SystemSnapshot(_)
+            | AppEvent::ThresholdsSynced(_)
+            | AppEvent::RefreshMaskSynced(_) => {
                 if let Some(tab) = self.get_tab_by_name("System Resources")
                     && tab.handle_app_event(&event)
                 {
@@ -238,20 +240,6 @@ impl App {
             AppEvent::AlarmSnapshot(snap) => {
                 self.alarms = Some(snap);
                 self.dirty = true;
-            }
-            AppEvent::ThresholdsSynced(_) => {
-                if let Some(tab) = self.get_tab_by_name("System Resources")
-                    && tab.handle_app_event(&event)
-                {
-                    self.dirty = true;
-                }
-            }
-            AppEvent::RefreshMaskSynced(_) => {
-                if let Some(tab) = self.get_tab_by_name("System Resources")
-                    && tab.handle_app_event(&event)
-                {
-                    self.dirty = true;
-                }
             }
             AppEvent::DockerContainers(_) => {
                 if let Some(tab) = self.get_tab_by_name("Docker")

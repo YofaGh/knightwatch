@@ -305,6 +305,7 @@ fn ok() {
     println!("OK");
 }
 
+#[allow(clippy::too_many_lines)]
 async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Error>> {
     match command {
         // ── Common ────────────────────────────────────────────────────────

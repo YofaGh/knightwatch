@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use teloxide::{prelude::*, types::ParseMode};
 
 use super::super::{
@@ -20,8 +21,8 @@ pub async fn handle_system_resources(bot: Bot, msg: Message, state: State) -> Re
     );
     let thresholds = get_thresholds().await;
     let mask = get_refresh_mask().await;
-    message.push_str(&format!("\n\n⚠️ *Thresholds*\n{}", thresholds));
-    message.push_str(&format!("\n🔄 *Refresh Mask*: `{}`", mask));
+    let _ = write!(message, "\n\n⚠️ *Thresholds*\n{thresholds}");
+    let _ = write!(message, "\n🔄 *Refresh Mask*: `{mask}`");
     bot.send_message(msg.chat.id, message)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(system_resources_keyboard())

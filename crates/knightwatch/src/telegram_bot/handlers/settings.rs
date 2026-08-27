@@ -205,7 +205,7 @@ pub async fn handle_poll_interval_input(
     Ok(())
 }
 
-/// Fetches the current PollStatus for a given subsystem.
+/// Fetches the current poll status for a given subsystem.
 async fn get_poll_status(subsystem: &Subsystem) -> String {
     match subsystem {
         Subsystem::ProcessTracker => process_tracker::get_poll_status().await,
