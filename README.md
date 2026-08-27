@@ -22,6 +22,7 @@ companions `knightwatch-cli` and `knightwatch-tui` clients are also available fo
 - **Process Commands** — Kill, track, untrack processes and control polling via API or Telegram (requires `--allow-process-commands`)
 - **Linux Extended Telemetry** — Child process snapshots include working directory, command line, open file descriptors, and I/O stats
 - **System Resources Monitor** — Real-time hardware telemetry: CPU, memory, disks, network, battery, thermals, and aggregate health scoring
+- **Threshold Alarms** — Snapshot of active/inactive alarm state (and when it last fired) for CPU, memory, each disk, and battery, surfaced live in both the TUI and dashboard whenever System Resources is enabled
 - **System Resources Commands** — Set tresholds, refresh masks and control polling via API or Telegram (requires `--allow-system-resources-commands`)
 - **Systemd Monitor** — Live systemd unit tracking with active/failed/inactive counts, per-unit state, resource usage, and change events (Linux only)
 - **Systemd Commands** — control polling via API or Telegram (requires `--allow-systemd-commands`)
@@ -162,7 +163,7 @@ knightwatch --pid <PID> --allow-process-commands
 | `--allow-process-commands`          | `false`   | Enable process command endpoints (kill, track, untrack, poll control) — **always requires authentication**                  |
 | `--allow-screen-commands`           | `false`   | Enable screen command endpoints (poll control) — **always requires authentication**                                         |
 | `--allow-system-resources-commands` | `false`   | Enable system resources command endpoints (set tresholds, refresh masks, poll control) — **always requires authentication** |
-| `--allow-systemd-commands`          | `false`   | Enable systemd command endpoints (poll control) — **always requires authentication**                                        |
+| `--allow-systemd-commands`          | `false`   | Enable systemd command endpoints (control units, poll control) — **always requires authentication**                                        |
 | `--allow-docker-commands`           | `false`   | Enable docker command endpoints (manager containers, poll control) — **always requires authentication**                     |
 
 > **Note:** `allowing commands` always requires authentication regardless of the `--enable-auth` flag. The auth session endpoints are automatically enabled when this flag is set.
@@ -183,7 +184,7 @@ Full reference documentation is available in the [Wiki](https://github.com/YofaG
 
 - [API Reference](https://github.com/YofaGh/knightwatch/wiki/API-Reference) — All endpoints and response shapes
 - [Process Tracker](https://github.com/YofaGh/knightwatch/wiki/Process-Tracker) — Process tracking, commands, and events
-- [System Resources Monitor](https://github.com/YofaGh/knightwatch/wiki/System-Resources-Monitor) — Hardware telemetry and thresholds
+- [System Resources Monitor](https://github.com/YofaGh/knightwatch/wiki/System-Resources-Monitor) — Hardware telemetry, alarms and thresholds
 - [Systemd Monitor](https://github.com/YofaGh/knightwatch/wiki/Systemd-Monitor) — Unit tracking and events (Linux only)
 - [Docker Tracker](https://github.com/YofaGh/knightwatch/wiki/Docker-Tracker) — Docker containers tracking, commands and events
 - [Telegram Bot](https://github.com/YofaGh/knightwatch/wiki/Telegram-Bot) — Setup, commands, and notifications
