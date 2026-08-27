@@ -1,17 +1,32 @@
-use axum::response::sse::{Event, Sse};
+use axum::{
+    extract::Query,
+    response::sse::{Event, Sse},
+};
 use futures::stream::Stream;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
 
 use crate::{events::EventPayload, prelude::warn};
 
-fn make_sse_stream<F>(filter: F) -> Sse<impl Stream<Item = Result<Event, Infallible>>>
+#[derive(serde::Deserialize)]
+pub struct SseQuery {
+    #[serde(default)]
+    ticks: bool,
+}
+
+fn make_sse_stream<F>(
+    filter: F,
+    include_ticks: bool,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>>
 where
     F: Fn(&EventPayload) -> bool + Send + 'static,
 {
     let stream = tokio_stream::wrappers::BroadcastStream::new(super::subscribe()).filter_map(
         move |result| match result {
             Ok(payload) => {
+                if !include_ticks && payload.is_tick() {
+                    return None;
+                }
                 if !filter(&payload) {
                     return None;
                 }
@@ -33,22 +48,32 @@ where
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
-pub async fn sse_stream() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    make_sse_stream(|_| true)
+pub async fn sse_stream(
+    Query(q): Query<SseQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    make_sse_stream(|_| true, q.ticks)
 }
 
-pub async fn sse_stream_process() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    make_sse_stream(EventPayload::is_process_tracker)
+pub async fn sse_stream_process(
+    Query(q): Query<SseQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    make_sse_stream(EventPayload::is_process_tracker, q.ticks)
 }
 
-pub async fn sse_stream_system_resources() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    make_sse_stream(EventPayload::is_system_resources)
+pub async fn sse_stream_system_resources(
+    Query(q): Query<SseQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    make_sse_stream(EventPayload::is_system_resources, q.ticks)
 }
 
-pub async fn sse_stream_systemd() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    make_sse_stream(EventPayload::is_systemd)
+pub async fn sse_stream_systemd(
+    Query(q): Query<SseQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    make_sse_stream(EventPayload::is_systemd, q.ticks)
 }
 
-pub async fn sse_stream_docker() -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    make_sse_stream(EventPayload::is_docker_tracker)
+pub async fn sse_stream_docker(
+    Query(q): Query<SseQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    make_sse_stream(EventPayload::is_docker_tracker, q.ticks)
 }
