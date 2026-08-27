@@ -2582,7 +2582,7 @@ dependencies = [
 
 [[package]]
 name = "knightwatch-cli"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "base64",
  "clap",
@@ -2616,7 +2616,7 @@ dependencies = [
 
 [[package]]
 name = "kw-clients"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "kw-types",
  "reqwest 0.13.4",
