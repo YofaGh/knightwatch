@@ -12,3 +12,7 @@ pub fn config_file_path(file: &'static str) -> Option<PathBuf> {
 pub fn data_file_path(file: &'static str) -> Option<PathBuf> {
     project_dirs().map(|dir| dir.data_local_dir().join(file))
 }
+
+pub fn log_dir() -> Option<PathBuf> {
+    project_dirs().map(|dir| dir.data_local_dir().join("logs"))
+}

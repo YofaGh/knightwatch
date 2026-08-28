@@ -8,11 +8,11 @@ use super::{
     end_points::{
         alarms_snapshot, battery_snapshot, control_unit, cpu_snapshot, disks_snapshots,
         docker_pause_poll, docker_resume_poll, docker_set_poll_interval,
-        docker_tracker_poll_status, failed_units, get_docker_container, gpus_snapshots, health,
-        host_info_snapshot, info, is_process_done, kill_container, kill_process, kill_tree,
-        list_docker_containers, login, logout, memory_snapshot, networks_snapshot, pause_container,
-        process_children, process_root, process_status, process_tracker_pause_poll,
-        process_tracker_poll_status, process_tracker_resume_poll,
+        docker_tracker_poll_status, failed_units, get_docker_container, get_history,
+        gpus_snapshots, health, host_info_snapshot, info, is_process_done, kill_container,
+        kill_process, kill_tree, list_docker_containers, login, logout, memory_snapshot,
+        networks_snapshot, pause_container, process_children, process_root, process_status,
+        process_tracker_pause_poll, process_tracker_poll_status, process_tracker_resume_poll,
         process_tracker_set_poll_interval, process_tree, process_trees, refresh_mask,
         resources_pause_poll, resources_resume_poll, resources_set_poll_interval,
         resources_set_refresh_mask, resources_set_thresholds, restart_container, root_pids,
@@ -48,6 +48,8 @@ fn create_api_router(
     auth_layer: bool,
 ) -> Router {
     let mut api = Router::new()
+        // ────────────────────────────────────────────────────
+        .route("/history", get(get_history))
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
         .route("/screen/poll/status", get(screen_capture_poll_status)) // screen capture poll status

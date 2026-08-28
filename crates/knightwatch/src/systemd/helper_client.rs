@@ -12,7 +12,7 @@ use kw_types::{
     systemd_helper::{HelperRequest, HelperResponse},
 };
 
-use crate::prelude::*;
+use crate::{observability::telemetry, prelude::*};
 
 /// Client handle to the privileged `kw-systemd-helper` process.
 /// Lives for as long as the server does; owns the child process and cleans
@@ -50,7 +50,7 @@ impl SystemdHelperClient {
             &["pkexec", "sudo"]
         };
 
-        crate::telemetry::pause_logging();
+        telemetry::pause_logging();
         eprintln!("\n🔐 Waiting for authentication to enable systemd commands...");
 
         let saved_termios = Self::save_termios();
@@ -62,7 +62,7 @@ impl SystemdHelperClient {
             Self::restore_termios(term);
         }
 
-        crate::telemetry::resume_logging();
+        telemetry::resume_logging();
         result
     }
 

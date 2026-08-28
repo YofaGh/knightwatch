@@ -1,10 +1,9 @@
 use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 
-use super::WebhookTarget;
 use crate::{events::EventPayload, prelude::*, utils::recv_or_pending};
 
-pub async fn run_dispatcher(targets: Vec<WebhookTarget>, cancel_token: CancellationToken) {
+pub async fn run_dispatcher(targets: Vec<super::WebhookTarget>, cancel_token: CancellationToken) {
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
     let mut system_resources_rx = crate::system_resources::subscribe_events();
     let mut systemd_rx = crate::systemd::subscribe_events();

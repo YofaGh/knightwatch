@@ -4,6 +4,7 @@ mod docker_tracker;
 mod errors;
 mod events;
 mod macros;
+mod observability;
 mod prelude;
 mod process_tracker;
 mod screen_capture;
@@ -11,14 +12,13 @@ mod sse;
 mod system_resources;
 mod systemd;
 mod telegram_bot;
-mod telemetry;
 mod types;
 mod utils;
 mod webhook;
 
 #[tokio::main]
 async fn main() -> Result<(), errors::Error> {
-    telemetry::init_tracing()?;
+    observability::telemetry::init_tracing()?;
     let config = config::init_config()?;
     config::load_users()?;
     if let Some(action) = config.args.command.as_ref() {
@@ -31,10 +31,11 @@ async fn main() -> Result<(), errors::Error> {
     docker_tracker::init_docker_tracker();
     systemd::init_systemd_monitor();
     let cancel_token = tokio_util::sync::CancellationToken::new();
+    observability::history::init_event_tracer(cancel_token.clone());
     let vite = api::init_api_server(cancel_token.clone())?;
     webhook::init_webhook_dispatcher(cancel_token.clone());
     sse::init_sse_dispatcher(cancel_token.clone());
-    let telegram_bot = telegram_bot::init_bot(cancel_token.clone());
+    let tg_bot = telegram_bot::init_bot(cancel_token.clone());
     tokio::select! {
         () = cancel_token.cancelled() => {}
         _ = tokio::signal::ctrl_c() => {
@@ -46,7 +47,7 @@ async fn main() -> Result<(), errors::Error> {
     if let Some(vite) = vite {
         vite.stop();
     }
-    if let Some(bot) = telegram_bot {
+    if let Some(bot) = tg_bot {
         bot.shutdown().await;
     }
     Ok(())

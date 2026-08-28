@@ -19,6 +19,7 @@ use kw_types::{
 use super::utils::{bad_request, internal_server_error, not_found};
 use crate::{
     docker_tracker::{self, ContainerSnapshot},
+    observability::history,
     process_tracker::{self, ProcessSignal, ProcessSnapshot, ProcessTree},
     screen_capture,
     system_resources::{self, RefreshMask, Thresholds},
@@ -95,6 +96,15 @@ pub async fn logout(
             StatusCode::OK
         },
     )
+}
+
+pub async fn get_history(
+    Query(query): Query<history::HistoryQuery>,
+) -> Result<Json<Vec<history::StoredEvent>>, (StatusCode, String)> {
+    history::query_history(query)
+        .await
+        .map(Json)
+        .map_err(|err| internal_server_error(&err))
 }
 
 // ---------------------------------------------------------------------------
