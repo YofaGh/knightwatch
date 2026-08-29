@@ -17,18 +17,17 @@ companions `knightwatch-cli` and `knightwatch-tui` clients are also available fo
 - **REST API** — Axum-powered HTTP API for querying state and sending commands programmatically
 - **Server-Sent Events (SSE)** — Real-time event stream available at `/sse` via the Axum API server
 - **Live Screenshots** — Displays one or more connected screens, refreshed every 2 seconds
-- **Screen Commands** — control polling via API or Telegram (requires `--allow-screen-commands`)
 - **Process Monitor** — Tracks a root process and its children with real-time CPU, memory, and state indicators
-- **Process Commands** — Kill, track, untrack processes and control polling via API or Telegram (requires `--allow-process-commands`)
+- **Process Commands** — Kill, track, untrack processesm
 - **Linux Extended Telemetry** — Child process snapshots include working directory, command line, open file descriptors, and I/O stats
 - **System Resources Monitor** — Real-time hardware telemetry: CPU, memory, disks, network, battery, thermals, and aggregate health scoring
 - **Threshold Alarms** — Snapshot of active/inactive alarm state (and when it last fired) for CPU, memory, each disk, and battery, surfaced live in both the TUI and dashboard whenever System Resources is enabled
-- **System Resources Commands** — Set tresholds, refresh masks and control polling via API or Telegram (requires `--allow-system-resources-commands`)
+- **System Resources Commands** — Set tresholds, refresh masks
 - **Systemd Monitor** — Live systemd unit tracking with active/failed/inactive counts, per-unit state, resource usage, and change events (Linux only)
-- **Systemd Commands** — control polling via API or Telegram (requires `--allow-systemd-commands`)
+- **Systemd Commands** — control units
 - **Docker Containers Monitor** — Monitor docker containers and track their resource usages
-- **Docker Commands** — Manager Containers and control polling via API or Telegram (requires `--allow-docker-commands`)
-- **Telegram Bot** — Optional bot for remote monitoring, push notifications, and process commands
+- **Docker Commands** — Manager Containers
+- **Telegram Bot** — Optional bot for remote monitoring, push notifications, and run commands
 - **Webhook Dispatcher** — POST process and system events to one or more URLs with automatic retry
 
 ---
@@ -128,10 +127,10 @@ knightwatch --top-processes
 knightwatch --pid <PID> --system-resources --systemd
 
 # Enable Telegram bot
-knightwatch --pid <PID> --telegram
+knightwatch --telegram
 
 # Enable webhook dispatching
-knightwatch --pid <PID> --with-webhook --webhook https://example.com/hook
+knightwatch --webhook https://example.com/hook
 
 # Run headless (no screen capture)
 knightwatch --pid <PID> --blind
@@ -163,7 +162,7 @@ knightwatch --pid <PID> --allow-process-commands
 | `--allow-process-commands`          | `false`   | Enable process command endpoints (kill, track, untrack, poll control) — **always requires authentication**                  |
 | `--allow-screen-commands`           | `false`   | Enable screen command endpoints (poll control) — **always requires authentication**                                         |
 | `--allow-system-resources-commands` | `false`   | Enable system resources command endpoints (set tresholds, refresh masks, poll control) — **always requires authentication** |
-| `--allow-systemd-commands`          | `false`   | Enable systemd command endpoints (control units, poll control) — **always requires authentication**                                        |
+| `--allow-systemd-commands`          | `false`   | Enable systemd command endpoints (control units, poll control) — **always requires authentication**                         |
 | `--allow-docker-commands`           | `false`   | Enable docker command endpoints (manager containers, poll control) — **always requires authentication**                     |
 
 > **Note:** `allowing commands` always requires authentication regardless of the `--enable-auth` flag. The auth session endpoints are automatically enabled when this flag is set.
@@ -198,4 +197,4 @@ Full reference documentation is available in the [Wiki](https://github.com/YofaG
 
 ## License
 
-MIT
+Apache 2.0
