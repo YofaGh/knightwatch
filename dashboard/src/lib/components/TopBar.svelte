@@ -13,6 +13,7 @@
     showProcesses,
     showSystemd,
     showDocker,
+    showHistory = true,
     showLoginButton,
     shutdownDisabled,
     shutdownLabel,
@@ -178,6 +179,19 @@
       >
         <span class="tab-icon" aria-hidden="true">◉</span>
         <span class="tab-label">Docker</span>
+      </button>
+    {/if}
+
+    {#if showHistory}
+      <button
+        class="tab"
+        role="tab"
+        aria-selected={activeTab === "history"}
+        onclick={() => onactivatetab("history")}
+        bind:this={tabEls["history"]}
+      >
+        <span class="tab-icon" aria-hidden="true">▤</span>
+        <span class="tab-label">History</span>
       </button>
     {/if}
 

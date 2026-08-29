@@ -36,3 +36,47 @@ export function fmtTimestamp(ts) {
     return ts;
   }
 }
+
+// ── History helpers ──────────────────────────────────────────────────────
+
+/** Full local date + time, for history rows that can span multiple days. */
+export function fmtDateTime(ts) {
+  if (!ts) return "—";
+  try {
+    return new Date(ts).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
+
+/**
+ * RFC3339 timestamp -> value usable in <input type="datetime-local">,
+ * expressed in the browser's local time.
+ */
+export function isoToLocalInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * <input type="datetime-local"> value -> RFC3339 (UTC) string,
+ * or null if empty/invalid. Safe to compare lexically against the
+ * server's stored event timestamps.
+ */
+export function localInputToIso(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}

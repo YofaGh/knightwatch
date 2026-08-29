@@ -7,6 +7,7 @@
   import SystemdPane from "./lib/components/SystemdPane.svelte";
   import LoginPage from "./lib/components/LoginPage.svelte";
   import DockerPane from "./lib/components/DockerPane.svelte";
+  import HistoryPane from "./lib/components/HistoryPane.svelte";
   import TopBar from "./lib/components/TopBar.svelte";
   import { auth, apiFetch } from "./lib/api.js";
 
@@ -26,6 +27,7 @@
     processes: null,
     systemd: null,
     docker: null,
+    history: null,
     app: null, // for shutdown / app-level messages
   });
 
@@ -96,8 +98,16 @@
       info.allow_process_commands === true,
   );
   let showSystemd = $derived(!info || info.systemd !== false);
+  let historyAuthed = $derived(!info?.auth_enabled || !!$auth.token);
 
-  const TAB_NAMES = ["screens", "system", "processes", "systemd", "docker"];
+  const TAB_NAMES = [
+    "screens",
+    "system",
+    "processes",
+    "systemd",
+    "docker",
+    "history",
+  ];
 
   // ── TopBar ref (for indicator control) ────────────────────────────
   let topbar = $state(null);
@@ -313,6 +323,18 @@
           />
         </section>
       {/if}
+
+      <section
+        class="pane"
+        class:active={activeTab === "history"}
+        role="tabpanel"
+      >
+        <HistoryPane
+          active={activeTab === "history"}
+          isAuthenticated={historyAuthed}
+          onstatus={(label, error) => setPaneStatus("history", label, error)}
+        />
+      </section>
     {/if}
   </div>
 {/if}
