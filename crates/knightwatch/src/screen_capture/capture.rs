@@ -146,7 +146,7 @@ pub static SCREEN_CAPTURE_QUERY_SENDER: OnceLock<mpsc::Sender<ScreenCaptureQuery
 pub static SCREEN_CAPTURE_COMMAND_SENDER: OnceLock<mpsc::Sender<ScreenCaptureCommand>> =
     OnceLock::new();
 
-pub fn init_screen_capture() {
+pub fn start_screen_capture() {
     let config = get_config();
     if config.args.blind {
         return;

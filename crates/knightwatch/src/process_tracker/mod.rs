@@ -10,4 +10,4 @@ pub use kw_types::process::{
 
 pub use client::*;
 pub use event::ProcessTrackerEvent;
-pub use tracker::init_process_tracker;
+pub use tracker::{init_process_tracker, start_process_tracker};

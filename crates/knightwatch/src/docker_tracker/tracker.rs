@@ -2,7 +2,7 @@ use bollard::Docker;
 use futures::StreamExt;
 use std::{
     collections::{HashMap, HashSet},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
 };
 use tokio::sync::{broadcast, mpsc};
 
@@ -595,13 +595,11 @@ pub static DOCKER_TRACKER_EVENT_SENDER: OnceLock<broadcast::Sender<DockerTracker
 pub static DOCKER_TRACKER_COMMAND_SENDER: OnceLock<mpsc::Sender<DockerTrackerCommand>> =
     OnceLock::new();
 
-// ============================================================================
-// Init
-// ============================================================================
+static DOCKER_TRACKER: OnceLock<Mutex<Option<DockerTracker>>> = OnceLock::new();
 
 pub fn init_docker_tracker() {
     let config = get_config();
-    if !(config.args.docker) {
+    if !config.args.docker {
         return;
     }
     let docker = match Docker::connect_with_local_defaults() {
@@ -620,6 +618,17 @@ pub fn init_docker_tracker() {
     if config.args.allow_docker_commands {
         let _ = DOCKER_TRACKER_COMMAND_SENDER.set(tracker.channels.command_tx.clone());
     }
+    let _ = DOCKER_TRACKER.set(Mutex::new(Some(tracker)));
+}
+
+pub fn start_docker_tracker() {
+    let Some(tracker) = DOCKER_TRACKER
+        .get()
+        .and_then(|cell| cell.lock().ok())
+        .and_then(|mut guard| guard.take())
+    else {
+        return;
+    };
     tokio::spawn(async move {
         if let Err(e) = tracker.start_tracking_loop().await {
             error!(?e, "docker tracker loop exited with error");

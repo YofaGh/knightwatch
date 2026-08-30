@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
 };
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tokio::sync::{broadcast, mpsc};
@@ -524,6 +524,8 @@ pub static PROCESS_TRACKER_EVENT_SENDER: OnceLock<broadcast::Sender<ProcessTrack
 pub static PROCESS_TRACKER_COMMAND_SENDER: OnceLock<mpsc::Sender<ProcessTrackerCommand>> =
     OnceLock::new();
 
+static PROCESS_TRACKER: OnceLock<Mutex<Option<ProcessTracker>>> = OnceLock::new();
+
 pub fn init_process_tracker() {
     let config = get_config();
     if config.args.pid.is_empty()
@@ -538,6 +540,18 @@ pub fn init_process_tracker() {
     if config.args.allow_process_commands {
         let _ = PROCESS_TRACKER_COMMAND_SENDER.set(process_tracker.channels.command_tx.clone());
     }
+    let _ = PROCESS_TRACKER.set(Mutex::new(Some(process_tracker)));
+}
+
+pub fn start_process_tracker() {
+    let Some(process_tracker) = PROCESS_TRACKER
+        .get()
+        .and_then(|cell| cell.lock().ok())
+        .and_then(|mut guard| guard.take())
+    else {
+        return;
+    };
+    let config = get_config();
     tokio::spawn(async move {
         if let Err(e) = process_tracker.start_tracking_loop().await {
             error!(?e, "process tracker loop exited with error");

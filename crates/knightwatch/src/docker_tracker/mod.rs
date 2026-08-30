@@ -8,4 +8,4 @@ pub use kw_types::docker::{ContainerHealth, ContainerSnapshot, ContainerStatus, 
 
 pub use client::*;
 pub use event::DockerTrackerEvent;
-pub use tracker::init_docker_tracker;
+pub use tracker::{init_docker_tracker, start_docker_tracker};

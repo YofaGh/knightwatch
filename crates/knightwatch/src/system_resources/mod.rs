@@ -13,4 +13,4 @@ pub use kw_types::resources::{
 
 pub use client::*;
 pub use event::SystemResourcesEvent;
-pub use resources::init_system_resources;
+pub use resources::{init_system_resources, start_system_resources};

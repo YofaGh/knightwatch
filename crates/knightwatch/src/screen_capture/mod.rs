@@ -5,5 +5,5 @@ mod commands;
 mod screenshot;
 
 #[cfg(feature = "screenshot")]
-pub use capture::init_screen_capture;
+pub use capture::start_screen_capture;
 pub use client::*;

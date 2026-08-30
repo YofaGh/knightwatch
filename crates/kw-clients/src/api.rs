@@ -3,7 +3,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use kw_types::{
-    api::{ContainerRequest, ContainerTimeoutRequest, SetPollIntervalRequest},
+    api::{ContainerRequest, ContainerTimeoutRequest, LoginResponse, SetPollIntervalRequest},
     docker::ContainerSnapshot,
     polling::PollStatus,
     process::{ProcessSignal, ProcessSnapshot, ProcessTree},
@@ -134,12 +134,8 @@ impl ApiClient {
     ///
     /// Returns an error if the request fails, the server responds with a non-success status,
     /// or the response cannot be deserialized.
-    pub async fn login(
-        &self,
-        username: String,
-        password: String,
-    ) -> Result<kw_types::api::LoginResponse> {
-        let result: Result<kw_types::api::LoginResponse> = self
+    pub async fn login(&self, username: String, password: String) -> Result<LoginResponse> {
+        let result: Result<LoginResponse> = self
             .post_typed(
                 "/auth/login",
                 kw_types::api::LoginRequest { username, password },

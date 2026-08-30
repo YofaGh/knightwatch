@@ -1,5 +1,8 @@
 use nvml_wrapper::Nvml;
-use std::{collections::HashMap, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
 use sysinfo::{Components, CpuRefreshKind, Disks, Networks, System};
 use tokio::{
     sync::{broadcast, mpsc},
@@ -523,6 +526,8 @@ pub static SYSTEM_RESOURCES_EVENT_SENDER: OnceLock<broadcast::Sender<SystemResou
 pub static SYSTEM_RESOURCES_COMMAND_SENDER: OnceLock<mpsc::Sender<SystemResourcesCommand>> =
     OnceLock::new();
 
+static SYSTEM_RESOURCES: OnceLock<Mutex<Option<SystemResources>>> = OnceLock::new();
+
 pub fn init_system_resources() {
     let config = get_config();
     if !config.args.system_resources {
@@ -534,6 +539,17 @@ pub fn init_system_resources() {
     if config.args.allow_system_resources_commands {
         let _ = SYSTEM_RESOURCES_COMMAND_SENDER.set(resources.channels.command_tx.clone());
     }
+    let _ = SYSTEM_RESOURCES.set(Mutex::new(Some(resources)));
+}
+
+pub fn start_system_resources() {
+    let Some(resources) = SYSTEM_RESOURCES
+        .get()
+        .and_then(|cell| cell.lock().ok())
+        .and_then(|mut guard| guard.take())
+    else {
+        return;
+    };
     tokio::spawn(async move {
         if let Err(e) = Box::pin(resources.start_resource_loop()).await {
             error!(?e, "system resources loop exited with error");

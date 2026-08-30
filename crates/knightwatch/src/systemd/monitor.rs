@@ -451,3 +451,5 @@ impl SystemdMonitor {
 pub static SYSTEMD_QUERY_SENDER: OnceLock<mpsc::Sender<SystemdQuery>> = OnceLock::new();
 pub static SYSTEMD_EVENT_SENDER: OnceLock<broadcast::Sender<SystemdEvent>> = OnceLock::new();
 pub static SYSTEMD_COMMAND_SENDER: OnceLock<mpsc::Sender<SystemdCommand>> = OnceLock::new();
+
+pub static SYSTEMD_MONITOR: OnceLock<std::sync::Mutex<Option<SystemdMonitor>>> = OnceLock::new();
