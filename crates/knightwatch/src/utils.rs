@@ -12,8 +12,6 @@ pub fn start_dev_server() -> Option<std::process::Child> {
     match std::process::Command::new(npm)
         .args(["run", "dev"])
         .current_dir(concat!(env!("CARGO_WORKSPACE_DIR"), "/dashboard"))
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
         .spawn()
     {
         Ok(child) => Some(child),
