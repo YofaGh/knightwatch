@@ -6,21 +6,32 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     end_points::{
-        alarms_snapshot, battery_snapshot, control_unit, cpu_snapshot, disks_snapshots,
-        docker_pause_poll, docker_resume_poll, docker_set_poll_interval,
-        docker_tracker_poll_status, failed_units, get_docker_container, get_history,
-        gpus_snapshots, health, host_info_snapshot, info, is_process_done, kill_container,
-        kill_process, kill_tree, list_docker_containers, login, logout, memory_snapshot,
-        networks_snapshot, pause_container, process_children, process_root, process_status,
-        process_tracker_pause_poll, process_tracker_poll_status, process_tracker_resume_poll,
-        process_tracker_set_poll_interval, process_tree, process_trees, refresh_mask,
-        resources_pause_poll, resources_resume_poll, resources_set_poll_interval,
-        resources_set_refresh_mask, resources_set_thresholds, restart_container, root_pids,
-        screen_capture_poll_status, screenshot, shutdown, start_container, stop_container,
-        supported_signals, system_resources_poll_status, system_snapshot, systemd_pause_poll,
-        systemd_poll_status, systemd_resume_poll, systemd_set_poll_interval, systemd_snapshot,
-        temperatures_snapshots, thresholds, top_docker_containers, top_processes, track_pid,
-        unit_snapshot, units_by_active_state, unpause_container, untrack_pid,
+        common::{health, history, info, login, logout, shutdown},
+        docker::{
+            docker_pause_poll, docker_resume_poll, docker_set_poll_interval,
+            docker_tracker_poll_status, get_docker_container, kill_container,
+            list_docker_containers, pause_container, restart_container, start_container,
+            stop_container, top_docker_containers, unpause_container,
+        },
+        process::{
+            is_process_done, kill_process, kill_tree, process_children, process_root,
+            process_status, process_tracker_pause_poll, process_tracker_poll_status,
+            process_tracker_resume_poll, process_tracker_set_poll_interval, process_tree,
+            process_trees, root_pids, supported_signals, top_processes, track_pid, untrack_pid,
+        },
+        screen::{screen_capture_poll_status, screenshot},
+        system_resources::{
+            alarms_snapshot, battery_snapshot, cpu_snapshot, disks_snapshots, gpus_snapshots,
+            host_info_snapshot, memory_snapshot, networks_snapshot, refresh_mask,
+            resources_pause_poll, resources_resume_poll, resources_set_poll_interval,
+            resources_set_refresh_mask, resources_set_thresholds, system_resources_poll_status,
+            system_snapshot, temperatures_snapshots, thresholds,
+        },
+        systemd::{
+            control_unit, failed_units, systemd_pause_poll, systemd_poll_status,
+            systemd_resume_poll, systemd_set_poll_interval, systemd_snapshot, unit_snapshot,
+            units_by_active_state,
+        },
     },
     middleware::auth_middleware,
 };
@@ -49,7 +60,7 @@ fn create_api_router(
 ) -> Router {
     let mut api = Router::new()
         // ────────────────────────────────────────────────────
-        .route("/history", get(get_history))
+        .route("/history", get(history))
         // ── Screenshot ────────────────────────────────────────────────────
         .route("/screenshot", get(screenshot))
         .route("/screen/poll/status", get(screen_capture_poll_status)) // screen capture poll status
@@ -121,7 +132,7 @@ fn create_process_commands_router() -> Router {
 
 #[cfg(feature = "screenshot")]
 fn create_screen_commands_router() -> Router {
-    use super::end_points::{
+    use super::end_points::screen::{
         screen_capture_pause_poll, screen_capture_resume_poll, screen_capture_set_poll_interval,
     };
     Router::new()
