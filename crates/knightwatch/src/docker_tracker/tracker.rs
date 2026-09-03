@@ -12,8 +12,9 @@ use kw_types::{
 };
 
 use super::{
-    commands::{DockerTrackerChannels, DockerTrackerCommand, DockerTrackerQuery},
-    container::ContainerAction,
+    commands::{
+        DockerCommandAction, DockerTrackerChannels, DockerTrackerCommand, DockerTrackerQuery,
+    },
     event::DockerTrackerEvent,
 };
 use crate::prelude::*;
@@ -356,11 +357,13 @@ impl DockerTracker {
     async fn handle_command(&mut self, command: DockerTrackerCommand) {
         match command {
             DockerTrackerCommand::StopContainer {
+                user,
                 id_or_name,
                 timeout_secs,
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
+                let container_name = self.lookup_container_name(&id_or_name);
                 let opts = timeout_secs.map(|t| {
                     bollard::query_parameters::StopContainerOptionsBuilder::default()
                         .t(t)
@@ -371,16 +374,26 @@ impl DockerTracker {
                     .stop_container(&target, opts)
                     .await
                     .map_err(|err| Error::bollard_error(&err));
-                self.emit_action_event(&target, &id_or_name, ContainerAction::Stop, result.is_ok());
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::Stop {
+                        id_or_name,
+                        container_name,
+                        timeout_secs,
+                    },
+                    &result,
+                );
                 let _ = response.send(result);
             }
 
             DockerTrackerCommand::KillContainer {
+                user,
                 id_or_name,
                 signal,
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
+                let container_name = self.lookup_container_name(&id_or_name);
                 let opts = signal.as_deref().map(|s| {
                     bollard::query_parameters::KillContainerOptionsBuilder::default()
                         .signal(s)
@@ -391,35 +404,49 @@ impl DockerTracker {
                     .kill_container(&target, opts)
                     .await
                     .map_err(|err| Error::bollard_error(&err));
-                self.emit_action_event(&target, &id_or_name, ContainerAction::Kill, result.is_ok());
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::Kill {
+                        id_or_name,
+                        container_name,
+                        signal,
+                    },
+                    &result,
+                );
                 let _ = response.send(result);
             }
 
             DockerTrackerCommand::StartContainer {
+                user,
                 id_or_name,
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
+                let container_name = self.lookup_container_name(&id_or_name);
                 let result = self
                     .docker
                     .start_container(&target, None)
                     .await
                     .map_err(|err| Error::bollard_error(&err));
-                self.emit_action_event(
-                    &target,
-                    &id_or_name,
-                    ContainerAction::Start,
-                    result.is_ok(),
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::Start {
+                        id_or_name,
+                        container_name,
+                    },
+                    &result,
                 );
                 let _ = response.send(result);
             }
 
             DockerTrackerCommand::RestartContainer {
+                user,
                 id_or_name,
                 timeout_secs,
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
+                let container_name = self.lookup_container_name(&id_or_name);
                 let opts = timeout_secs.map(|t| {
                     bollard::query_parameters::RestartContainerOptionsBuilder::default()
                         .t(t)
@@ -430,72 +457,97 @@ impl DockerTracker {
                     .restart_container(&target, opts)
                     .await
                     .map_err(|err| Error::bollard_error(&err));
-                self.emit_action_event(
-                    &target,
-                    &id_or_name,
-                    ContainerAction::Restart,
-                    result.is_ok(),
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::Restart {
+                        id_or_name,
+                        container_name,
+                        timeout_secs,
+                    },
+                    &result,
                 );
                 let _ = response.send(result);
             }
 
             DockerTrackerCommand::PauseContainer {
+                user,
                 id_or_name,
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
+                let container_name = self.lookup_container_name(&id_or_name);
                 let result = self
                     .docker
                     .pause_container(&target)
                     .await
                     .map_err(|err| Error::bollard_error(&err));
-                self.emit_action_event(
-                    &target,
-                    &id_or_name,
-                    ContainerAction::Pause,
-                    result.is_ok(),
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::Pause {
+                        id_or_name,
+                        container_name,
+                    },
+                    &result,
                 );
                 let _ = response.send(result);
             }
 
             DockerTrackerCommand::UnpauseContainer {
+                user,
                 id_or_name,
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
+                let container_name = self.lookup_container_name(&id_or_name);
                 let result = self
                     .docker
                     .unpause_container(&target)
                     .await
                     .map_err(|err| Error::bollard_error(&err));
-                self.emit_action_event(
-                    &target,
-                    &id_or_name,
-                    ContainerAction::Unpause,
-                    result.is_ok(),
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::Unpause {
+                        id_or_name,
+                        container_name,
+                    },
+                    &result,
                 );
                 let _ = response.send(result);
             }
 
-            DockerTrackerCommand::SetPollInterval { interval, response } => {
+            DockerTrackerCommand::SetPollInterval {
+                user,
+                interval,
+                response,
+            } => {
                 self.poll.set_interval(interval);
                 info!(
                     ms = interval.as_millis(),
                     "docker tracker poll interval updated"
                 );
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    DockerCommandAction::SetPollInterval { interval },
+                    &result,
+                );
+                let _ = response.send(result);
             }
 
-            DockerTrackerCommand::PausePoll { response } => {
+            DockerTrackerCommand::PausePoll { user, response } => {
                 self.poll.pause();
                 info!("docker tracker polling paused");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, DockerCommandAction::PausePoll, &result);
+                let _ = response.send(result);
             }
 
-            DockerTrackerCommand::ResumePoll { response } => {
+            DockerTrackerCommand::ResumePoll { user, response } => {
                 self.poll.resume();
                 info!("docker tracker polling resumed");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, DockerCommandAction::ResumePoll, &result);
+                let _ = response.send(result);
             }
         }
     }
@@ -512,30 +564,48 @@ impl DockerTracker {
             .map_or_else(|| id_or_name.to_owned(), |c| c.id.clone())
     }
 
-    fn emit_action_event(
-        &self,
-        id: &str,
-        id_or_name: &str,
-        action: ContainerAction,
-        success: bool,
-    ) {
-        let name = self
-            .state
+    /// Looks up the current name of a container by id or name, if tracked.
+    fn lookup_container_name(&self, id_or_name: &str) -> Option<String> {
+        self.state
             .containers
-            .get(id)
-            .map_or_else(|| id_or_name.to_owned(), |c| c.name.clone());
-        let short_len = id.char_indices().nth(12).map_or(id.len(), |(idx, _)| idx);
-        let short = id.get(..short_len).unwrap_or(id);
+            .values()
+            .find(|c| c.id.starts_with(id_or_name) || c.name == id_or_name)
+            .map(|c| c.name.clone())
+    }
+
+    /// Emits a `CommandExecuted` event for any mutating command, container-scoped
+    /// or not — target info already lives on `action`.
+    fn emit_command_event(
+        &self,
+        user: DisplayUser,
+        action: DockerCommandAction,
+        result: &Result<()>,
+    ) {
+        let (success, error) = match result {
+            Ok(()) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        };
+
         if success {
-            info!(id = %short, name, action = %action, "container action succeeded");
+            info!(
+                %user,
+                action = %action,
+                "docker command executed"
+            );
         } else {
-            warn!(id = %short, name, action = %action, "container action failed");
+            warn!(
+                %user,
+                action = %action,
+                error,
+                "docker command failed"
+            );
         }
-        self.emit_event(DockerTrackerEvent::ContainerActionResult {
-            id: id.to_owned(),
-            name,
+
+        self.emit_event(DockerTrackerEvent::CommandExecuted {
+            user,
             action,
             success,
+            error,
         });
     }
 }

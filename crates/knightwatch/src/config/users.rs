@@ -12,6 +12,37 @@ pub struct User {
     pub telegram_chat_id: Option<i64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisplayUser {
+    pub username: String,
+    pub telegram_chat_id: Option<i64>,
+}
+
+impl From<&User> for DisplayUser {
+    fn from(user: &User) -> Self {
+        Self {
+            username: user.username.clone(),
+            telegram_chat_id: user.telegram_chat_id,
+        }
+    }
+}
+
+impl From<User> for DisplayUser {
+    fn from(user: User) -> Self {
+        Self::from(&user)
+    }
+}
+
+impl std::fmt::Display for DisplayUser {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "username: {}", self.username)?;
+        if let Some(chat_id) = self.telegram_chat_id {
+            write!(f, ", chat_id: {chat_id}")?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Users {
     pub users: Vec<User>,
@@ -31,6 +62,12 @@ impl Users {
 
     pub fn find_by_telegram_token_mut(&mut self, token: &str) -> Option<&mut User> {
         self.users.iter_mut().find(|u| u.telegram_token == token)
+    }
+
+    pub fn find_by_telegram_chat_id(&self, chat_id: i64) -> Option<&User> {
+        self.users
+            .iter()
+            .find(|u| u.telegram_chat_id == Some(chat_id))
     }
 
     pub fn get_telegram_chat_ids(&self) -> Vec<i64> {

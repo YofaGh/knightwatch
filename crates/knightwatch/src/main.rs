@@ -59,12 +59,12 @@ async fn main() -> Result<(), errors::Error> {
     }
     tracing::warn!("Shutting down...");
 
-    // wait for vite child process to be killed. its only some in dev mode 
+    // wait for vite child process to be killed. its only some in dev mode
     if let Some(vite) = vite {
         vite.stop();
     }
 
-    // wait for telegram bot to be shutdown. this uses teloxide's shutdown dispather
+    // wait for telegram bot to be shutdown. this uses teloxide's shutdown dispatcher
     if let Some(bot) = tg_bot {
         bot.shutdown().await;
     }

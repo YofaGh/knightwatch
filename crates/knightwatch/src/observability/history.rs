@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{path::Path, time::Duration};
-use tokio::io::AsyncWriteExt;
+use std::{io, path::Path, time::Duration};
+use tokio::{fs, io::AsyncWriteExt};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::log_dir,
@@ -42,16 +43,16 @@ fn log_file_name(date: &str) -> String {
     format!("knightwatch-events-{date}.log")
 }
 
-pub async fn log_event(dir: &Path, payload: &EventPayload) -> std::io::Result<()> {
+pub async fn log_event(dir: &Path, payload: &EventPayload) -> io::Result<()> {
     let stored: StoredEvent = payload.into();
 
     let mut line = serde_json::to_string(&stored)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     line.push('\n');
 
     let path = dir.join(log_file_name(date_part(&stored.timestamp)));
 
-    let mut file = tokio::fs::OpenOptions::new()
+    let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&path)
@@ -70,7 +71,7 @@ pub async fn prune_old_event_logs(dir: &Path) {
     };
     let cutoff = cutoff_dt.format("%Y-%m-%d").to_string();
 
-    let mut entries = match tokio::fs::read_dir(dir).await {
+    let mut entries = match fs::read_dir(dir).await {
         Ok(e) => e,
         Err(e) => {
             error!("webhook: failed to read event log directory: {}", e);
@@ -86,7 +87,7 @@ pub async fn prune_old_event_logs(dir: &Path) {
             continue;
         };
         if date.as_str() < cutoff.as_str()
-            && let Err(e) = tokio::fs::remove_file(entry.path()).await
+            && let Err(e) = fs::remove_file(entry.path()).await
         {
             error!("webhook: failed to prune {}: {}", name, e);
         }
@@ -126,7 +127,7 @@ impl HistoryQuery {
 
 pub async fn query_history(query: HistoryQuery) -> Result<Vec<StoredEvent>> {
     let dir = log_dir().ok_or_else(|| Error::Other("Failed to get logs directory".into()))?;
-    let mut files: Vec<(String, String)> = match tokio::fs::read_dir(&dir).await {
+    let mut files = match fs::read_dir(&dir).await {
         Ok(mut entries) => {
             let mut names = Vec::new();
             while let Ok(Some(entry)) = entries.next_entry().await {
@@ -138,7 +139,7 @@ pub async fn query_history(query: HistoryQuery) -> Result<Vec<StoredEvent>> {
             }
             names
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => {
             return Err(Error::Other(format!(
                 "Failed to read event log directory: {e}"
@@ -159,11 +160,11 @@ pub async fn query_history(query: HistoryQuery) -> Result<Vec<StoredEvent>> {
     if newest_first {
         files.reverse();
     }
-    let mut collected: Vec<StoredEvent> = Vec::new();
+    let mut collected = Vec::new();
     for (name, _) in &files {
-        let content = match tokio::fs::read_to_string(dir.join(name)).await {
+        let content = match fs::read_to_string(dir.join(name)).await {
             Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
             Err(e) => return Err(Error::Other(format!("Failed to read {name}: {e}"))),
         };
         let mut matches: Vec<StoredEvent> = content
@@ -194,7 +195,7 @@ pub async fn query_history(query: HistoryQuery) -> Result<Vec<StoredEvent>> {
     Ok(collected)
 }
 
-async fn event_tracer(cancel_token: tokio_util::sync::CancellationToken) {
+async fn event_tracer(cancel_token: CancellationToken) {
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
     let mut system_resources_rx = crate::system_resources::subscribe_events();
     let mut systemd_rx = crate::systemd::subscribe_events();
@@ -212,7 +213,7 @@ async fn event_tracer(cancel_token: tokio_util::sync::CancellationToken) {
         return;
     };
 
-    if let Err(e) = tokio::fs::create_dir_all(&log_path).await {
+    if let Err(e) = fs::create_dir_all(&log_path).await {
         error!("event tracer: failed to create event log directory: {}", e);
         return;
     }
@@ -255,6 +256,6 @@ async fn event_tracer(cancel_token: tokio_util::sync::CancellationToken) {
     }
 }
 
-pub fn init_event_tracer(cancel_token: tokio_util::sync::CancellationToken) {
+pub fn init_event_tracer(cancel_token: CancellationToken) {
     tokio::spawn(event_tracer(cancel_token));
 }

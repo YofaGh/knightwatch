@@ -1,4 +1,5 @@
 use axum::{
+    Extension,
     extract::{Path, Query},
     http::StatusCode,
     response::Json,
@@ -14,7 +15,10 @@ use kw_types::{
 };
 
 use super::super::utils::{internal_server_error, not_found};
-use crate::docker_tracker::{self, ContainerSnapshot};
+use crate::{
+    config::DisplayUser,
+    docker_tracker::{self, ContainerSnapshot},
+};
 
 /// `GET /docker-containers`
 ///
@@ -61,9 +65,10 @@ pub async fn docker_tracker_poll_status() -> Result<Json<PollStatus>, (StatusCod
 ///
 /// Stops a container by ID or name, with an optional timeout in seconds before killing it.
 pub async fn stop_container(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<ContainerTimeoutRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::stop_container(body.id_or_name, body.timeout_secs)
+    docker_tracker::stop_container(user, body.id_or_name, body.timeout_secs)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -73,9 +78,10 @@ pub async fn stop_container(
 ///
 /// Kills a container by ID or name, with a specified signal (e.g. "SIGKILL", "SIGTERM").
 pub async fn kill_container(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<KillContainerRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::kill_container(body.id_or_name, body.signal)
+    docker_tracker::kill_container(user, body.id_or_name, body.signal)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -85,9 +91,10 @@ pub async fn kill_container(
 ///
 /// Starts a container by ID or name.
 pub async fn start_container(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<ContainerRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::start_container(body.id_or_name)
+    docker_tracker::start_container(user, body.id_or_name)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -97,9 +104,10 @@ pub async fn start_container(
 ///
 /// Restarts a container by ID or name.
 pub async fn restart_container(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<ContainerTimeoutRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::restart_container(body.id_or_name, body.timeout_secs)
+    docker_tracker::restart_container(user, body.id_or_name, body.timeout_secs)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -109,9 +117,10 @@ pub async fn restart_container(
 ///
 /// Pauses a container by ID or name.
 pub async fn pause_container(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<ContainerRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::pause_container(body.id_or_name)
+    docker_tracker::pause_container(user, body.id_or_name)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -121,9 +130,10 @@ pub async fn pause_container(
 ///
 /// Unpauses a container by ID or name.
 pub async fn unpause_container(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<ContainerRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::unpause_container(body.id_or_name)
+    docker_tracker::unpause_container(user, body.id_or_name)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -132,8 +142,10 @@ pub async fn unpause_container(
 /// `POST /docker/poll/pause`
 ///
 /// Pauses the docker tracker polling loop.
-pub async fn docker_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::pause_poll()
+pub async fn docker_pause_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    docker_tracker::pause_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -142,8 +154,10 @@ pub async fn docker_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
 /// `POST /docker/poll/resume`
 ///
 /// Resumes the docker tracker polling loop.
-pub async fn docker_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::resume_poll()
+pub async fn docker_resume_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    docker_tracker::resume_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -153,9 +167,10 @@ pub async fn docker_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
 ///
 /// Sets the interval of the docker tracker polling loop in milliseconds.
 pub async fn docker_set_poll_interval(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    docker_tracker::set_poll_interval(Duration::from_millis(body.interval_ms))
+    docker_tracker::set_poll_interval(user, Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)

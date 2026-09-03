@@ -1,4 +1,4 @@
-use teloxide::prelude::*;
+use teloxide::{prelude::*, types::ParseMode};
 
 use super::{
     broadcast::event_notifier,
@@ -94,6 +94,15 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
     if !state.is_authorized_to_commmand(chat_id) {
         return send_auth_first_message(bot, chat_id).await;
     }
+    let Some(user) = state.get_user(chat_id) else {
+        bot.send_message(
+            chat_id,
+            "❌ Could not find your user session\\. Please try /start again\\.".to_string(),
+        )
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
+        return Ok(());
+    };
     let Some(data) = &q.data else { return Ok(()) };
     if let Some(action) = ProcessCallbackAction::decode(data) {
         return handle_process_callback(bot, q, chat_id, action).await;
@@ -105,7 +114,7 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
         return handle_systemd_callback(bot, chat_id, action).await;
     }
     if let Some(action) = DockerCallbackAction::decode(data) {
-        return handle_docker_callback(bot, chat_id, action).await;
+        return handle_docker_callback(bot, chat_id, action, user).await;
     }
     bot.send_message(chat_id, "❓ Unknown action\\.").await?;
     Ok(())

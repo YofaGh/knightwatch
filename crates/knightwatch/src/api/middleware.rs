@@ -1,11 +1,11 @@
 use axum::http::StatusCode;
 
 pub async fn auth_middleware(
-    request: axum::extract::Request,
+    mut request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<axum::response::Response, StatusCode> {
-    let Some(_) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
-        return Ok(next.run(request).await);
+    let Some(users) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
+        return Err(StatusCode::UNAUTHORIZED);
     };
     let token = request
         .headers()
@@ -15,13 +15,13 @@ pub async fn auth_middleware(
     let Some(token) = token else {
         return Err(StatusCode::UNAUTHORIZED);
     };
-    if super::session::get_sessions()
+    let user = super::session::get_sessions()
         .read()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .get(token)
-        .is_none()
-    {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
+        .and_then(|session| users.find(&session.username))
+        .map(crate::config::DisplayUser::from) // or .map(Into::into)
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    request.extensions_mut().insert(user);
     Ok(next.run(request).await)
 }

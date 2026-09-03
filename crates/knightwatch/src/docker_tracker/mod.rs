@@ -1,6 +1,5 @@
 mod client;
 mod commands;
-mod container;
 mod event;
 mod tracker;
 

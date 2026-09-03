@@ -294,6 +294,15 @@ async fn dispatch_polling_pause_resume(
     state: &State,
     text: &str,
 ) -> Result<bool> {
+    let Some(user) = state.get_user(msg.chat.id) else {
+        bot.send_message(
+            msg.chat.id,
+            "❌ Could not find your user session\\. Please try /start again\\.".to_string(),
+        )
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
+        return Ok(false);
+    };
     match text {
         "⏸️ Pause Process Tracker" => {
             handle_pause_polling(
@@ -301,6 +310,7 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::ProcessTracker,
+                user,
             )
             .await?;
         }
@@ -310,6 +320,7 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::ScreenCapture,
+                user,
             )
             .await?;
         }
@@ -319,12 +330,19 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::SystemResources,
+                user,
             )
             .await?;
         }
         "⏸️ Pause Systemd" => {
-            handle_pause_polling(bot.clone(), msg.clone(), state.clone(), Subsystem::Systemd)
-                .await?;
+            handle_pause_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::Systemd,
+                user,
+            )
+            .await?;
         }
         "⏸️ Pause Docker Tracker" => {
             handle_pause_polling(
@@ -332,6 +350,7 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::DockerTracker,
+                user,
             )
             .await?;
         }
@@ -341,6 +360,7 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::ProcessTracker,
+                user,
             )
             .await?;
         }
@@ -350,6 +370,7 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::ScreenCapture,
+                user,
             )
             .await?;
         }
@@ -359,12 +380,19 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::SystemResources,
+                user,
             )
             .await?;
         }
         "▶️ Resume Systemd" => {
-            handle_resume_polling(bot.clone(), msg.clone(), state.clone(), Subsystem::Systemd)
-                .await?;
+            handle_resume_polling(
+                bot.clone(),
+                msg.clone(),
+                state.clone(),
+                Subsystem::Systemd,
+                user,
+            )
+            .await?;
         }
         "▶️ Resume Docker Tracker" => {
             handle_resume_polling(
@@ -372,6 +400,7 @@ async fn dispatch_polling_pause_resume(
                 msg.clone(),
                 state.clone(),
                 Subsystem::DockerTracker,
+                user,
             )
             .await?;
         }

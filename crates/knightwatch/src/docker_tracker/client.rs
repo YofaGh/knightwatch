@@ -77,11 +77,16 @@ pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
-pub async fn stop_container(id_or_name: String, timeout_secs: Option<i32>) -> Result<()> {
+pub async fn stop_container(
+    user: DisplayUser,
+    id_or_name: String,
+    timeout_secs: Option<i32>,
+) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::StopContainer {
+            user,
             id_or_name,
             timeout_secs,
             response: tx,
@@ -91,11 +96,16 @@ pub async fn stop_container(id_or_name: String, timeout_secs: Option<i32>) -> Re
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
-pub async fn kill_container(id_or_name: String, signal: Option<String>) -> Result<()> {
+pub async fn kill_container(
+    user: DisplayUser,
+    id_or_name: String,
+    signal: Option<String>,
+) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::KillContainer {
+            user,
             id_or_name,
             signal,
             response: tx,
@@ -105,11 +115,12 @@ pub async fn kill_container(id_or_name: String, signal: Option<String>) -> Resul
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
-pub async fn start_container(id_or_name: String) -> Result<()> {
+pub async fn start_container(user: DisplayUser, id_or_name: String) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::StartContainer {
+            user,
             id_or_name,
             response: tx,
         })
@@ -118,11 +129,16 @@ pub async fn start_container(id_or_name: String) -> Result<()> {
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
-pub async fn restart_container(id_or_name: String, timeout_secs: Option<i32>) -> Result<()> {
+pub async fn restart_container(
+    user: DisplayUser,
+    id_or_name: String,
+    timeout_secs: Option<i32>,
+) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::RestartContainer {
+            user,
             id_or_name,
             timeout_secs,
             response: tx,
@@ -132,11 +148,12 @@ pub async fn restart_container(id_or_name: String, timeout_secs: Option<i32>) ->
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
-pub async fn pause_container(id_or_name: String) -> Result<()> {
+pub async fn pause_container(user: DisplayUser, id_or_name: String) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::PauseContainer {
+            user,
             id_or_name,
             response: tx,
         })
@@ -145,11 +162,12 @@ pub async fn pause_container(id_or_name: String) -> Result<()> {
 }
 
 /// Send a signal to a container. Returns `None` if the tracker is not running or if no container matches.
-pub async fn unpause_container(id_or_name: String) -> Result<()> {
+pub async fn unpause_container(user: DisplayUser, id_or_name: String) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::UnpauseContainer {
+            user,
             id_or_name,
             response: tx,
         })
@@ -158,11 +176,12 @@ pub async fn unpause_container(id_or_name: String) -> Result<()> {
 }
 
 /// Change the polling interval and restart the tick timer immediately.
-pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
+pub async fn set_poll_interval(user: DisplayUser, interval: std::time::Duration) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(DockerTrackerCommand::SetPollInterval {
+            user,
             interval,
             response: tx,
         })
@@ -172,21 +191,21 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
 
 /// Pause polling. The capture continues to handle queries and commands,
 /// but `handle_tick` will not fire until `resume_poll` is called.
-pub async fn pause_poll() -> Result<()> {
+pub async fn pause_poll(user: DisplayUser) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(DockerTrackerCommand::PausePoll { response: tx })
+        .send(DockerTrackerCommand::PausePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
-pub async fn resume_poll() -> Result<()> {
+pub async fn resume_poll(user: DisplayUser) -> Result<()> {
     let tx_ref = get_docker_tracker_command_sender().ok_or_else(Error::docker_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(DockerTrackerCommand::ResumePoll { response: tx })
+        .send(DockerTrackerCommand::ResumePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }

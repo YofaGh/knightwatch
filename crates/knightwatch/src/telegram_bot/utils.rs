@@ -240,26 +240,28 @@ pub fn format_docker_tracker_event(event: &DockerTrackerEvent) -> String {
             name = escape_mdv2(name),
             id = escape_mdv2(id),
         ),
-        DockerTrackerEvent::ContainerActionResult {
-            id,
-            name,
+        DockerTrackerEvent::CommandExecuted {
+            user,
             action,
             success,
+            error,
         } => {
+            let user_str = escape_mdv2(&format!("{user:?}"));
             let action_str = escape_mdv2(&action.to_string());
-            let name_str = escape_mdv2(name);
-            let id_str = escape_mdv2(id);
+
             if *success {
                 format!(
-                    "✅ *Container {action_str}* succeeded\n\
-                     ├ Name: `{name_str}`\n\
-                     └ ID: `{id_str}`"
+                    "⚙️ *Command Executed*\n\
+                     ├ User: `{user_str}`\n\
+                     └ Action: `{action_str}`"
                 )
             } else {
+                let err_str = escape_mdv2(error.as_deref().unwrap_or("unknown error"));
                 format!(
-                    "❌ *Container {action_str}* failed\n\
-                     ├ Name: `{name_str}`\n\
-                     └ ID: `{id_str}`"
+                    "⚠️ *Command Failed*\n\
+                     ├ User: `{user_str}`\n\
+                     ├ Action: `{action_str}`\n\
+                     └ Error: `{err_str}`"
                 )
             }
         }

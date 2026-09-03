@@ -97,10 +97,11 @@ pub async fn handle_docker_callback(
     bot: Bot,
     chat_id: ChatId,
     action: DockerCallbackAction,
+    user: DisplayUser,
 ) -> Result<()> {
     match action {
         DockerCallbackAction::Stop { ref id } => {
-            let reply = match docker_tracker::stop_container(id.clone(), None).await {
+            let reply = match docker_tracker::stop_container(user, id.clone(), None).await {
                 Ok(()) => format!("✅ Stop signal sent to `{}`\\.", escape_mdv2(id)),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -109,7 +110,7 @@ pub async fn handle_docker_callback(
                 .await?;
         }
         DockerCallbackAction::Start { ref id } => {
-            let reply = match docker_tracker::start_container(id.clone()).await {
+            let reply = match docker_tracker::start_container(user, id.clone()).await {
                 Ok(()) => format!("✅ Start signal sent to `{}`\\.", escape_mdv2(id)),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -118,7 +119,7 @@ pub async fn handle_docker_callback(
                 .await?;
         }
         DockerCallbackAction::Kill { ref id } => {
-            let reply = match docker_tracker::kill_container(id.clone(), None).await {
+            let reply = match docker_tracker::kill_container(user, id.clone(), None).await {
                 Ok(()) => format!("✅ Kill signal sent to `{}`\\.", escape_mdv2(id)),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -127,7 +128,7 @@ pub async fn handle_docker_callback(
                 .await?;
         }
         DockerCallbackAction::Restart { ref id } => {
-            let reply = match docker_tracker::restart_container(id.clone(), None).await {
+            let reply = match docker_tracker::restart_container(user, id.clone(), None).await {
                 Ok(()) => format!("✅ Restart signal sent to `{}`\\.", escape_mdv2(id)),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -136,7 +137,7 @@ pub async fn handle_docker_callback(
                 .await?;
         }
         DockerCallbackAction::Pause { ref id } => {
-            let reply = match docker_tracker::pause_container(id.clone()).await {
+            let reply = match docker_tracker::pause_container(user, id.clone()).await {
                 Ok(()) => format!("⏸️ Paused container `{}`\\.", escape_mdv2(id)),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -145,7 +146,7 @@ pub async fn handle_docker_callback(
                 .await?;
         }
         DockerCallbackAction::Unpause { ref id } => {
-            let reply = match docker_tracker::unpause_container(id.clone()).await {
+            let reply = match docker_tracker::unpause_container(user, id.clone()).await {
                 Ok(()) => format!("▶️ Unpaused container `{}`\\.", escape_mdv2(id)),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };

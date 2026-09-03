@@ -85,6 +85,7 @@ pub async fn handle_pause_polling(
     msg: Message,
     state: State,
     subsystem: Subsystem,
+    user: DisplayUser,
 ) -> Result<()> {
     if !state.is_authorized_to_commmand(msg.chat.id) {
         return send_auth_first_message(bot, msg.chat.id).await;
@@ -94,7 +95,7 @@ pub async fn handle_pause_polling(
         Subsystem::ScreenCapture => Box::pin(screen_capture::pause_poll()),
         Subsystem::SystemResources => Box::pin(system_resources::pause_poll()),
         Subsystem::Systemd => Box::pin(systemd::pause_poll()),
-        Subsystem::DockerTracker => Box::pin(docker_tracker::pause_poll()),
+        Subsystem::DockerTracker => Box::pin(docker_tracker::pause_poll(user)),
     })
     .await;
     bot.send_message(msg.chat.id, reply)
@@ -111,6 +112,7 @@ pub async fn handle_resume_polling(
     msg: Message,
     state: State,
     subsystem: Subsystem,
+    user: DisplayUser,
 ) -> Result<()> {
     if !state.is_authorized_to_commmand(msg.chat.id) {
         return send_auth_first_message(bot, msg.chat.id).await;
@@ -120,7 +122,7 @@ pub async fn handle_resume_polling(
         Subsystem::ScreenCapture => Box::pin(screen_capture::resume_poll()),
         Subsystem::SystemResources => Box::pin(system_resources::resume_poll()),
         Subsystem::Systemd => Box::pin(systemd::resume_poll()),
-        Subsystem::DockerTracker => Box::pin(docker_tracker::resume_poll()),
+        Subsystem::DockerTracker => Box::pin(docker_tracker::resume_poll(user)),
     })
     .await;
     bot.send_message(msg.chat.id, reply)
@@ -182,16 +184,31 @@ pub async fn handle_poll_interval_input(
         Ok(secs) if secs > 0 => {
             let interval = std::time::Duration::from_secs(secs);
             let label = escape_mdv2(subsystem.label());
-            let result = match &subsystem {
-                Subsystem::ProcessTracker => process_tracker::set_poll_interval(interval).await,
-                Subsystem::ScreenCapture => screen_capture::set_poll_interval(interval).await,
-                Subsystem::SystemResources => system_resources::set_poll_interval(interval).await,
-                Subsystem::Systemd => systemd::set_poll_interval(interval).await,
-                Subsystem::DockerTracker => docker_tracker::set_poll_interval(interval).await,
-            };
-            match result {
-                Ok(()) => format!("✅ *{label}* poll interval set to `{secs}s`\\."),
-                Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
+            match state.get_user(msg.chat.id) {
+                Some(user) => {
+                    let result = match &subsystem {
+                        Subsystem::ProcessTracker => {
+                            process_tracker::set_poll_interval(interval).await
+                        }
+                        Subsystem::ScreenCapture => {
+                            screen_capture::set_poll_interval(interval).await
+                        }
+                        Subsystem::SystemResources => {
+                            system_resources::set_poll_interval(interval).await
+                        }
+                        Subsystem::Systemd => systemd::set_poll_interval(interval).await,
+                        Subsystem::DockerTracker => {
+                            docker_tracker::set_poll_interval(user, interval).await
+                        }
+                    };
+                    match result {
+                        Ok(()) => format!("✅ *{label}* poll interval set to `{secs}s`\\."),
+                        Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
+                    }
+                }
+                None => {
+                    "❌ Could not find your user session\\. Please try /start again\\.".to_string()
+                }
             }
         }
         _ => "⚠️ Invalid input\\. Please enter a positive integer number of seconds\\.".to_string(),

@@ -30,12 +30,13 @@ pub enum DockerTrackerEvent {
     /// stream (`oom` action) rather than poll diffing.
     ContainerOomKilled { id: String, name: String },
 
-    /// A container action was performed via a `DockerTrackerCommand`.
-    ContainerActionResult {
-        id: String,
-        name: String,
-        action: super::container::ContainerAction,
+    /// A user issued a mutating command (container-targeted or poll-control),
+    /// along with whether it succeeded.
+    CommandExecuted {
+        user: crate::prelude::DisplayUser,
+        action: super::commands::DockerCommandAction,
         success: bool,
+        error: Option<String>,
     },
 }
 
@@ -96,18 +97,21 @@ impl From<&DockerTrackerEvent> for crate::events::EventPayload {
                     "name": name,
                 }),
             ),
-            DockerTrackerEvent::ContainerActionResult {
-                id,
-                name,
+            DockerTrackerEvent::CommandExecuted {
+                user,
                 action,
                 success,
+                error,
             } => (
-                "docker.container_action_result",
+                "docker.command_executed",
                 json!({
-                    "id": id,
-                    "name": name,
-                    "action": action,
+                    "user": format!("{user:?}"),
+                    "action": action.name(),
+                    "action_detail": format!("{action:?}"),
+                    "id_or_name": action.id_or_name(),
+                    "container_name": action.container_name(),
                     "success": success,
+                    "error": error,
                 }),
             ),
         };
