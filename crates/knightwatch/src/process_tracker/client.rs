@@ -152,12 +152,17 @@ pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
 ///
 /// Returns `Ok(true)` on success, `Ok(false)` if the OS rejected the signal,
 /// or `Err` if the PID was not found in the process list.
-pub async fn kill_process(pid: u32, signal: kw_types::process::ProcessSignal) -> Result<bool> {
+pub async fn kill_process(
+    user: DisplayUser,
+    pid: u32,
+    signal: kw_types::process::ProcessSignal,
+) -> Result<bool> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(ProcessTrackerCommand::KillProcess {
+            user,
             pid,
             signal,
             response: tx,
@@ -169,12 +174,13 @@ pub async fn kill_process(pid: u32, signal: kw_types::process::ProcessSignal) ->
 /// Kill a root process and every process in its descendant subtree (SIGKILL).
 ///
 /// Returns the list of PIDs that were successfully signalled.
-pub async fn kill_tree(root_pid: u32) -> Result<Vec<u32>> {
+pub async fn kill_tree(user: DisplayUser, root_pid: u32) -> Result<Vec<u32>> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(ProcessTrackerCommand::KillTree {
+            user,
             root_pid,
             response: tx,
         })
@@ -183,34 +189,43 @@ pub async fn kill_tree(root_pid: u32) -> Result<Vec<u32>> {
 }
 
 /// Begin tracking a new root PID. A no-op if already tracked.
-pub async fn track_pid(pid: u32) -> Result<()> {
+pub async fn track_pid(user: DisplayUser, pid: u32) -> Result<()> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(ProcessTrackerCommand::TrackPid { pid, response: tx })
+        .send(ProcessTrackerCommand::TrackPid {
+            user,
+            pid,
+            response: tx,
+        })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Stop tracking a root PID and discard its accumulated state.
-pub async fn untrack_pid(pid: u32) -> Result<()> {
+pub async fn untrack_pid(user: DisplayUser, pid: u32) -> Result<()> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(ProcessTrackerCommand::UntrackPid { pid, response: tx })
+        .send(ProcessTrackerCommand::UntrackPid {
+            user,
+            pid,
+            response: tx,
+        })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Change the polling interval and restart the tick timer immediately.
-pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
+pub async fn set_poll_interval(user: DisplayUser, interval: std::time::Duration) -> Result<()> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(ProcessTrackerCommand::SetPollInterval {
+            user,
             interval,
             response: tx,
         })
@@ -220,23 +235,23 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
 
 /// Pause polling. The tracker continues to handle queries and commands,
 /// but `handle_tick` will not fire until `resume_poll` is called.
-pub async fn pause_poll() -> Result<()> {
+pub async fn pause_poll(user: DisplayUser) -> Result<()> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(ProcessTrackerCommand::PausePoll { response: tx })
+        .send(ProcessTrackerCommand::PausePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
-pub async fn resume_poll() -> Result<()> {
+pub async fn resume_poll(user: DisplayUser) -> Result<()> {
     let tx_ref =
         get_process_tracker_command_sender().ok_or_else(Error::process_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(ProcessTrackerCommand::ResumePoll { response: tx })
+        .send(ProcessTrackerCommand::ResumePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }

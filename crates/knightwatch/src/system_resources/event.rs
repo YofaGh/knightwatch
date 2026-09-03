@@ -28,6 +28,14 @@ pub enum SystemResourcesEvent {
 
     /// Battery state changed (e.g. plugged in / unplugged).
     BatteryStateChanged { state: kw_types::resources::BatteryState },
+    /// A user issued a mutating command (action or poll-control),
+    /// along with whether it succeeded.
+    CommandExecuted {
+        user: crate::prelude::DisplayUser,
+        action: super::commands::SystemResourcesCommandAction,
+        success: bool,
+        error: Option<String>,
+    },
 }
 
 impl From<&SystemResourcesEvent> for crate::events::EventPayload {
@@ -72,6 +80,21 @@ impl From<&SystemResourcesEvent> for crate::events::EventPayload {
             SystemResourcesEvent::BatteryStateChanged { state } => {
                 ("resources.battery_state_changed", json!({ "state": state }))
             }
+            SystemResourcesEvent::CommandExecuted {
+                user,
+                action,
+                success,
+                error,
+            } => (
+                "resources.command_executed",
+                json!({
+                    "user": format!("{user:?}"),
+                    "action": action.name(),
+                    "action_detail": format!("{action:?}"),
+                    "success": success,
+                    "error": error,
+                }),
+            ),
         };
         Self::new(crate::events::EventSource::SystemResources, event_name, data)
     }

@@ -12,7 +12,7 @@ use kw_types::{
 use kw_utils::conv::{u64_to_u32_saturating, usize_to_u32_saturating};
 
 use super::{
-    commands::{SystemdCommand, SystemdMonitorChannels, SystemdQuery},
+    commands::{SystemdCommand, SystemdCommandAction, SystemdMonitorChannels, SystemdQuery},
     event::SystemdEvent,
     helper_client::SystemdHelperClient,
     proxies::{SystemdManagerProxy, SystemdServiceProxy, SystemdUnitProxy},
@@ -141,34 +141,58 @@ impl SystemdMonitor {
             // ----------------------------------------------------------------
             // Polling control.
             // ----------------------------------------------------------------
-            SystemdCommand::SetPollInterval { interval, response } => {
+            SystemdCommand::SetPollInterval {
+                user,
+                interval,
+                response,
+            } => {
                 self.poll.set_interval(interval);
                 info!(ms = interval.as_millis(), "systemd poll interval updated");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    SystemdCommandAction::SetPollInterval { interval },
+                    &result,
+                );
+                let _ = response.send(result);
             }
-            SystemdCommand::PausePoll { response } => {
+            SystemdCommand::PausePoll { user, response } => {
                 self.poll.pause();
                 info!("systemd polling paused");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, SystemdCommandAction::PausePoll, &result);
+                let _ = response.send(result);
             }
-            SystemdCommand::ResumePoll { response } => {
+            SystemdCommand::ResumePoll { user, response } => {
                 self.poll.resume();
                 info!("systemd polling resumed");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, SystemdCommandAction::ResumePoll, &result);
+                let _ = response.send(result);
             }
             SystemdCommand::Control {
+                user,
                 unit_name,
                 action,
                 response,
             } => {
                 let helper = self.helper.clone();
+                let event_tx = self.channels.event_tx.clone();
+
                 tokio::spawn(async move {
                     let result = match helper.get() {
-                        Some(h) => h.control(&unit_name, action).await,
+                        Some(h) => h.control(&unit_name, action.clone()).await,
                         None => Err(Error::Systemd(
                             "systemd command helper is not ready (auth pending, cancelled, or unavailable)".into(),
                         )),
                     };
+
+                    Self::emit_command_event_with_tx(
+                        &event_tx,
+                        user,
+                        SystemdCommandAction::Control { unit_name, action },
+                        &result,
+                    );
                     let _ = response.send(result);
                 });
             }
@@ -445,6 +469,50 @@ impl SystemdMonitor {
     /// `pkexec` resolves, without blocking the monitor loop while waiting.
     pub fn helper_handle(&self) -> Arc<OnceCell<SystemdHelperClient>> {
         self.helper.clone()
+    }
+
+    /// Emits a `CommandExecuted` event for any mutating command
+    fn emit_command_event(
+        &self,
+        user: DisplayUser,
+        action: SystemdCommandAction,
+        result: &Result<()>,
+    ) {
+        Self::emit_command_event_with_tx(&self.channels.event_tx, user, action, result);
+    }
+
+    fn emit_command_event_with_tx(
+        event_tx: &broadcast::Sender<SystemdEvent>,
+        user: DisplayUser,
+        action: SystemdCommandAction,
+        result: &Result<()>,
+    ) {
+        let (success, error) = match result {
+            Ok(()) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        };
+
+        if success {
+            info!(
+                %user,
+                action = %action,
+                "systemd command executed"
+            );
+        } else {
+            warn!(
+                %user,
+                action = %action,
+                error,
+                "systemd command failed"
+            );
+        }
+
+        let _ = event_tx.send(SystemdEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        });
     }
 }
 

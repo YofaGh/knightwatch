@@ -37,6 +37,14 @@ pub enum ProcessTrackerEvent {
         /// or if the process was not found.
         success: bool,
     },
+    /// A user issued a mutating command (process action or poll-control),
+    /// along with whether it succeeded.
+    CommandExecuted {
+        user: crate::prelude::DisplayUser,
+        action: super::commands::ProcessCommandAction,
+        success: bool,
+        error: Option<String>,
+    },
 }
 
 impl From<&ProcessTrackerEvent> for crate::events::EventPayload {
@@ -69,6 +77,21 @@ impl From<&ProcessTrackerEvent> for crate::events::EventPayload {
             ProcessTrackerEvent::ProcessKilled { pid, success } => (
                 "process.process_killed",
                 json!({ "pid": pid, "success": success }),
+            ),
+            ProcessTrackerEvent::CommandExecuted {
+                user,
+                action,
+                success,
+                error,
+            } => (
+                "process.command_executed",
+                json!({
+                    "user": format!("{user:?}"),
+                    "action": action.name(),
+                    "action_detail": format!("{action:?}"),
+                    "success": success,
+                    "error": error,
+                }),
             ),
         };
         Self::new(crate::events::EventSource::ProcessTracker, event_name, data)

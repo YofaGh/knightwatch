@@ -572,6 +572,16 @@ impl Default for Thresholds {
     }
 }
 
+impl std::fmt::Display for Thresholds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cpu_warn={:.1}%, memory_warn={:.1}%, disk_warn={:.1}%, battery_low={:.1}%",
+            self.cpu_warn, self.memory_warn, self.disk_warn, self.battery_low
+        )
+    }
+}
+
 /// Controls which subsystems are collected on each tick.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RefreshMask {
@@ -592,6 +602,36 @@ impl Default for RefreshMask {
             networks: true,
             temperatures: true,
             gpus: true,
+        }
+    }
+}
+
+impl std::fmt::Display for RefreshMask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut enabled = Vec::new();
+        if self.cpu {
+            enabled.push("cpu");
+        }
+        if self.memory {
+            enabled.push("memory");
+        }
+        if self.disks {
+            enabled.push("disks");
+        }
+        if self.networks {
+            enabled.push("networks");
+        }
+        if self.temperatures {
+            enabled.push("temperatures");
+        }
+        if self.gpus {
+            enabled.push("gpus");
+        }
+
+        if enabled.is_empty() {
+            write!(f, "none")
+        } else {
+            write!(f, "{}", enabled.join(", "))
         }
     }
 }

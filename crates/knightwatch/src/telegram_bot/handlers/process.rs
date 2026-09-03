@@ -83,10 +83,11 @@ pub async fn handle_process_callback(
     q: CallbackQuery,
     chat_id: ChatId,
     action: ProcessCallbackAction,
+    user: DisplayUser,
 ) -> Result<()> {
     match action {
         ProcessCallbackAction::Track { pid } => {
-            let reply = match process_tracker::track_pid(pid).await {
+            let reply = match process_tracker::track_pid(user, pid).await {
                 Ok(()) => format!("✅ Now tracking PID `{pid}`\\."),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -103,7 +104,7 @@ pub async fn handle_process_callback(
                 .await?;
         }
         ProcessCallbackAction::Untrack { pid } => {
-            let reply = match process_tracker::untrack_pid(pid).await {
+            let reply = match process_tracker::untrack_pid(user, pid).await {
                 Ok(()) => format!("✅ Untracked PID `{pid}`\\."),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -120,7 +121,7 @@ pub async fn handle_process_callback(
                 .await?;
         }
         ProcessCallbackAction::KillTree { pid } => {
-            let reply = match process_tracker::kill_tree(pid).await {
+            let reply = match process_tracker::kill_tree(user, pid).await {
                 Ok(killed) => {
                     let pids = killed
                         .iter()
@@ -136,7 +137,7 @@ pub async fn handle_process_callback(
                 .await?;
         }
         ProcessCallbackAction::Signal { pid, signal } => {
-            let reply = match process_tracker::kill_process(pid, signal).await {
+            let reply = match process_tracker::kill_process(user, pid, signal).await {
                 Ok(true) => format!("✅ Signal sent to PID `{pid}`\\."),
                 Ok(false) => format!("⚠️ OS rejected signal for PID `{pid}`\\."),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),

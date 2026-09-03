@@ -19,7 +19,10 @@ use kw_types::{
 use kw_utils::conv::u64_ratio_percent_f32;
 
 use super::{
-    commands::{SystemResourcesChannels, SystemResourcesCommand, SystemResourcesQuery},
+    commands::{
+        SystemResourcesChannels, SystemResourcesCommand, SystemResourcesCommandAction,
+        SystemResourcesQuery,
+    },
     event::SystemResourcesEvent,
     system::{StaticHostInfo, ThresholdAlarm},
 };
@@ -222,15 +225,26 @@ impl SystemResources {
     fn handle_command(&mut self, command: SystemResourcesCommand) {
         match command {
             SystemResourcesCommand::SetThresholds {
+                user,
                 thresholds,
                 response,
             } => {
-                self.thresholds = thresholds;
+                self.thresholds = thresholds.clone();
                 info!("thresholds updated");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    SystemResourcesCommandAction::SetThresholds { thresholds },
+                    &result,
+                );
+                let _ = response.send(result);
             }
-            SystemResourcesCommand::SetRefreshMask { mask, response } => {
-                self.refresh_mask = mask;
+            SystemResourcesCommand::SetRefreshMask {
+                user,
+                mask,
+                response,
+            } => {
+                self.refresh_mask = mask.clone();
                 info!(
                     cpu = self.refresh_mask.cpu,
                     memory = self.refresh_mask.memory,
@@ -240,25 +254,45 @@ impl SystemResources {
                     gpus = self.refresh_mask.gpus,
                     "refresh mask updated"
                 );
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    SystemResourcesCommandAction::SetRefreshMask { refresh_mask: mask },
+                    &result,
+                );
+                let _ = response.send(result);
             }
-            SystemResourcesCommand::SetPollInterval { interval, response } => {
+            SystemResourcesCommand::SetPollInterval {
+                user,
+                interval,
+                response,
+            } => {
                 self.poll.set_interval(interval);
                 info!(
                     ms = interval.as_millis(),
                     "system resources poll interval updated"
                 );
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    SystemResourcesCommandAction::SetPollInterval { interval },
+                    &result,
+                );
+                let _ = response.send(result);
             }
-            SystemResourcesCommand::PausePoll { response } => {
+            SystemResourcesCommand::PausePoll { user, response } => {
                 self.poll.pause();
                 info!("system resources polling paused");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, SystemResourcesCommandAction::PausePoll, &result);
+                let _ = response.send(result);
             }
-            SystemResourcesCommand::ResumePoll { response } => {
+            SystemResourcesCommand::ResumePoll { user, response } => {
                 self.poll.resume();
                 info!("system resources polling resumed");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, SystemResourcesCommandAction::ResumePoll, &result);
+                let _ = response.send(result);
             }
         }
     }
@@ -516,6 +550,41 @@ impl SystemResources {
             }
             false
         }
+    }
+
+    /// Emits a `CommandExecuted` event for any mutating command
+    fn emit_command_event(
+        &self,
+        user: DisplayUser,
+        action: SystemResourcesCommandAction,
+        result: &Result<()>,
+    ) {
+        let (success, error) = match result {
+            Ok(()) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        };
+
+        if success {
+            info!(
+                %user,
+                action = %action,
+                "system resources command executed"
+            );
+        } else {
+            warn!(
+                %user,
+                action = %action,
+                error,
+                "system resources command failed"
+            );
+        }
+
+        self.emit_event(SystemResourcesEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        });
     }
 }
 

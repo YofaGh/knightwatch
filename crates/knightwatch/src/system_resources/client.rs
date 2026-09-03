@@ -144,12 +144,13 @@ pub async fn get_refresh_mask() -> Option<RefreshMask> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Change the alert thresholds.
-pub async fn set_thresholds(thresholds: Thresholds) -> Result<()> {
+pub async fn set_thresholds(user: DisplayUser, thresholds: Thresholds) -> Result<()> {
     let tx_ref = get_system_resources_command_sender()
         .ok_or_else(Error::system_resources_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(SystemResourcesCommand::SetThresholds {
+            user,
             thresholds,
             response: tx,
         })
@@ -158,23 +159,28 @@ pub async fn set_thresholds(thresholds: Thresholds) -> Result<()> {
 }
 
 /// Change the refresh mask.
-pub async fn set_refresh_mask(mask: RefreshMask) -> Result<()> {
+pub async fn set_refresh_mask(user: DisplayUser, mask: RefreshMask) -> Result<()> {
     let tx_ref = get_system_resources_command_sender()
         .ok_or_else(Error::system_resources_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(SystemResourcesCommand::SetRefreshMask { mask, response: tx })
+        .send(SystemResourcesCommand::SetRefreshMask {
+            user,
+            mask,
+            response: tx,
+        })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Change the polling interval and restart the tick timer immediately.
-pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
+pub async fn set_poll_interval(user: DisplayUser, interval: std::time::Duration) -> Result<()> {
     let tx_ref = get_system_resources_command_sender()
         .ok_or_else(Error::system_resources_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(SystemResourcesCommand::SetPollInterval {
+            user,
             interval,
             response: tx,
         })
@@ -184,23 +190,23 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
 
 /// Pause polling. The system resources continues to handle queries and commands,
 /// but `handle_tick` will not fire until `resume_poll` is called.
-pub async fn pause_poll() -> Result<()> {
+pub async fn pause_poll(user: DisplayUser) -> Result<()> {
     let tx_ref = get_system_resources_command_sender()
         .ok_or_else(Error::system_resources_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(SystemResourcesCommand::PausePoll { response: tx })
+        .send(SystemResourcesCommand::PausePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
-pub async fn resume_poll() -> Result<()> {
+pub async fn resume_poll(user: DisplayUser) -> Result<()> {
     let tx_ref = get_system_resources_command_sender()
         .ok_or_else(Error::system_resources_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(SystemResourcesCommand::ResumePoll { response: tx })
+        .send(SystemResourcesCommand::ResumePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }

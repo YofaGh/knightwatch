@@ -99,11 +99,16 @@ pub async fn get_poll_status() -> Option<kw_types::polling::PollStatus> {
 // Mutating commands
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub async fn control_unit(unit_name: String, action: ServiceAction) -> Result<()> {
+pub async fn control_unit(
+    user: DisplayUser,
+    unit_name: String,
+    action: ServiceAction,
+) -> Result<()> {
     let tx_ref = get_systemd_command_sender().ok_or_else(Error::systemd_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(SystemdCommand::Control {
+            user,
             unit_name,
             action,
             response: tx,
@@ -113,11 +118,12 @@ pub async fn control_unit(unit_name: String, action: ServiceAction) -> Result<()
 }
 
 /// Change the polling interval and restart the tick timer immediately.
-pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
+pub async fn set_poll_interval(user: DisplayUser, interval: std::time::Duration) -> Result<()> {
     let tx_ref = get_systemd_command_sender().ok_or_else(Error::systemd_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
         .send(SystemdCommand::SetPollInterval {
+            user,
             interval,
             response: tx,
         })
@@ -127,21 +133,21 @@ pub async fn set_poll_interval(interval: std::time::Duration) -> Result<()> {
 
 /// Pause polling. The systemd continues to handle queries and commands,
 /// but `handle_tick` will not fire until `resume_poll` is called.
-pub async fn pause_poll() -> Result<()> {
+pub async fn pause_poll(user: DisplayUser) -> Result<()> {
     let tx_ref = get_systemd_command_sender().ok_or_else(Error::systemd_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(SystemdCommand::PausePoll { response: tx })
+        .send(SystemdCommand::PausePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }
 
 /// Resume polling at the current poll interval.
-pub async fn resume_poll() -> Result<()> {
+pub async fn resume_poll(user: DisplayUser) -> Result<()> {
     let tx_ref = get_systemd_command_sender().ok_or_else(Error::systemd_commands_disabled)?;
     let (tx, rx) = oneshot::channel();
     let _ = tx_ref
-        .send(SystemdCommand::ResumePoll { response: tx })
+        .send(SystemdCommand::ResumePoll { user, response: tx })
         .await;
     rx.await.map_err(|err| Error::channel_closed(&err))?
 }

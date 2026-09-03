@@ -73,28 +73,69 @@ pub enum SystemResourcesQuery {
 pub enum SystemResourcesCommand {
     /// Replace all alert thresholds at once.
     SetThresholds {
+        user: DisplayUser,
         thresholds: Thresholds,
         response: oneshot::Sender<Result<()>>,
     },
 
     /// Control which subsystems are refreshed each tick.
     SetRefreshMask {
+        user: DisplayUser,
         mask: RefreshMask,
         response: oneshot::Sender<Result<()>>,
     },
     /// Replace the polling interval and restart the tick timer immediately.
     SetPollInterval {
+        user: DisplayUser,
         interval: std::time::Duration,
         response: oneshot::Sender<Result<()>>,
     },
     /// Stop emitting ticks; the tracker keeps running and still handles queries/commands.
     PausePoll {
+        user: DisplayUser,
         response: oneshot::Sender<Result<()>>,
     },
     /// Resume ticking at the current poll interval.
     ResumePoll {
+        user: DisplayUser,
         response: oneshot::Sender<Result<()>>,
     },
+}
+
+/// Describes which mutating command was executed, with its parameters.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SystemResourcesCommandAction {
+    SetThresholds { thresholds: Thresholds },
+    SetRefreshMask { refresh_mask: RefreshMask },
+    SetPollInterval { interval: std::time::Duration },
+    PausePoll,
+    ResumePoll,
+}
+
+impl SystemResourcesCommandAction {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::SetThresholds { .. } => "set_thresholds",
+            Self::SetRefreshMask { .. } => "set_refresh_mask",
+            Self::SetPollInterval { .. } => "set_poll_interval",
+            Self::PausePoll => "pause_poll",
+            Self::ResumePoll => "resume_poll",
+        }
+    }
+}
+
+impl std::fmt::Display for SystemResourcesCommandAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::SetThresholds { thresholds } => write!(f, "{} {}", self.name(), thresholds),
+            Self::SetRefreshMask { refresh_mask } => write!(f, "{} {}", self.name(), refresh_mask),
+            Self::SetPollInterval { interval } => {
+                write!(f, "set poll interval to {}ms", interval.as_millis())
+            }
+            Self::PausePoll => write!(f, "pause polling"),
+            Self::ResumePoll => write!(f, "resume polling"),
+        }
+    }
 }
 
 pub struct SystemResourcesChannels {

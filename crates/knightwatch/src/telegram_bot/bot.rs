@@ -105,13 +105,13 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
     };
     let Some(data) = &q.data else { return Ok(()) };
     if let Some(action) = ProcessCallbackAction::decode(data) {
-        return handle_process_callback(bot, q, chat_id, action).await;
+        return handle_process_callback(bot, q, chat_id, action, user).await;
     }
     if let Some(action) = SystemResourcesCallbackAction::decode(data) {
-        return handle_system_resources_callback(bot, chat_id, action).await;
+        return handle_system_resources_callback(bot, chat_id, action, user).await;
     }
     if let Some(action) = SystemdCallbackAction::decode(data) {
-        return handle_systemd_callback(bot, chat_id, action).await;
+        return handle_systemd_callback(bot, chat_id, action, user).await;
     }
     if let Some(action) = DockerCallbackAction::decode(data) {
         return handle_docker_callback(bot, chat_id, action, user).await;

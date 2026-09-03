@@ -67,12 +67,13 @@ pub async fn handle_systemd_callback(
     bot: Bot,
     chat_id: ChatId,
     action: SystemdCallbackAction,
+    user: DisplayUser
 ) -> Result<()> {
     match action {
         SystemdCallbackAction::Control { unit_name, action } => {
             let action_str = escape_mdv2(action.as_str());
             let unit_str = escape_mdv2(&unit_name);
-            let reply = match systemd::control_unit(unit_name, action).await {
+            let reply = match systemd::control_unit(user, unit_name, action).await {
                 Ok(()) => format!("✅ `{unit_str}` — `{action_str}` sent\\."),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };

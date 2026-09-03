@@ -1,4 +1,4 @@
-use axum::{http::StatusCode, response::Json};
+use axum::{Extension, http::StatusCode, response::Json};
 use std::time::Duration;
 
 use kw_types::{
@@ -7,7 +7,10 @@ use kw_types::{
 };
 
 use super::super::utils::{internal_server_error, not_found};
-use crate::system_resources::{self, RefreshMask, Thresholds};
+use crate::{
+    config::DisplayUser,
+    system_resources::{self, RefreshMask, Thresholds},
+};
 
 /// `GET /system`
 ///
@@ -134,14 +137,18 @@ pub async fn refresh_mask() -> Result<Json<RefreshMask>, (StatusCode, String)> {
 ///
 /// Updates the alert thresholds for CPU, memory, disk, and battery.
 pub async fn resources_set_thresholds(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetThresholdsRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::set_thresholds(Thresholds {
-        cpu_warn: body.cpu_warn,
-        memory_warn: body.memory_warn,
-        disk_warn: body.disk_warn,
-        battery_low: body.battery_low,
-    })
+    system_resources::set_thresholds(
+        user,
+        Thresholds {
+            cpu_warn: body.cpu_warn,
+            memory_warn: body.memory_warn,
+            disk_warn: body.disk_warn,
+            battery_low: body.battery_low,
+        },
+    )
     .await
     .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -151,32 +158,40 @@ pub async fn resources_set_thresholds(
 ///
 /// Updates the refresh mask that controls which subsystems are collected on each tick.
 pub async fn resources_set_refresh_mask(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetRefreshMaskRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::set_refresh_mask(RefreshMask {
-        cpu: body.cpu,
-        memory: body.memory,
-        disks: body.disks,
-        networks: body.networks,
-        temperatures: body.temperatures,
-        gpus: body.gpus,
-    })
+    system_resources::set_refresh_mask(
+        user,
+        RefreshMask {
+            cpu: body.cpu,
+            memory: body.memory,
+            disks: body.disks,
+            networks: body.networks,
+            temperatures: body.temperatures,
+            gpus: body.gpus,
+        },
+    )
     .await
     .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /resources/poll/pause`
-pub async fn resources_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::pause_poll()
+pub async fn resources_pause_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    system_resources::pause_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /resources/poll/resume`
-pub async fn resources_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::resume_poll()
+pub async fn resources_resume_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    system_resources::resume_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -184,9 +199,10 @@ pub async fn resources_resume_poll() -> Result<StatusCode, (StatusCode, String)>
 
 /// `POST /resources/poll/interval`
 pub async fn resources_set_poll_interval(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    system_resources::set_poll_interval(Duration::from_millis(body.interval_ms))
+    system_resources::set_poll_interval(user, Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)

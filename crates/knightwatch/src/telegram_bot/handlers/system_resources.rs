@@ -49,10 +49,11 @@ pub async fn handle_system_resources_callback(
     bot: Bot,
     chat_id: ChatId,
     action: SystemResourcesCallbackAction,
+    user: DisplayUser,
 ) -> Result<()> {
     match action {
         SystemResourcesCallbackAction::SetThresholds(thresholds) => {
-            let reply = match system_resources::set_thresholds(thresholds).await {
+            let reply = match system_resources::set_thresholds(user, thresholds).await {
                 Ok(()) => "✅ Alert thresholds updated\\.".to_string(),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -61,7 +62,7 @@ pub async fn handle_system_resources_callback(
                 .await?;
         }
         SystemResourcesCallbackAction::SetRefreshMask(mask) => {
-            let reply = match system_resources::set_refresh_mask(mask).await {
+            let reply = match system_resources::set_refresh_mask(user, mask).await {
                 Ok(()) => "✅ Refresh mask updated\\.".to_string(),
                 Err(e) => format!("❌ Failed: `{}`", escape_mdv2(&e.to_string())),
             };
@@ -92,28 +93,5 @@ async fn get_refresh_mask() -> String {
     let Some(mask) = mask else {
         return "unavailable".to_string();
     };
-    let mut on = Vec::new();
-    if mask.cpu {
-        on.push("CPU");
-    }
-    if mask.memory {
-        on.push("Mem");
-    }
-    if mask.disks {
-        on.push("Disks");
-    }
-    if mask.networks {
-        on.push("Net");
-    }
-    if mask.temperatures {
-        on.push("Temp");
-    }
-    if mask.gpus {
-        on.push("GPU");
-    }
-    if on.is_empty() {
-        "none".to_string()
-    } else {
-        on.join(", ")
-    }
+    mask.to_string()
 }

@@ -21,6 +21,14 @@ pub enum SystemdEvent {
     UnitAppeared { unit: UnitSnapshot },
     /// A unit disappeared entirely (unloaded/transient gone)
     UnitDisappeared { unit_name: String },
+    /// A user issued a mutating command (action or poll-control),
+    /// along with whether it succeeded.
+    CommandExecuted {
+        user: crate::prelude::DisplayUser,
+        action: super::commands::SystemdCommandAction,
+        success: bool,
+        error: Option<String>,
+    },
 }
 
 impl From<&SystemdEvent> for crate::events::EventPayload {
@@ -71,6 +79,21 @@ impl From<&SystemdEvent> for crate::events::EventPayload {
             SystemdEvent::UnitDisappeared { unit_name } => (
                 "systemd.unit_disappeared",
                 json!({ "unit_name": unit_name }),
+            ),
+            SystemdEvent::CommandExecuted {
+                user,
+                action,
+                success,
+                error,
+            } => (
+                "systemd.command_executed",
+                json!({
+                    "user": format!("{user:?}"),
+                    "action": action.name(),
+                    "action_detail": format!("{action:?}"),
+                    "success": success,
+                    "error": error,
+                }),
             ),
         };
         Self::new(crate::events::EventSource::Systemd, event_name, data)

@@ -1,10 +1,13 @@
-use axum::{extract::Path, http::StatusCode, response::Json};
+use axum::{Extension, extract::Path, http::StatusCode, response::Json};
 use std::time::Duration;
 
 use kw_types::{api::SetPollIntervalRequest, polling::PollStatus};
 
 use super::super::utils::{internal_server_error, not_found};
-use crate::systemd::{self, UnitSnapshot};
+use crate::{
+    config::DisplayUser,
+    systemd::{self, UnitSnapshot},
+};
 
 /// `GET /systemd`
 ///
@@ -58,25 +61,30 @@ pub async fn systemd_poll_status() -> Result<Json<PollStatus>, (StatusCode, Stri
 ///
 /// Returns the result of control action.
 pub async fn control_unit(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<kw_types::api::ControlUnitParams>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    systemd::control_unit(body.unit_name, body.action)
+    systemd::control_unit(user, body.unit_name, body.action)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /systemd/poll/pause`
-pub async fn systemd_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
-    systemd::pause_poll()
+pub async fn systemd_pause_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    systemd::pause_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /systemd/poll/resume`
-pub async fn systemd_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
-    systemd::resume_poll()
+pub async fn systemd_resume_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    systemd::resume_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -84,9 +92,10 @@ pub async fn systemd_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
 
 /// `POST /systemd/poll/interval`
 pub async fn systemd_set_poll_interval(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    systemd::set_poll_interval(Duration::from_millis(body.interval_ms))
+    systemd::set_poll_interval(user, Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)

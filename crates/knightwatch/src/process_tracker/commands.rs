@@ -1,6 +1,7 @@
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use kw_types::process::{ProcessSnapshot, ProcessTree};
+use kw_types::process::{ProcessSignal, ProcessSnapshot, ProcessTree};
+
 use crate::prelude::*;
 
 #[derive(Debug)]
@@ -50,39 +51,88 @@ pub enum ProcessTrackerCommand {
     /// Responds with `Ok(true)` on success, `Ok(false)` if the signal was
     /// delivered but the OS reported failure, or `Err` if the PID was not found.
     KillProcess {
+        user: DisplayUser,
         pid: u32,
-        signal: kw_types::process::ProcessSignal,
+        signal: ProcessSignal,
         response: oneshot::Sender<Result<bool>>,
     },
     /// Kill a root process and every descendant in its subtree.
     /// Responds with the list of PIDs that were successfully signalled.
     KillTree {
+        user: DisplayUser,
         root_pid: u32,
         response: oneshot::Sender<Result<Vec<u32>>>,
     },
     /// Begin tracking a new root PID. A no-op if the PID is already tracked.
     TrackPid {
+        user: DisplayUser,
         pid: u32,
         response: oneshot::Sender<Result<()>>,
     },
     /// Stop tracking a root PID and discard its state.
     UntrackPid {
+        user: DisplayUser,
         pid: u32,
         response: oneshot::Sender<Result<()>>,
     },
     /// Replace the polling interval and restart the tick timer immediately.
     SetPollInterval {
+        user: DisplayUser,
         interval: std::time::Duration,
         response: oneshot::Sender<Result<()>>,
     },
     /// Stop emitting ticks; the tracker keeps running and still handles queries/commands.
     PausePoll {
+        user: DisplayUser,
         response: oneshot::Sender<Result<()>>,
     },
     /// Resume ticking at the current poll interval.
     ResumePoll {
+        user: DisplayUser,
         response: oneshot::Sender<Result<()>>,
     },
+}
+
+/// Describes which mutating command was executed, with its parameters.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ProcessCommandAction {
+    KillProcess { pid: u32, signal: ProcessSignal },
+    KillTree { root_pid: u32 },
+    TrackPid { pid: u32 },
+    UntrackPid { pid: u32 },
+    SetPollInterval { interval: std::time::Duration },
+    PausePoll,
+    ResumePoll,
+}
+
+impl ProcessCommandAction {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::KillProcess { .. } => "kill_process",
+            Self::KillTree { .. } => "kill_tree",
+            Self::TrackPid { .. } => "track_pid",
+            Self::UntrackPid { .. } => "untrack_pid",
+            Self::SetPollInterval { .. } => "set_poll_interval",
+            Self::PausePoll => "pause_poll",
+            Self::ResumePoll => "resume_poll",
+        }
+    }
+}
+
+impl std::fmt::Display for ProcessCommandAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::KillProcess { pid, signal } => write!(f, "singal {} process {}", signal, pid),
+            Self::KillTree { root_pid } => write!(f, "kill tree with root pid {}", root_pid),
+            Self::TrackPid { pid } => write!(f, "track process with pid {}", pid),
+            Self::UntrackPid { pid } => write!(f, "untrack process with pid {}", pid),
+            Self::SetPollInterval { interval } => {
+                write!(f, "set poll interval to {}ms", interval.as_millis())
+            }
+            Self::PausePoll => write!(f, "pause polling"),
+            Self::ResumePoll => write!(f, "resume polling"),
+        }
+    }
 }
 
 pub struct ProcessTrackerChannels {

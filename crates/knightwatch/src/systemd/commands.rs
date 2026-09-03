@@ -29,24 +29,68 @@ pub enum SystemdQuery {
 pub enum SystemdCommand {
     /// Replace the polling interval and restart the tick timer immediately.
     SetPollInterval {
+        user: DisplayUser,
         interval: std::time::Duration,
         response: oneshot::Sender<Result<()>>,
     },
     /// Stop emitting ticks; the systemd keeps running and still handles queries/commands.
     PausePoll {
+        user: DisplayUser,
         response: oneshot::Sender<Result<()>>,
     },
     /// Resume ticking at the current poll interval.
     ResumePoll {
+        user: DisplayUser,
         response: oneshot::Sender<Result<()>>,
     },
     /// Restart/start/stop/reload a unit. Requires the privileged helper —
     /// fails cleanly if it isn't ready or wasn't authorized.
     Control {
+        user: DisplayUser,
         unit_name: String,
         action: ServiceAction,
         response: oneshot::Sender<Result<()>>,
     },
+}
+
+/// Describes which mutating command was executed, with its parameters.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum SystemdCommandAction {
+    Control {
+        unit_name: String,
+        action: ServiceAction,
+    },
+    SetPollInterval {
+        interval: std::time::Duration,
+    },
+    PausePoll,
+    ResumePoll,
+}
+
+impl SystemdCommandAction {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Control { .. } => "control",
+            Self::SetPollInterval { .. } => "set_poll_interval",
+            Self::PausePoll => "pause_poll",
+            Self::ResumePoll => "resume_poll",
+        }
+    }
+}
+
+impl std::fmt::Display for SystemdCommandAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Control { unit_name, action } => {
+                write!(f, "{} on {}", unit_name, action.as_str())
+            }
+            Self::SetPollInterval { interval } => {
+                write!(f, "set poll interval to {}ms", interval.as_millis())
+            }
+            Self::PausePoll => write!(f, "pause polling"),
+            Self::ResumePoll => write!(f, "resume polling"),
+        }
+    }
 }
 
 pub struct SystemdMonitorChannels {

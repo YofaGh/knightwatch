@@ -70,6 +70,31 @@ pub fn format_process_tracker_event(event: &ProcessTrackerEvent) -> String {
                 format!("✅ *Failed to killed process*\nPID: `{pid}`")
             }
         }
+        ProcessTrackerEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        } => {
+            let user_str = escape_mdv2(&format!("{user:?}"));
+            let action_str = escape_mdv2(&action.to_string());
+
+            if *success {
+                format!(
+                    "⚙️ *Command Executed*\n\
+                     ├ User: `{user_str}`\n\
+                     └ Action: `{action_str}`"
+                )
+            } else {
+                let err_str = escape_mdv2(error.as_deref().unwrap_or("unknown error"));
+                format!(
+                    "⚠️ *Command Failed*\n\
+                     ├ User: `{user_str}`\n\
+                     ├ Action: `{action_str}`\n\
+                     └ Error: `{err_str}`"
+                )
+            }
+        }
     }
 }
 
@@ -126,6 +151,31 @@ pub fn format_system_resources_event(event: &SystemResourcesEvent) -> Option<Str
                 "{emoji} *Battery State Changed*\n└ State: `{label}`"
             ))
         }
+        SystemResourcesEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        } => {
+            let user_str = escape_mdv2(&format!("{user:?}"));
+            let action_str = escape_mdv2(&action.to_string());
+
+            if *success {
+                Some(format!(
+                    "⚙️ *Command Executed*\n\
+                     ├ User: `{user_str}`\n\
+                     └ Action: `{action_str}`"
+                ))
+            } else {
+                let err_str = escape_mdv2(error.as_deref().unwrap_or("unknown error"));
+                Some(format!(
+                    "⚠️ *Command Failed*\n\
+                     ├ User: `{user_str}`\n\
+                     ├ Action: `{action_str}`\n\
+                     └ Error: `{err_str}`"
+                ))
+            }
+        }
     }
 }
 
@@ -161,6 +211,31 @@ pub fn format_systemd_event(event: &SystemdEvent) -> Option<String> {
              └ Unit: `{unit}`",
             unit = escape_mdv2(unit_name),
         )),
+        SystemdEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        } => {
+            let user_str = escape_mdv2(&format!("{user:?}"));
+            let action_str = escape_mdv2(&action.to_string());
+
+            if *success {
+                Some(format!(
+                    "⚙️ *Command Executed*\n\
+                     ├ User: `{user_str}`\n\
+                     └ Action: `{action_str}`"
+                ))
+            } else {
+                let err_str = escape_mdv2(error.as_deref().unwrap_or("unknown error"));
+                Some(format!(
+                    "⚠️ *Command Failed*\n\
+                     ├ User: `{user_str}`\n\
+                     ├ Action: `{action_str}`\n\
+                     └ Error: `{err_str}`"
+                ))
+            }
+        }
     }
 }
 

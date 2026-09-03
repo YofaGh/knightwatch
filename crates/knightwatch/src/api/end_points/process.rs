@@ -1,4 +1,5 @@
 use axum::{
+    Extension,
     extract::{Path, Query},
     http::StatusCode,
     response::Json,
@@ -11,7 +12,10 @@ use kw_types::{
 };
 
 use super::super::utils::{bad_request, internal_server_error, not_found};
-use crate::process_tracker::{self, ProcessSignal, ProcessSnapshot, ProcessTree};
+use crate::{
+    config::DisplayUser,
+    process_tracker::{self, ProcessSignal, ProcessSnapshot, ProcessTree},
+};
 
 /// `GET /root_pids`
 ///
@@ -126,6 +130,7 @@ pub async fn process_tracker_poll_status() -> Result<Json<PollStatus>, (StatusCo
 
 /// `POST /process/kill/{pid}`
 pub async fn kill_process(
+    Extension(user): Extension<DisplayUser>,
     Path(pid): Path<u32>,
     body: Json<KillProcessRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -134,47 +139,60 @@ pub async fn kill_process(
             crate::errors::Error::unsupported_signal(body.signal).to_string(),
         ));
     }
-    process_tracker::kill_process(pid, body.signal)
+    process_tracker::kill_process(user, pid, body.signal)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /process/kill-tree/{root_pid}`
-pub async fn kill_tree(Path(root_pid): Path<u32>) -> Result<Json<Vec<u32>>, (StatusCode, String)> {
-    process_tracker::kill_tree(root_pid)
+pub async fn kill_tree(
+    Extension(user): Extension<DisplayUser>,
+    Path(root_pid): Path<u32>,
+) -> Result<Json<Vec<u32>>, (StatusCode, String)> {
+    process_tracker::kill_tree(user, root_pid)
         .await
         .map(Json)
         .map_err(|error| internal_server_error(&error))
 }
 
 /// `POST /process/track/{pid}`
-pub async fn track_pid(Path(pid): Path<u32>) -> Result<StatusCode, (StatusCode, String)> {
-    process_tracker::track_pid(pid)
+pub async fn track_pid(
+    Extension(user): Extension<DisplayUser>,
+    Path(pid): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    process_tracker::track_pid(user, pid)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /process/untrack/{pid}`
-pub async fn untrack_pid(Path(pid): Path<u32>) -> Result<StatusCode, (StatusCode, String)> {
-    process_tracker::untrack_pid(pid)
+pub async fn untrack_pid(
+    Extension(user): Extension<DisplayUser>,
+    Path(pid): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    process_tracker::untrack_pid(user, pid)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /process/poll/pause`
-pub async fn process_tracker_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
-    process_tracker::pause_poll()
+pub async fn process_tracker_pause_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    process_tracker::pause_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /process/poll/resume`
-pub async fn process_tracker_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
-    process_tracker::resume_poll()
+pub async fn process_tracker_resume_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    process_tracker::resume_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
@@ -182,9 +200,10 @@ pub async fn process_tracker_resume_poll() -> Result<StatusCode, (StatusCode, St
 
 /// `POST /process/poll/interval`
 pub async fn process_tracker_set_poll_interval(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    process_tracker::set_poll_interval(Duration::from_millis(body.interval_ms))
+    process_tracker::set_poll_interval(user, Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)

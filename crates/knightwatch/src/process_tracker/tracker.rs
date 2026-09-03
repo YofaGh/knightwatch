@@ -11,7 +11,9 @@ use kw_types::{
 };
 
 use super::{
-    commands::{ProcessTrackerChannels, ProcessTrackerCommand, ProcessTrackerQuery},
+    commands::{
+        ProcessCommandAction, ProcessTrackerChannels, ProcessTrackerCommand, ProcessTrackerQuery,
+    },
     event::ProcessTrackerEvent,
     process::RootProcess,
 };
@@ -171,14 +173,20 @@ impl ProcessTracker {
             // Kill a single process with the given signal.
             // ----------------------------------------------------------------
             ProcessTrackerCommand::KillProcess {
+                user,
                 pid,
                 signal,
                 response,
             } => {
+                let action = ProcessCommandAction::KillProcess { pid, signal };
+
                 let Some(sysinfo_signal) = signal.sysinfo_signal() else {
-                    let _ = response.send(Err(Error::unsupported_signal(signal)));
+                    let result = Err(Error::unsupported_signal(signal));
+                    self.emit_command_event(user, action, &result);
+                    let _ = response.send(result);
                     return;
                 };
+
                 let target = [Pid::from_u32(pid)];
                 self.sys.refresh_processes_specifics(
                     ProcessesToUpdate::Some(&target),
@@ -186,28 +194,24 @@ impl ProcessTracker {
                     ProcessRefreshKind::nothing(),
                 );
                 let result = self.sys.process(Pid::from_u32(pid)).map_or_else(
-                    || {
-                        warn!(pid, "kill_process: process not found");
-                        Err(Error::ProcessTracker(format!("Process {pid} not found")))
-                    },
+                    || Err(Error::ProcessTracker(format!("Process {pid} not found"))),
                     |process| {
                         let success = process.kill_with(sysinfo_signal).unwrap_or(false);
                         self.emit_event(ProcessTrackerEvent::ProcessKilled { pid, success });
-                        if success {
-                            info!(pid, signal = ?signal, "sent signal to process");
-                        } else {
-                            warn!(pid, signal = ?signal, "signal sent but OS reported failure");
-                        }
                         Ok(success)
                     },
                 );
+                self.emit_command_event(user, action, &result);
                 let _ = response.send(result);
             }
             // ----------------------------------------------------------------
             // Kill a root process and its entire descendant subtree.
             // ----------------------------------------------------------------
-            ProcessTrackerCommand::KillTree { root_pid, response } => {
-                // Refresh the full tree so collect_descendants sees current state.
+            ProcessTrackerCommand::KillTree {
+                user,
+                root_pid,
+                response,
+            } => {
                 self.sys.refresh_processes_specifics(
                     ProcessesToUpdate::All,
                     true,
@@ -220,7 +224,6 @@ impl ProcessTracker {
                     if let Some(proc) = self.sys.process(Pid::from_u32(snap.pid))
                         && proc.kill()
                     {
-                        info!(pid = snap.pid, root_pid, "killed descendant process");
                         killed.push(snap.pid);
                         self.emit_event(ProcessTrackerEvent::ProcessKilled {
                             pid: snap.pid,
@@ -231,51 +234,79 @@ impl ProcessTracker {
                 if let Some(proc) = self.sys.process(Pid::from_u32(root_pid))
                     && proc.kill()
                 {
-                    info!(pid = root_pid, "killed root process");
                     killed.push(root_pid);
                     self.emit_event(ProcessTrackerEvent::ProcessKilled {
                         pid: root_pid,
                         success: true,
                     });
                 }
-                let _ = response.send(Ok(killed));
+                let result = Ok(killed);
+                self.emit_command_event(user, ProcessCommandAction::KillTree { root_pid }, &result);
+                let _ = response.send(result);
             }
             // ----------------------------------------------------------------
             // Dynamically add / remove tracked root PIDs.
             // ----------------------------------------------------------------
-            ProcessTrackerCommand::TrackPid { pid, response } => {
+            ProcessTrackerCommand::TrackPid {
+                user,
+                pid,
+                response,
+            } => {
                 self.state
                     .root_processes
                     .entry(pid)
                     .or_insert_with(|| RootProcess::new(pid));
-                info!(pid, "now tracking pid");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, ProcessCommandAction::TrackPid { pid }, &result);
+                let _ = response.send(result);
             }
-            ProcessTrackerCommand::UntrackPid { pid, response } => {
+
+            ProcessTrackerCommand::UntrackPid {
+                user,
+                pid,
+                response,
+            } => {
                 self.state.root_processes.remove(&pid);
-                info!(pid, "stopped tracking pid");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, ProcessCommandAction::UntrackPid { pid }, &result);
+                let _ = response.send(result);
             }
             // ----------------------------------------------------------------
             // Polling control.
             // ----------------------------------------------------------------
-            ProcessTrackerCommand::SetPollInterval { interval, response } => {
+            ProcessTrackerCommand::SetPollInterval {
+                user,
+                interval,
+                response,
+            } => {
                 self.poll.set_interval(interval);
                 info!(
                     ms = interval.as_millis(),
                     "process tracker poll interval updated"
                 );
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    ProcessCommandAction::SetPollInterval { interval },
+                    &result,
+                );
+                let _ = response.send(result);
             }
-            ProcessTrackerCommand::PausePoll { response } => {
+
+            ProcessTrackerCommand::PausePoll { user, response } => {
                 self.poll.pause();
                 info!("process tracker polling paused");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, ProcessCommandAction::PausePoll, &result);
+                let _ = response.send(result);
             }
-            ProcessTrackerCommand::ResumePoll { response } => {
+
+            ProcessTrackerCommand::ResumePoll { user, response } => {
                 self.poll.resume();
                 info!("process tracker polling resumed");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, ProcessCommandAction::ResumePoll, &result);
+                let _ = response.send(result);
             }
         }
     }
@@ -514,6 +545,32 @@ impl ProcessTracker {
             }
         }
         result
+    }
+
+    /// Emits a `CommandExecuted` event for any mutating command.
+    fn emit_command_event<T>(
+        &self,
+        user: DisplayUser,
+        action: ProcessCommandAction,
+        result: &Result<T>,
+    ) {
+        let (success, error) = match result {
+            Ok(_) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        };
+
+        if success {
+            info!(%user, action = %action, "process command executed");
+        } else {
+            warn!(%user, action = %action, error, "process command failed");
+        }
+
+        self.emit_event(ProcessTrackerEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        });
     }
 }
 
