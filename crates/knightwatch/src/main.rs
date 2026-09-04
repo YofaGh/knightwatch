@@ -26,6 +26,8 @@ async fn main() -> Result<(), errors::Error> {
     }
 
     // initialize subsystems. this only sets up the channels mainly for interfaces to subscribe
+    #[cfg(feature = "screenshot")]
+    screen_capture::init_screen_capture();
     process_tracker::init_process_tracker();
     system_resources::init_system_resources();
     docker_tracker::init_docker_tracker();

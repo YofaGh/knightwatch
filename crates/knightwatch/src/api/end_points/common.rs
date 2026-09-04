@@ -43,7 +43,7 @@ pub async fn info() -> Json<InfoResponse> {
         systemd: args.systemd,
         docker: args.docker,
         allow_process_commands: args.allow_process_commands,
-        allow_screen_commands: args.allow_screen_commands,
+        allow_screen_commands: args.is_screen_commands_allowed(),
         allow_system_resources_commands: args.allow_system_resources_commands,
         allow_systemd_commands: args.allow_systemd_commands,
         allow_docker_commands: args.allow_docker_commands,

@@ -4,6 +4,7 @@ use super::display::TelegramDisplay;
 use crate::{
     docker_tracker::{ContainerHealth, ContainerStatus, DockerTrackerEvent},
     process_tracker::ProcessTrackerEvent,
+    screen_capture::ScreenCaptureEvent,
     system_resources::{BatteryState, SystemHealth, SystemResourcesEvent},
     systemd::{SystemdEvent, UnitActiveState},
 };
@@ -11,6 +12,36 @@ use crate::{
 const SPECIAL: &[char] = &[
     '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '\\',
 ];
+
+pub fn format_screen_capture_event(event: &ScreenCaptureEvent) -> String {
+    match event {
+        ScreenCaptureEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        } => {
+            let user_str = escape_mdv2(&format!("{user:?}"));
+            let action_str = escape_mdv2(&action.to_string());
+
+            if *success {
+                format!(
+                    "⚙️ *Command Executed*\n\
+                     ├ User: `{user_str}`\n\
+                     └ Action: `{action_str}`"
+                )
+            } else {
+                let err_str = escape_mdv2(error.as_deref().unwrap_or("unknown error"));
+                format!(
+                    "⚠️ *Command Failed*\n\
+                     ├ User: `{user_str}`\n\
+                     ├ Action: `{action_str}`\n\
+                     └ Error: `{err_str}`"
+                )
+            }
+        }
+    }
+}
 
 pub fn format_process_tracker_event(event: &ProcessTrackerEvent) -> String {
     match event {

@@ -1,4 +1,4 @@
-use axum::{http::StatusCode, response::Json};
+use axum::{Extension, http::StatusCode, response::Json};
 use std::time::Duration;
 
 use kw_types::{
@@ -7,7 +7,7 @@ use kw_types::{
 };
 
 use super::super::utils::{internal_server_error, not_found};
-use crate::screen_capture;
+use crate::{config::DisplayUser, screen_capture};
 
 pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, String)> {
     let images = screen_capture::get_screenshots().await;
@@ -35,29 +35,31 @@ pub async fn screen_capture_poll_status() -> Result<Json<PollStatus>, (StatusCod
 // ---------------------------------------------------------------------------
 
 /// `POST /screen/poll/pause`
-#[cfg(feature = "screenshot")]
-pub async fn screen_capture_pause_poll() -> Result<StatusCode, (StatusCode, String)> {
-    screen_capture::pause_poll()
+pub async fn screen_capture_pause_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    screen_capture::pause_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /screen/poll/resume`
-#[cfg(feature = "screenshot")]
-pub async fn screen_capture_resume_poll() -> Result<StatusCode, (StatusCode, String)> {
-    screen_capture::resume_poll()
+pub async fn screen_capture_resume_poll(
+    Extension(user): Extension<DisplayUser>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    screen_capture::resume_poll(user)
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
 }
 
 /// `POST /screen/poll/interval`
-#[cfg(feature = "screenshot")]
 pub async fn screen_capture_set_poll_interval(
+    Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    screen_capture::set_poll_interval(Duration::from_millis(body.interval_ms))
+    screen_capture::set_poll_interval(user, Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)

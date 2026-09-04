@@ -92,7 +92,7 @@ pub async fn handle_pause_polling(
     }
     let reply = dispatch_poll_op(&subsystem, "⏸️", "paused", |s| match s {
         Subsystem::ProcessTracker => Box::pin(process_tracker::pause_poll(user)),
-        Subsystem::ScreenCapture => Box::pin(screen_capture::pause_poll()),
+        Subsystem::ScreenCapture => Box::pin(screen_capture::pause_poll(user)),
         Subsystem::SystemResources => Box::pin(system_resources::pause_poll(user)),
         Subsystem::Systemd => Box::pin(systemd::pause_poll(user)),
         Subsystem::DockerTracker => Box::pin(docker_tracker::pause_poll(user)),
@@ -119,7 +119,7 @@ pub async fn handle_resume_polling(
     }
     let reply = dispatch_poll_op(&subsystem, "▶️", "resumed", |s| match s {
         Subsystem::ProcessTracker => Box::pin(process_tracker::resume_poll(user)),
-        Subsystem::ScreenCapture => Box::pin(screen_capture::resume_poll()),
+        Subsystem::ScreenCapture => Box::pin(screen_capture::resume_poll(user)),
         Subsystem::SystemResources => Box::pin(system_resources::resume_poll(user)),
         Subsystem::Systemd => Box::pin(systemd::resume_poll(user)),
         Subsystem::DockerTracker => Box::pin(docker_tracker::resume_poll(user)),
@@ -191,7 +191,7 @@ pub async fn handle_poll_interval_input(
                             process_tracker::set_poll_interval(user, interval).await
                         }
                         Subsystem::ScreenCapture => {
-                            screen_capture::set_poll_interval(interval).await
+                            screen_capture::set_poll_interval(user, interval).await
                         }
                         Subsystem::SystemResources => {
                             system_resources::set_poll_interval(user, interval).await

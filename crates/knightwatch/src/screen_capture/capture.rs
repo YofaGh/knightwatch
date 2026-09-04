@@ -1,11 +1,14 @@
-use std::sync::OnceLock;
-use tokio::sync::mpsc;
+use std::sync::{OnceLock, Mutex};
+use tokio::sync::{broadcast, mpsc};
 use xcap::Monitor;
 
 use kw_types::polling::Poll;
 
 use super::{
-    commands::{ScreenCaptureChannels, ScreenCaptureCommand, ScreenCaptureQuery},
+    commands::{
+        ScreenCaptureAction, ScreenCaptureChannels, ScreenCaptureCommand, ScreenCaptureQuery,
+    },
+    event::ScreenCaptureEvent,
     screenshot::Screenshot,
 };
 use crate::prelude::*;
@@ -23,6 +26,11 @@ impl ScreenCapture {
             channels: ScreenCaptureChannels::new(),
             poll: Poll::new(5),
         }
+    }
+
+    fn emit_event(&self, event: ScreenCaptureEvent) {
+        // Err means no subscribers — that's fine.
+        let _ = self.channels.event_tx.send(event);
     }
 
     async fn start_capturing_loop(mut self) -> Result<()> {
@@ -67,23 +75,37 @@ impl ScreenCapture {
             // ----------------------------------------------------------------
             // Polling control.
             // ----------------------------------------------------------------
-            ScreenCaptureCommand::SetPollInterval { interval, response } => {
+            ScreenCaptureCommand::SetPollInterval {
+                user,
+                interval,
+                response,
+            } => {
                 self.poll.set_interval(interval);
                 info!(
                     ms = interval.as_millis(),
                     "screen capture poll interval updated"
                 );
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(
+                    user,
+                    ScreenCaptureAction::SetPollInterval { interval },
+                    &result,
+                );
+                let _ = response.send(result);
             }
-            ScreenCaptureCommand::PausePoll { response } => {
+            ScreenCaptureCommand::PausePoll { user, response } => {
                 self.poll.pause();
                 info!("screen capture polling paused");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, ScreenCaptureAction::PausePoll, &result);
+                let _ = response.send(result);
             }
-            ScreenCaptureCommand::ResumePoll { response } => {
+            ScreenCaptureCommand::ResumePoll { user, response } => {
                 self.poll.resume();
                 info!("screen capture polling resumed");
-                let _ = response.send(Ok(()));
+                let result = Ok(());
+                self.emit_command_event(user, ScreenCaptureAction::ResumePoll, &result);
+                let _ = response.send(result);
             }
         }
     }
@@ -139,23 +161,75 @@ impl ScreenCapture {
             timestamp,
         })
     }
+
+    /// Emits a `CommandExecuted` event for any mutating command,
+    /// or any target info already lives on `action`.
+    fn emit_command_event(
+        &self,
+        user: DisplayUser,
+        action: ScreenCaptureAction,
+        result: &Result<()>,
+    ) {
+        let (success, error) = match result {
+            Ok(()) => (true, None),
+            Err(e) => (false, Some(e.to_string())),
+        };
+
+        if success {
+            info!(
+                %user,
+                action = %action,
+                "screen command executed"
+            );
+        } else {
+            warn!(
+                %user,
+                action = %action,
+                error,
+                "screen command failed"
+            );
+        }
+
+        self.emit_event(ScreenCaptureEvent::CommandExecuted {
+            user,
+            action,
+            success,
+            error,
+        });
+    }
 }
 
 pub static SCREEN_CAPTURE_QUERY_SENDER: OnceLock<mpsc::Sender<ScreenCaptureQuery>> =
     OnceLock::new();
+pub static SCREEN_CAPTURE_EVENT_SENDER: OnceLock<broadcast::Sender<ScreenCaptureEvent>> =
+    OnceLock::new();
 pub static SCREEN_CAPTURE_COMMAND_SENDER: OnceLock<mpsc::Sender<ScreenCaptureCommand>> =
     OnceLock::new();
 
-pub fn start_screen_capture() {
+static SCREEN_CAPTURE: OnceLock<Mutex<Option<ScreenCapture>>> = OnceLock::new();
+
+pub fn init_screen_capture() {
     let config = get_config();
     if config.args.blind {
         return;
     }
     let screen_capture = ScreenCapture::new();
     let _ = SCREEN_CAPTURE_QUERY_SENDER.set(screen_capture.channels.query_tx.clone());
+    let _ = SCREEN_CAPTURE_EVENT_SENDER.set(screen_capture.channels.event_tx.clone());
     if config.args.allow_screen_commands {
         let _ = SCREEN_CAPTURE_COMMAND_SENDER.set(screen_capture.channels.command_tx.clone());
     }
+    let _ = SCREEN_CAPTURE.set(Mutex::new(Some(screen_capture)));
+}
+
+pub fn start_screen_capture() {
+    let Some(screen_capture) = SCREEN_CAPTURE
+        .get()
+        .and_then(|cell| cell.lock().ok())
+        .and_then(|mut guard| guard.take())
+    else {
+        return;
+    };
     tokio::spawn(async move {
         if let Err(e) = screen_capture.start_capturing_loop().await {
             error!(?e, "screen capture loop exited with error");

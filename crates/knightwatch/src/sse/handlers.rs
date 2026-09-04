@@ -54,6 +54,12 @@ pub async fn sse_stream(
     make_sse_stream(|_| true, q.ticks)
 }
 
+pub async fn sse_stream_screen(
+    Query(q): Query<SseQuery>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    make_sse_stream(EventPayload::is_screen_capture, q.ticks)
+}
+
 pub async fn sse_stream_process(
     Query(q): Query<SseQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {

@@ -10,11 +10,13 @@ pub async fn event_notifier(
     state: State,
     cancel_token: tokio_util::sync::CancellationToken,
 ) {
+    let mut screen_capture_rx = crate::screen_capture::subscribe_events();
     let mut process_tracker_rx = crate::process_tracker::subscribe_events();
     let mut system_resources_rx = crate::system_resources::subscribe_events();
     let mut systemd_rx = crate::systemd::subscribe_events();
     let mut docker_tracker_rx = crate::docker_tracker::subscribe_events();
     if crate::all_none!(
+        screen_capture_rx,
         process_tracker_rx,
         system_resources_rx,
         systemd_rx,
@@ -31,6 +33,10 @@ pub async fn event_notifier(
             Some((chat_id, auth_state)) = chat_state_rx.recv() => {
                 state.set_chat_auth(chat_id, auth_state);
                 info!("Chat id registered or authenticated: {chat_id}");
+            }
+            event = recv_or_pending(&mut screen_capture_rx, "telegram: screen capture") => {
+                let message = super::utils::format_screen_capture_event(&event);
+                broadcast_message(&bot, &state, &message).await;
             }
             event = recv_or_pending(&mut process_tracker_rx, "telegram: process tracker") => {
                 let message = super::utils::format_process_tracker_event(&event);

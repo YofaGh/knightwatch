@@ -3,6 +3,7 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub enum EventSource {
+    ScreenCapture,
     ProcessTracker,
     SystemResources,
     Systemd,
@@ -28,6 +29,9 @@ impl EventPayload {
             timestamp: crate::utils::now_rfc3339(),
             data,
         }
+    }
+    pub fn is_screen_capture(&self) -> bool {
+        self.source == EventSource::ScreenCapture
     }
     pub fn is_process_tracker(&self) -> bool {
         self.source == EventSource::ProcessTracker

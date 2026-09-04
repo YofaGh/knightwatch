@@ -19,7 +19,10 @@ use super::{
             process_tracker_resume_poll, process_tracker_set_poll_interval, process_tree,
             process_trees, root_pids, supported_signals, top_processes, track_pid, untrack_pid,
         },
-        screen::{screen_capture_poll_status, screenshot},
+        screen::{
+            screen_capture_pause_poll, screen_capture_poll_status, screen_capture_resume_poll,
+            screen_capture_set_poll_interval, screenshot,
+        },
         system_resources::{
             alarms_snapshot, battery_snapshot, cpu_snapshot, disks_snapshots, gpus_snapshots,
             host_info_snapshot, memory_snapshot, networks_snapshot, refresh_mask,
@@ -37,8 +40,8 @@ use super::{
 };
 
 use crate::sse::handlers::{
-    sse_stream, sse_stream_docker, sse_stream_process, sse_stream_system_resources,
-    sse_stream_systemd,
+    sse_stream, sse_stream_docker, sse_stream_process, sse_stream_screen,
+    sse_stream_system_resources, sse_stream_systemd,
 };
 
 fn create_auth_router() -> Router {
@@ -102,6 +105,7 @@ fn create_api_router(
         .route("/docker/poll/status", get(docker_tracker_poll_status)) // docker tracker poll status
         // ── SSE ───────────────────────────────────────────────────────
         .route("/sse", get(sse_stream))
+        .route("/sse/screen-capture", get(sse_stream_screen))
         .route("/sse/process-tracker", get(sse_stream_process))
         .route("/sse/system-resources", get(sse_stream_system_resources))
         .route("/sse/systemd", get(sse_stream_systemd))
@@ -130,11 +134,7 @@ fn create_process_commands_router() -> Router {
         .layer(middleware::from_fn(auth_middleware))
 }
 
-#[cfg(feature = "screenshot")]
 fn create_screen_commands_router() -> Router {
-    use super::end_points::screen::{
-        screen_capture_pause_poll, screen_capture_resume_poll, screen_capture_set_poll_interval,
-    };
     Router::new()
         .route("/screen/poll/pause", post(screen_capture_pause_poll))
         .route("/screen/poll/resume", post(screen_capture_resume_poll))
@@ -184,13 +184,7 @@ fn create_docker_commands_router() -> Router {
 const fn should_enable_auth(config: &crate::config::AppConfig) -> bool {
     config.args.enable_auth
         || config.args.allow_process_commands
-        || {
-            #[cfg(feature = "screenshot")]
-            let screen_check = !config.args.blind && config.args.allow_screen_commands;
-            #[cfg(not(feature = "screenshot"))]
-            let screen_check = false;
-            screen_check
-        }
+        || (!config.args.is_blind() && config.args.is_screen_commands_allowed())
         || (config.args.system_resources && config.args.allow_system_resources_commands)
         || (config.args.systemd && config.args.allow_systemd_commands)
         || (config.args.docker && config.args.allow_docker_commands)
@@ -214,8 +208,7 @@ pub fn create_routers(
     if config.args.allow_process_commands {
         app = app.nest("/api", create_process_commands_router());
     }
-    #[cfg(feature = "screenshot")]
-    if !config.args.blind && config.args.allow_screen_commands {
+    if config.args.is_screen_commands_allowed() {
         app = app.nest("/api", create_screen_commands_router());
     }
     if config.args.allow_system_resources_commands {

@@ -1,3 +1,5 @@
+#![allow(clippy::unused_self)]
+
 use clap::Subcommand;
 
 #[allow(clippy::struct_excessive_bools)]
@@ -83,6 +85,7 @@ pub struct CliArgs {
     pub allow_process_commands: bool,
 
     /// Allow screen commands
+    #[cfg(feature = "screenshot")]
     #[arg(long, default_value_t = false)]
     pub allow_screen_commands: bool,
 
@@ -100,12 +103,18 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
-    #[allow(clippy::unused_self)]
     pub const fn is_blind(&self) -> bool {
         #[cfg(feature = "screenshot")]
         return self.blind;
         #[cfg(not(feature = "screenshot"))]
         return true;
+    }
+
+    pub const fn is_screen_commands_allowed(&self) -> bool {
+        #[cfg(feature = "screenshot")]
+        return self.allow_screen_commands;
+        #[cfg(not(feature = "screenshot"))]
+        return false;
     }
 }
 
