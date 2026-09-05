@@ -4,6 +4,7 @@ use serde_json::json;
 pub enum ScreenCaptureEvent {
     /// A user issued a mutating command (poll-control),
     /// along with whether it succeeded.
+    #[allow(dead_code)]
     CommandExecuted {
         user: crate::prelude::DisplayUser,
         action: super::commands::ScreenCaptureAction,

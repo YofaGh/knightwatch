@@ -106,7 +106,7 @@ pub enum ProcessCommandAction {
 }
 
 impl ProcessCommandAction {
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::KillProcess { .. } => "kill_process",
             Self::KillTree { .. } => "kill_tree",
@@ -122,10 +122,10 @@ impl ProcessCommandAction {
 impl std::fmt::Display for ProcessCommandAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::KillProcess { pid, signal } => write!(f, "singal {} process {}", signal, pid),
-            Self::KillTree { root_pid } => write!(f, "kill tree with root pid {}", root_pid),
-            Self::TrackPid { pid } => write!(f, "track process with pid {}", pid),
-            Self::UntrackPid { pid } => write!(f, "untrack process with pid {}", pid),
+            Self::KillProcess { pid, signal } => write!(f, "singal {signal} process {pid}"),
+            Self::KillTree { root_pid } => write!(f, "kill tree with root pid {root_pid}"),
+            Self::TrackPid { pid } => write!(f, "track process with pid {pid}"),
+            Self::UntrackPid { pid } => write!(f, "untrack process with pid {pid}"),
             Self::SetPollInterval { interval } => {
                 write!(f, "set poll interval to {}ms", interval.as_millis())
             }

@@ -181,7 +181,7 @@ impl SystemdMonitor {
 
                 tokio::spawn(async move {
                     let result = match helper.get() {
-                        Some(h) => h.control(&unit_name, action.clone()).await,
+                        Some(h) => h.control(&unit_name, action).await,
                         None => Err(Error::Systemd(
                             "systemd command helper is not ready (auth pending, cancelled, or unavailable)".into(),
                         )),

@@ -137,7 +137,7 @@ impl State {
         self.get_chat_auth(chat_id) == AuthState::Authenticated
     }
 
-    pub fn get_user(&self, chat_id: ChatId) -> Option<DisplayUser> {
+    pub fn get_user(chat_id: ChatId) -> Option<DisplayUser> {
         get_users()
             .and_then(|users| users.find_by_telegram_chat_id(chat_id.0).cloned())
             .map(Into::into)

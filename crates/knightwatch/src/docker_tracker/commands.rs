@@ -141,7 +141,7 @@ pub enum DockerCommandAction {
 }
 
 impl DockerCommandAction {
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::Stop { .. } => "stop",
             Self::Kill { .. } => "kill",
@@ -184,7 +184,7 @@ impl DockerCommandAction {
 
 impl std::fmt::Display for DockerCommandAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn target(id_or_name: &str, container_name: &Option<String>) -> String {
+        fn target(id_or_name: &str, container_name: Option<&String>) -> String {
             match container_name {
                 Some(name) if name != id_or_name => format!("{name} ({id_or_name})"),
                 _ => id_or_name.to_string(),
@@ -200,9 +200,9 @@ impl std::fmt::Display for DockerCommandAction {
                 Some(t) => write!(
                     f,
                     "stop {} (timeout {t}s)",
-                    target(id_or_name, container_name)
+                    target(id_or_name, container_name.as_ref())
                 ),
-                None => write!(f, "stop {}", target(id_or_name, container_name)),
+                None => write!(f, "stop {}", target(id_or_name, container_name.as_ref())),
             },
             Self::Kill {
                 id_or_name,
@@ -212,14 +212,14 @@ impl std::fmt::Display for DockerCommandAction {
                 Some(s) => write!(
                     f,
                     "kill {} (signal {s})",
-                    target(id_or_name, container_name)
+                    target(id_or_name, container_name.as_ref())
                 ),
-                None => write!(f, "kill {}", target(id_or_name, container_name)),
+                None => write!(f, "kill {}", target(id_or_name, container_name.as_ref())),
             },
             Self::Start {
                 id_or_name,
                 container_name,
-            } => write!(f, "start {}", target(id_or_name, container_name)),
+            } => write!(f, "start {}", target(id_or_name, container_name.as_ref())),
             Self::Restart {
                 id_or_name,
                 container_name,
@@ -228,18 +228,18 @@ impl std::fmt::Display for DockerCommandAction {
                 Some(t) => write!(
                     f,
                     "restart {} (timeout {t}s)",
-                    target(id_or_name, container_name)
+                    target(id_or_name, container_name.as_ref())
                 ),
-                None => write!(f, "restart {}", target(id_or_name, container_name)),
+                None => write!(f, "restart {}", target(id_or_name, container_name.as_ref())),
             },
             Self::Pause {
                 id_or_name,
                 container_name,
-            } => write!(f, "pause {}", target(id_or_name, container_name)),
+            } => write!(f, "pause {}", target(id_or_name, container_name.as_ref())),
             Self::Unpause {
                 id_or_name,
                 container_name,
-            } => write!(f, "unpause {}", target(id_or_name, container_name)),
+            } => write!(f, "unpause {}", target(id_or_name, container_name.as_ref())),
             Self::SetPollInterval { interval } => {
                 write!(f, "set poll interval to {}ms", interval.as_millis())
             }

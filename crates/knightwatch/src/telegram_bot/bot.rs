@@ -94,7 +94,7 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
     if !state.is_authorized_to_commmand(chat_id) {
         return send_auth_first_message(bot, chat_id).await;
     }
-    let Some(user) = state.get_user(chat_id) else {
+    let Some(user) = State::get_user(chat_id) else {
         bot.send_message(
             chat_id,
             "❌ Could not find your user session\\. Please try /start again\\.".to_string(),

@@ -54,7 +54,7 @@ pub enum SystemdCommand {
 }
 
 /// Describes which mutating command was executed, with its parameters.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SystemdCommandAction {
     Control {
         unit_name: String,
@@ -68,7 +68,7 @@ pub enum SystemdCommandAction {
 }
 
 impl SystemdCommandAction {
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::Control { .. } => "control",
             Self::SetPollInterval { .. } => "set_poll_interval",

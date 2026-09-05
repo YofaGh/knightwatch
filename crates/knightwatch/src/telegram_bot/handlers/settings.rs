@@ -184,7 +184,7 @@ pub async fn handle_poll_interval_input(
         Ok(secs) if secs > 0 => {
             let interval = std::time::Duration::from_secs(secs);
             let label = escape_mdv2(subsystem.label());
-            match state.get_user(msg.chat.id) {
+            match State::get_user(msg.chat.id) {
                 Some(user) => {
                     let result = match &subsystem {
                         Subsystem::ProcessTracker => {

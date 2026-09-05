@@ -294,7 +294,7 @@ async fn dispatch_polling_pause_resume(
     state: &State,
     text: &str,
 ) -> Result<bool> {
-    let Some(user) = state.get_user(msg.chat.id) else {
+    let Some(user) = State::get_user(msg.chat.id) else {
         bot.send_message(
             msg.chat.id,
             "❌ Could not find your user session\\. Please try /start again\\.".to_string(),

@@ -47,7 +47,7 @@ pub enum ScreenCaptureAction {
 }
 
 impl ScreenCaptureAction {
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::SetPollInterval { .. } => "set_poll_interval",
             Self::PausePoll => "pause_poll",

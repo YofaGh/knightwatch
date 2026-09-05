@@ -11,8 +11,9 @@ pub fn subscribe_events() -> Option<broadcast::Receiver<super::event::ScreenCapt
         .get()
         .map(tokio::sync::broadcast::Sender::subscribe)
 }
+
 #[cfg(not(feature = "screenshot"))]
-pub fn subscribe_events() -> Option<broadcast::Receiver<super::event::ScreenCaptureEvent>> {
+pub const fn subscribe_events() -> Option<broadcast::Receiver<super::event::ScreenCaptureEvent>> {
     None
 }
 

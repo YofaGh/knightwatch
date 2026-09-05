@@ -113,7 +113,7 @@ pub enum SystemResourcesCommandAction {
 }
 
 impl SystemResourcesCommandAction {
-    pub fn name(&self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::SetThresholds { .. } => "set_thresholds",
             Self::SetRefreshMask { .. } => "set_refresh_mask",
