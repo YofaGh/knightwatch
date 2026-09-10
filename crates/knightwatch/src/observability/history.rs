@@ -66,7 +66,7 @@ pub async fn prune_old_event_logs(dir: &Path) {
     let Some(cutoff_dt) =
         chrono::Utc::now().checked_sub_signed(chrono::Duration::days(RETENTION_DAYS))
     else {
-        error!("webhook: failed to compute log retention cutoff (overflow)");
+        error!("event tracer: failed to compute log retention cutoff (overflow)");
         return;
     };
     let cutoff = cutoff_dt.format("%Y-%m-%d").to_string();
@@ -74,7 +74,7 @@ pub async fn prune_old_event_logs(dir: &Path) {
     let mut entries = match fs::read_dir(dir).await {
         Ok(e) => e,
         Err(e) => {
-            error!("webhook: failed to read event log directory: {}", e);
+            error!("event tracer: failed to read event log directory: {}", e);
             return;
         }
     };
@@ -89,7 +89,7 @@ pub async fn prune_old_event_logs(dir: &Path) {
         if date.as_str() < cutoff.as_str()
             && let Err(e) = fs::remove_file(entry.path()).await
         {
-            error!("webhook: failed to prune {}: {}", name, e);
+            error!("event tracer: failed to prune {}: {}", name, e);
         }
     }
 }

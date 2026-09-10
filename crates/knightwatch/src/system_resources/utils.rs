@@ -1,10 +1,6 @@
-use sysinfo::System;
-
 use kw_types::resources::{
     BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, MemorySnapshot, SystemHealth,
 };
-
-use super::system::StaticHostInfo;
 
 pub fn derive_health(
     cpu: &CpuSnapshot,
@@ -31,13 +27,4 @@ pub fn derive_health(
         return SystemHealth::Warning;
     }
     SystemHealth::Healthy
-}
-
-pub fn get_static_host_info() -> StaticHostInfo {
-    StaticHostInfo {
-        hostname: System::host_name(),
-        os_name: System::long_os_version(),
-        kernel_version: System::kernel_version(),
-        cpu_arch: Some(System::cpu_arch()),
-    }
 }

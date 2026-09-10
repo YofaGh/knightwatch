@@ -1,3 +1,5 @@
+use sysinfo::System;
+
 use kw_types::resources::AlarmStatus;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -9,6 +11,17 @@ pub struct StaticHostInfo {
     pub kernel_version: Option<String>,
     /// CPU architecture, e.g. "`x86_64`", "aarch64".
     pub cpu_arch: Option<String>,
+}
+
+impl StaticHostInfo {
+    pub fn new() -> Self {
+        Self {
+            hostname: System::host_name(),
+            os_name: System::long_os_version(),
+            kernel_version: System::kernel_version(),
+            cpu_arch: Some(System::cpu_arch()),
+        }
+    }
 }
 
 #[derive(Default, Clone)]

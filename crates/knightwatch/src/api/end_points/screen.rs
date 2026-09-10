@@ -1,5 +1,4 @@
 use axum::{Extension, http::StatusCode, response::Json};
-use std::time::Duration;
 
 use kw_types::{
     api::{ScreenshotImage, ScreenshotResponse, SetPollIntervalRequest},
@@ -59,7 +58,7 @@ pub async fn screen_capture_set_poll_interval(
     Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    screen_capture::set_poll_interval(user, Duration::from_millis(body.interval_ms))
+    screen_capture::set_poll_interval(user, std::time::Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)

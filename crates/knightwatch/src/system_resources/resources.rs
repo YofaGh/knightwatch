@@ -108,7 +108,7 @@ impl SystemResources {
             poll: Poll::new(1),
             thresholds: Thresholds::default(),
             first_tick: true,
-            static_host_info: super::utils::get_static_host_info(),
+            static_host_info: StaticHostInfo::new(),
             refresh_mask: RefreshMask::default(),
             uptime_baseline: System::uptime(),
             uptime_started: std::time::Instant::now(),

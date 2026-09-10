@@ -1,5 +1,4 @@
 use axum::{Extension, extract::Path, http::StatusCode, response::Json};
-use std::time::Duration;
 
 use kw_types::{api::SetPollIntervalRequest, polling::PollStatus};
 
@@ -95,7 +94,7 @@ pub async fn systemd_set_poll_interval(
     Extension(user): Extension<DisplayUser>,
     Json(body): Json<SetPollIntervalRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    systemd::set_poll_interval(user, Duration::from_millis(body.interval_ms))
+    systemd::set_poll_interval(user, std::time::Duration::from_millis(body.interval_ms))
         .await
         .map_err(|error| internal_server_error(&error))?;
     Ok(StatusCode::OK)
