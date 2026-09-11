@@ -1,12 +1,12 @@
-[package]
+﻿[package]
 name = "knightwatch"
 version = "1.0.23"
 edition = "2024"
-authors = ["YofaGh"]
 description = "System Monitoring tool"
-homepage = "https://github.com/YofaGh/knightwatch"
-repository = "https://github.com/YofaGh/knightwatch"
-license = "MIT"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [package.metadata.wix]
 upgrade-guid = "C81EA21C-82A5-406E-9389-719E2E0B2150"

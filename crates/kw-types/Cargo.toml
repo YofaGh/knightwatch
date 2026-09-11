@@ -2,6 +2,10 @@
 name = "kw-types"
 version = "1.0.22"
 edition = "2024"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [features]
 server = ["bollard", "nvml-wrapper", "procfs", "starship-battery", "sysinfo", "tokio"]

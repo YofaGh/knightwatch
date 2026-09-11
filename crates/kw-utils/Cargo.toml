@@ -2,6 +2,10 @@
 name = "kw-utils"
 version = "1.0.19"
 edition = "2024"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 num-traits = "0.2.19"

@@ -2,11 +2,11 @@
 name = "knightwatch-tui"
 version = "1.0.1"
 edition = "2024"
-authors = ["YofaGh"]
 description = "TUI client for Knightwatch"
-homepage = "https://github.com/YofaGh/knightwatch"
-repository = "https://github.com/YofaGh/knightwatch"
-license = "MIT"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "kwtui"

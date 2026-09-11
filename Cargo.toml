@@ -11,6 +11,12 @@ members = [
 default-members = ["crates/knightwatch"]
 resolver = "2"
 
+[workspace.package]
+authors = ["YofaGh"]
+homepage = "https://github.com/YofaGh/knightwatch"
+repository = "https://github.com/YofaGh/knightwatch"
+license = "Apache-2.0"
+
 [workspace.dependencies]
 base64 = "0.22.1"
 bollard = "0.21.0"

@@ -3,6 +3,10 @@ name = "kw-systemd-helper"
 version = "1.0.0"
 edition = "2024"
 publish = false
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "kw-systemd-helper"
