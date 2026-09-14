@@ -10,35 +10,31 @@ use super::{
 };
 use crate::prelude::*;
 
+pub type ClientId = uuid::Uuid;
+
+pub struct ClientConnection {
+    pub reader_shutdown_tx: oneshot::Sender<()>,
+    pub writer_shutdown_tx: oneshot::Sender<()>,
+    pub reader_handle: JoinHandle<ReadHalf<Transport>>,
+    pub writer_handle: JoinHandle<WriteHalf<Transport>>,
+    pub message_writer_tx: mpsc::Sender<CorrelatedSocketMessage>,
+}
+
 pub struct Client {
+    #[allow(unused)]
     id: ClientId,
     is_authenticated: bool,
     display_user: Option<DisplayUser>,
-    pub reader_shutdown_tx: Option<oneshot::Sender<()>>,
-    pub writer_shutdown_tx: Option<oneshot::Sender<()>>,
-    pub reader_handle: Option<JoinHandle<ReadHalf<Transport>>>,
-    pub writer_handle: Option<JoinHandle<WriteHalf<Transport>>>,
-    pub message_writer_tx: Option<mpsc::Sender<CorrelatedSocketMessage>>,
+    connection: Option<ClientConnection>,
 }
 
 impl Client {
-    pub fn new(
-        id: ClientId,
-        reader_shutdown_tx: oneshot::Sender<()>,
-        writer_shutdown_tx: oneshot::Sender<()>,
-        reader_handle: JoinHandle<ReadHalf<Transport>>,
-        writer_handle: JoinHandle<WriteHalf<Transport>>,
-        message_writer_tx: mpsc::Sender<CorrelatedSocketMessage>,
-    ) -> Self {
+    pub fn new(id: ClientId, connection: ClientConnection) -> Self {
         Self {
             id,
             is_authenticated: false,
             display_user: None,
-            reader_shutdown_tx: Some(reader_shutdown_tx),
-            writer_shutdown_tx: Some(writer_shutdown_tx),
-            reader_handle: Some(reader_handle),
-            writer_handle: Some(writer_handle),
-            message_writer_tx: Some(message_writer_tx),
+            connection: Some(connection),
         }
     }
 
@@ -62,11 +58,19 @@ impl Client {
         self.display_user.clone()
     }
 
+    pub fn take_connection(&mut self) -> Option<ClientConnection> {
+        self.connection.take()
+    }
+
     pub async fn send_message(&self, message: SocketMessage) -> Result<()> {
-        send_message_to_client(self
-            .message_writer_tx
-            .as_ref()
-            .ok_or_else(|| Error::Socket("Client message_writer_tx is None".into()))?, message).await
+        send_message_to_client(
+            self.connection
+                .as_ref()
+                .map(|c| &c.message_writer_tx)
+                .ok_or_else(|| Error::Socket("Client message_writer_tx is None".into()))?,
+            message,
+        )
+        .await
     }
 }
 

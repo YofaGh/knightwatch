@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+use super::client::ClientId;
 use crate::prelude::*;
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -8,7 +8,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    client::Client,
+    client::{Client, ClientConnection, ClientId},
     event::ClientManagerEvent,
     message::{
         AuthFailedReason, CorrelatedSocketMessage, SocketAction, SocketActionRequset,
@@ -65,21 +65,8 @@ impl ClientManager {
 
     pub fn add_client(&mut self, transport: Transport) {
         let client_id = ClientId::new_v4();
-        let (
-            reader_shutdown_tx,
-            writer_shutdown_tx,
-            reader_handle,
-            writer_handle,
-            message_writer_tx,
-        ) = self.setup_client_connection(transport, client_id);
-        let client = Client::new(
-            client_id,
-            reader_shutdown_tx,
-            writer_shutdown_tx,
-            reader_handle,
-            writer_handle,
-            message_writer_tx,
-        );
+        let connection = self.setup_client_connection(transport, client_id);
+        let client = Client::new(client_id, connection);
         self.clients.insert(client_id, client);
     }
 
@@ -314,13 +301,7 @@ impl ClientManager {
         &mut self,
         transport: Transport,
         client_id: ClientId,
-    ) -> (
-        oneshot::Sender<()>,
-        oneshot::Sender<()>,
-        JoinHandle<ReadHalf<Transport>>,
-        JoinHandle<WriteHalf<Transport>>,
-        mpsc::Sender<CorrelatedSocketMessage>,
-    ) {
+    ) -> ClientConnection {
         let (reader, writer) = tokio::io::split(transport);
         let (reader_shutdown_tx, reader_shutdown_rx) = oneshot::channel();
         let (writer_shutdown_tx, writer_shutdown_rx) = oneshot::channel();
@@ -328,13 +309,13 @@ impl ClientManager {
         let reader_handle = self.setup_client_receiver(client_id, reader, reader_shutdown_rx);
         let writer_handle =
             self.setup_client_sender(client_id, writer, message_writer_rx, writer_shutdown_rx);
-        (
+        ClientConnection {
             reader_shutdown_tx,
             writer_shutdown_tx,
             reader_handle,
             writer_handle,
             message_writer_tx,
-        )
+        }
     }
 
     pub fn setup_client_receiver(
@@ -442,20 +423,14 @@ impl ClientManager {
         let Some(mut client) = self.clients.remove(&client_id) else {
             return;
         };
-        if let Some(tx) = client.reader_shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        if let Some(tx) = client.writer_shutdown_tx.take() {
-            let _ = tx.send(());
-        }
-        let (Some(reader_handle), Some(writer_handle)) =
-            (client.reader_handle.take(), client.writer_handle.take())
-        else {
+        let Some(connection) = client.take_connection() else {
             return;
         };
+        let _ = connection.reader_shutdown_tx.send(());
+        let _ = connection.writer_shutdown_tx.send(());
         match (
-            timeout(Duration::from_secs(5), reader_handle).await,
-            timeout(Duration::from_secs(5), writer_handle).await,
+            timeout(Duration::from_secs(5), connection.reader_handle).await,
+            timeout(Duration::from_secs(5), connection.writer_handle).await,
         ) {
             (Ok(Ok(reader)), Ok(Ok(writer))) => {
                 if let Err(err) =
@@ -474,9 +449,7 @@ impl ClientManager {
                 );
             }
         }
-        if let Some(message_writer_tx) = client.message_writer_tx.take() {
-            drop(message_writer_tx);
-        }
+        drop(connection.message_writer_tx);
     }
 }
 
