@@ -26,7 +26,7 @@ pub enum SocketMessage {
         response: SocketCommandResponse,
     },
     Event {
-        event: SocketEvent,
+        event: crate::events::EventPayload,
     },
     AuthenticationFailed {
         reason: AuthFailedReason,
@@ -35,6 +35,7 @@ pub enum SocketMessage {
     ShutdownNotEnabled,
     Unauthorized,
     ShuttingDown,
+    SetEventPreferences,
 }
 
 #[derive(Debug)]
@@ -76,6 +77,10 @@ pub enum SocketAction {
     Login { username: String, password: String },
     Logout,
     Shutdown,
+    SetEventPreferences {
+        events_enabled: Option<bool>,
+        ticks_enabled: Option<bool>,
+    },
 }
 
 #[derive(Debug)]
@@ -101,9 +106,6 @@ pub enum SocketCommandResponse {
     ScreenPollPause,
     ScreenPollResume,
 }
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum SocketEvent {}
 
 pub struct CorrelatedSocketMessage {
     pub message: SocketMessage,

@@ -30,7 +30,7 @@ where
                 if !filter(&payload) {
                     return None;
                 }
-                let event_name = payload.event;
+                let event_name = payload.event.clone();
                 match serde_json::to_string(&payload) {
                     Ok(json) => Some(Ok(Event::default().event(event_name).data(json))),
                     Err(e) => {

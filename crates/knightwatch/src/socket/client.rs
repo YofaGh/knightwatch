@@ -24,6 +24,8 @@ pub struct Client {
     #[allow(unused)]
     id: ClientId,
     is_authenticated: bool,
+    events_enabled: bool,
+    ticks_enabled: bool,
     display_user: Option<DisplayUser>,
     connection: Option<ClientConnection>,
 }
@@ -33,6 +35,8 @@ impl Client {
         Self {
             id,
             is_authenticated: false,
+            events_enabled: true,
+            ticks_enabled: false,
             display_user: None,
             connection: Some(connection),
         }
@@ -60,6 +64,19 @@ impl Client {
 
     pub fn take_connection(&mut self) -> Option<ClientConnection> {
         self.connection.take()
+    }
+
+    pub fn events_enabled(&self) -> bool {
+        self.events_enabled
+    }
+    pub fn set_events_enabled(&mut self, enabled: bool) {
+        self.events_enabled = enabled;
+    }
+    pub fn ticks_enabled(&self) -> bool {
+        self.ticks_enabled
+    }
+    pub fn set_ticks_enabled(&mut self, enabled: bool) {
+        self.ticks_enabled = enabled;
     }
 
     pub async fn send_message(&self, message: SocketMessage) -> Result<()> {

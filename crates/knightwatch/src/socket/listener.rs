@@ -66,7 +66,7 @@ fn spawn_server(host: &str, port: u16, protocol: ServerProtocol) -> Result<JoinH
                             ServerProtocol::Tcp => Transport::new_plain(stream),
                         };
                         match handle_client(&mut stream).await {
-                            Ok(()) => match super::server::add_client(stream).await {
+                            Ok(()) => match super::client_manager::add_client(stream).await {
                                 Ok(()) => info!("A new socket client was added"),
                                 Err(err) => error!("Failed to add client err: {err}"),
                             },

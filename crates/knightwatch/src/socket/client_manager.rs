@@ -17,7 +17,7 @@ use super::{
     },
     transport::Transport,
 };
-use crate::{prelude::*, screen_capture};
+use crate::{events::EventPayload, prelude::*, screen_capture};
 
 struct ClientManager {
     clients: HashMap<ClientId, Client>,
@@ -30,12 +30,14 @@ struct ClientManager {
     command_tx: mpsc::Sender<SocketCommandRequset>,
     event_rx: Option<mpsc::Receiver<ClientManagerEvent>>,
     event_tx: mpsc::Sender<ClientManagerEvent>,
+    subsystem_event_rx: Option<mpsc::Receiver<EventPayload>>,
 }
 
 impl ClientManager {
     pub fn new(
         event_rx: mpsc::Receiver<ClientManagerEvent>,
         event_tx: mpsc::Sender<ClientManagerEvent>,
+        subsystem_event_rx: mpsc::Receiver<EventPayload>,
         cancel_token: CancellationToken,
     ) -> Self {
         let (action_tx, action_rx) = mpsc::channel(1024);
@@ -52,6 +54,7 @@ impl ClientManager {
             command_tx,
             event_rx: Some(event_rx),
             event_tx,
+            subsystem_event_rx: Some(subsystem_event_rx),
         }
     }
 
@@ -70,8 +73,29 @@ impl ClientManager {
         self.clients.insert(client_id, client);
     }
 
+    async fn broadcast_event(&self, payload: EventPayload) {
+        let is_tick = payload.is_tick();
+        let sends = self
+            .clients
+            .values()
+            .filter(|c| c.is_authenticated() && c.events_enabled())
+            .filter(|c| !is_tick || c.ticks_enabled())
+            .map(|client| {
+                let message = SocketMessage::Event {
+                    event: payload.clone(),
+                };
+                async move {
+                    if let Err(err) = client.send_message(message).await {
+                        warn!("Failed to broadcast event to client: {err}");
+                    }
+                }
+            });
+        futures::future::join_all(sends).await;
+    }
+
     pub async fn start(mut self) -> Result<()> {
-        let (mut command_rx, mut query_rx, mut event_rx, mut action_rx) = self.take_receivers()?;
+        let (mut command_rx, mut query_rx, mut event_rx, mut action_rx, mut subsystem_event_rx) =
+            self.take_receivers()?;
         loop {
             tokio::select! {
                 Some(query_req) = query_rx.recv() => {
@@ -91,6 +115,9 @@ impl ClientManager {
                     if let Err(err) = self.handle_action(action_req).await {
                         error!("Failed to handle action err: {err}");
                     }
+                }
+                Some(payload) = subsystem_event_rx.recv() => {
+                    self.broadcast_event(payload).await;
                 }
             }
         }
@@ -266,6 +293,20 @@ impl ClientManager {
                 self.cancel_token.cancel();
                 return result;
             }
+            SocketAction::SetEventPreferences {
+                events_enabled,
+                ticks_enabled,
+            } => {
+                if let Some(v) = events_enabled {
+                    client.set_events_enabled(v);
+                }
+                if let Some(v) = ticks_enabled {
+                    client.set_ticks_enabled(v);
+                }
+                return client
+                    .send_message(SocketMessage::SetEventPreferences)
+                    .await;
+            }
         }
         Ok(())
     }
@@ -277,6 +318,7 @@ impl ClientManager {
         mpsc::Receiver<SocketQueryRequset>,
         mpsc::Receiver<ClientManagerEvent>,
         mpsc::Receiver<SocketActionRequset>,
+        mpsc::Receiver<EventPayload>,
     )> {
         let command_rx = self
             .command_rx
@@ -294,7 +336,17 @@ impl ClientManager {
             .action_rx
             .take()
             .ok_or_else(|| Error::Socket("Action receiver already taken".into()))?;
-        Ok((command_rx, query_rx, event_rx, action_rx))
+        let subsystem_event_rx = self
+            .subsystem_event_rx
+            .take()
+            .ok_or_else(|| Error::Socket("Subsystem event receiver already taken".into()))?;
+        Ok((
+            command_rx,
+            query_rx,
+            event_rx,
+            action_rx,
+            subsystem_event_rx,
+        ))
     }
 
     pub fn setup_client_connection(
@@ -463,7 +515,9 @@ pub fn init_client_manager(cancel_token: CancellationToken) {
     }
     let (event_tx, event_rx) = mpsc::channel(1024);
     let _ = CLIENT_MANAGER_EVENT_SENDER.set(event_tx.clone());
-    let client_manager = ClientManager::new(event_rx, event_tx, cancel_token);
+    let (subsystem_event_tx, subsystem_event_rx) = mpsc::channel(1024);
+    super::dispatcher::spawn_event_dispatcher(subsystem_event_tx, cancel_token.clone());
+    let client_manager = ClientManager::new(event_rx, event_tx, subsystem_event_rx, cancel_token);
     tokio::spawn(async move {
         if let Err(e) = client_manager.start().await {
             error!(?e, "Client manager exited with error");
