@@ -38,7 +38,7 @@ const fn get_screen_capture_command_sender() -> Option<&'static mpsc::Sender<Scr
     None
 }
 
-pub async fn get_screenshots() -> Vec<super::screenshot::Screenshot> {
+pub async fn get_screenshots() -> Vec<kw_types::screen::Screenshot> {
     let Some(tx_ref) = get_screen_capture_query_sender() else {
         return Vec::new();
     };

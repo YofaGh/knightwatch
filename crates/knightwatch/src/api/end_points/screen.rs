@@ -16,7 +16,10 @@ pub async fn screenshot() -> Result<Json<ScreenshotResponse>, (StatusCode, Strin
             "No screens found".to_string(),
         ));
     }
-    let screens: Vec<ScreenshotImage> = images.into_iter().map(Into::into).collect();
+    let screens: Vec<ScreenshotImage> = images
+        .into_iter()
+        .map(super::super::utils::screenshot_to_image)
+        .collect();
     let count = screens.len();
     Ok(Json(ScreenshotResponse { screens, count }))
 }

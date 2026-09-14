@@ -1,15 +1,14 @@
-use std::sync::{OnceLock, Mutex};
+use std::sync::{Mutex, OnceLock};
 use tokio::sync::{broadcast, mpsc};
 use xcap::Monitor;
 
-use kw_types::polling::Poll;
+use kw_types::{polling::Poll, screen::Screenshot};
 
 use super::{
     commands::{
         ScreenCaptureAction, ScreenCaptureChannels, ScreenCaptureCommand, ScreenCaptureQuery,
     },
     event::ScreenCaptureEvent,
-    screenshot::Screenshot,
 };
 use crate::prelude::*;
 

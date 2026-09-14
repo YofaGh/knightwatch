@@ -7,7 +7,7 @@ use crate::prelude::*;
 #[derive(Debug)]
 pub enum ScreenCaptureQuery {
     GetScreenshots {
-        response: oneshot::Sender<Vec<super::screenshot::Screenshot>>,
+        response: oneshot::Sender<Vec<kw_types::screen::Screenshot>>,
     },
     PollStatus {
         response: oneshot::Sender<Option<kw_types::polling::PollStatus>>,
