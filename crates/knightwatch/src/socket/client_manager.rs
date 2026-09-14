@@ -19,18 +19,27 @@ use super::{
 };
 use crate::{events::EventPayload, prelude::*, screen_capture};
 
+#[derive(Clone)]
+struct ChannelSenders {
+    action_tx: mpsc::Sender<SocketActionRequset>,
+    query_tx: mpsc::Sender<SocketQueryRequset>,
+    command_tx: mpsc::Sender<SocketCommandRequset>,
+    event_tx: mpsc::Sender<ClientManagerEvent>,
+}
+
+struct ChannelReceivers {
+    action_rx: mpsc::Receiver<SocketActionRequset>,
+    query_rx: mpsc::Receiver<SocketQueryRequset>,
+    command_rx: mpsc::Receiver<SocketCommandRequset>,
+    event_rx: mpsc::Receiver<ClientManagerEvent>,
+    subsystem_event_rx: mpsc::Receiver<EventPayload>,
+}
+
 struct ClientManager {
     clients: HashMap<ClientId, Client>,
     cancel_token: CancellationToken,
-    action_rx: Option<mpsc::Receiver<SocketActionRequset>>,
-    action_tx: mpsc::Sender<SocketActionRequset>,
-    query_rx: Option<mpsc::Receiver<SocketQueryRequset>>,
-    query_tx: mpsc::Sender<SocketQueryRequset>,
-    command_rx: Option<mpsc::Receiver<SocketCommandRequset>>,
-    command_tx: mpsc::Sender<SocketCommandRequset>,
-    event_rx: Option<mpsc::Receiver<ClientManagerEvent>>,
-    event_tx: mpsc::Sender<ClientManagerEvent>,
-    subsystem_event_rx: Option<mpsc::Receiver<EventPayload>>,
+    senders: ChannelSenders,
+    receivers: Option<ChannelReceivers>,
 }
 
 impl ClientManager {
@@ -46,15 +55,19 @@ impl ClientManager {
         Self {
             clients: HashMap::new(),
             cancel_token,
-            action_rx: Some(action_rx),
-            action_tx,
-            query_rx: Some(query_rx),
-            query_tx,
-            command_rx: Some(command_rx),
-            command_tx,
-            event_rx: Some(event_rx),
-            event_tx,
-            subsystem_event_rx: Some(subsystem_event_rx),
+            senders: ChannelSenders {
+                action_tx,
+                query_tx,
+                command_tx,
+                event_tx,
+            },
+            receivers: Some(ChannelReceivers {
+                action_rx,
+                query_rx,
+                command_rx,
+                event_rx,
+                subsystem_event_rx,
+            }),
         }
     }
 
@@ -94,8 +107,13 @@ impl ClientManager {
     }
 
     pub async fn start(mut self) -> Result<()> {
-        let (mut command_rx, mut query_rx, mut event_rx, mut action_rx, mut subsystem_event_rx) =
-            self.take_receivers()?;
+        let ChannelReceivers {
+            mut command_rx,
+            mut query_rx,
+            mut event_rx,
+            mut action_rx,
+            mut subsystem_event_rx,
+        } = self.take_receivers()?;
         loop {
             tokio::select! {
                 Some(query_req) = query_rx.recv() => {
@@ -311,42 +329,10 @@ impl ClientManager {
         Ok(())
     }
 
-    pub fn take_receivers(
-        &mut self,
-    ) -> Result<(
-        mpsc::Receiver<SocketCommandRequset>,
-        mpsc::Receiver<SocketQueryRequset>,
-        mpsc::Receiver<ClientManagerEvent>,
-        mpsc::Receiver<SocketActionRequset>,
-        mpsc::Receiver<EventPayload>,
-    )> {
-        let command_rx = self
-            .command_rx
+    pub fn take_receivers(&mut self) -> Result<ChannelReceivers> {
+        self.receivers
             .take()
-            .ok_or_else(|| Error::Socket("Command receiver already taken".into()))?;
-        let query_rx = self
-            .query_rx
-            .take()
-            .ok_or_else(|| Error::Socket("Query receiver already taken".into()))?;
-        let event_rx = self
-            .event_rx
-            .take()
-            .ok_or_else(|| Error::Socket("Event receiver already taken".into()))?;
-        let action_rx = self
-            .action_rx
-            .take()
-            .ok_or_else(|| Error::Socket("Action receiver already taken".into()))?;
-        let subsystem_event_rx = self
-            .subsystem_event_rx
-            .take()
-            .ok_or_else(|| Error::Socket("Subsystem event receiver already taken".into()))?;
-        Ok((
-            command_rx,
-            query_rx,
-            event_rx,
-            action_rx,
-            subsystem_event_rx,
-        ))
+            .ok_or_else(|| Error::Socket("Channel receivers already taken".into()))
     }
 
     pub fn setup_client_connection(
@@ -376,10 +362,7 @@ impl ClientManager {
         mut reader: ReadHalf<Transport>,
         mut shutdown_rx: oneshot::Receiver<()>,
     ) -> JoinHandle<ReadHalf<Transport>> {
-        let action_tx = self.action_tx.clone();
-        let query_tx = self.query_tx.clone();
-        let command_tx = self.command_tx.clone();
-        let event_tx = self.event_tx.clone();
+        let senders = self.senders.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -392,19 +375,19 @@ impl ClientManager {
                             Ok(message) => {
                                 match message {
                                     SocketMessage::Action { action } => {
-                                        let _ = action_tx.send(SocketActionRequset {
+                                        let _ = senders.action_tx.send(SocketActionRequset {
                                             client_id,
                                             action
                                         }).await;
                                     }
                                     SocketMessage::Query { query } => {
-                                        let _ = query_tx.send(SocketQueryRequset {
+                                        let _ = senders.query_tx.send(SocketQueryRequset {
                                             client_id,
                                             query
                                         }).await;
                                     }
                                     SocketMessage::Command { command } => {
-                                        let _ = command_tx.send(SocketCommandRequset {
+                                        let _ = senders.command_tx.send(SocketCommandRequset {
                                             client_id,
                                             command
                                         }).await;
@@ -414,7 +397,7 @@ impl ClientManager {
                             }
                             Err(err) => {
                                 warn!("Client {client_id} disconnected err: {err}");
-                                Self::notify_client_disconnection(&event_tx, client_id);
+                                Self::notify_client_disconnection(&senders.event_tx, client_id);
                                 break;
                             }
                         }
@@ -432,7 +415,7 @@ impl ClientManager {
         mut receiver: mpsc::Receiver<CorrelatedSocketMessage>,
         mut shutdown_rx: oneshot::Receiver<()>,
     ) -> JoinHandle<WriteHalf<Transport>> {
-        let event_tx = self.event_tx.clone();
+        let event_tx = self.senders.event_tx.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
