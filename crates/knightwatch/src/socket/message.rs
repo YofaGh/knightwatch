@@ -8,6 +8,7 @@ pub enum SocketMessage {
     HandshakeResponse,
     Action { action: SocketAction },
     Query { query: SocketQuery },
+    QueryResponse { response: SocketQueryResponse },
     Command { command: SocketCommand },
     Event { event: SocketEvent },
     AuthenticationFailed { reason: AuthFailedReason },
@@ -24,7 +25,16 @@ pub struct SocketQueryRequset {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SocketQuery {}
+pub enum SocketQuery {
+    /// Common
+    Info,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketQueryResponse {
+    /// Common
+    Info { info: kw_types::api::InfoResponse }
+}
 
 #[derive(Debug)]
 pub struct SocketActionRequset {

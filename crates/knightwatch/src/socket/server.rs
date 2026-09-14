@@ -12,7 +12,7 @@ use super::{
     event::SocketServerEvent,
     message::{
         AuthFailedReason, CorrelatedSocketMessage, SocketAction, SocketActionRequset,
-        SocketCommandRequset, SocketMessage, SocketQueryRequset,
+        SocketCommandRequset, SocketMessage, SocketQuery, SocketQueryRequset, SocketQueryResponse,
     },
     transport::Transport,
 };
@@ -84,31 +84,62 @@ impl Server {
 
     pub async fn start(mut self) -> Result<()> {
         let (mut command_rx, mut query_rx, mut event_rx, mut action_rx) = self.take_receivers()?;
-        tokio::select! {
-            Some(query_req) = query_rx.recv() => {
-                if let Err(err) = self.handle_query(query_req).await {
-                    error!("Failed to handle query err: {err}");
+        loop {
+            tokio::select! {
+                Some(query_req) = query_rx.recv() => {
+                    if let Err(err) = self.handle_query(query_req).await {
+                        error!("Failed to handle query err: {err}");
+                    }
                 }
-            }
-            Some(command_req) = command_rx.recv() => {
-                if let Err(err) = self.handle_command(command_req).await {
-                    error!("Failed to handle command err: {err}");
+                Some(command_req) = command_rx.recv() => {
+                    if let Err(err) = self.handle_command(command_req).await {
+                        error!("Failed to handle command err: {err}");
+                    }
                 }
-            }
-            Some(event_req) = event_rx.recv() => {
-                self.handle_event(event_req).await;
-            }
-            Some(action_req) = action_rx.recv() => {
-                if let Err(err) = self.handle_action(action_req).await {
-                    error!("Failed to handle action err: {err}");
+                Some(event_req) = event_rx.recv() => {
+                    self.handle_event(event_req).await;
+                }
+                Some(action_req) = action_rx.recv() => {
+                    if let Err(err) = self.handle_action(action_req).await {
+                        error!("Failed to handle action err: {err}");
+                    }
                 }
             }
         }
-        Ok(())
     }
 
     pub async fn handle_query(&self, query_req: SocketQueryRequset) -> Result<()> {
-        Ok(())
+        let Some(client) = self.get_client(query_req.client_id) else {
+            return Ok(());
+        };
+        match query_req.query {
+            SocketQuery::Info => {
+                let args = &crate::prelude::get_config().args;
+                let response = kw_types::api::InfoResponse {
+                    auth_enabled: args.enable_auth,
+                    shutdown_enabled: args.enable_shutdown,
+                    blind: args.is_blind(),
+                    pid: crate::process_tracker::get_root_pids().await,
+                    top_processes: args.top_processes,
+                    limit_processes: args.limit_processes,
+                    telegram_bot: args.telegram,
+                    system_resources: args.system_resources,
+                    systemd: args.systemd,
+                    docker: args.docker,
+                    allow_process_commands: args.allow_process_commands,
+                    allow_screen_commands: args.is_screen_commands_allowed(),
+                    allow_system_resources_commands: args.allow_system_resources_commands,
+                    allow_systemd_commands: args.allow_systemd_commands,
+                    allow_docker_commands: args.allow_docker_commands,
+                };
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Info { info: response },
+                    })
+                    .await;
+            }
+        }
+        // Ok(())
     }
 
     pub async fn handle_command(&self, command_req: SocketCommandRequset) -> Result<()> {
