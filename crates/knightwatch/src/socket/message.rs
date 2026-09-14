@@ -28,12 +28,18 @@ pub struct SocketQueryRequset {
 pub enum SocketQuery {
     /// Common
     Info,
+    /// Screen
+    Screenshots,
+    ScreenPollStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketQueryResponse {
     /// Common
-    Info { info: kw_types::api::InfoResponse }
+    Info { info: kw_types::api::InfoResponse },
+    /// Screen
+    Screenshots { screenshots: Vec<kw_types::screen::Screenshot> },
+    ScreenPollStatus { status: Option<kw_types::polling::PollStatus> }
 }
 
 #[derive(Debug)]

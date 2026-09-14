@@ -16,7 +16,7 @@ use super::{
     },
     transport::Transport,
 };
-use crate::prelude::*;
+use crate::{prelude::*, screen_capture};
 
 struct Server {
     clients: HashMap<ClientId, Client>,
@@ -135,6 +135,22 @@ impl Server {
                 return client
                     .send_message(SocketMessage::QueryResponse {
                         response: SocketQueryResponse::Info { info: response },
+                    })
+                    .await;
+            }
+            SocketQuery::Screenshots => {
+                let screenshots = screen_capture::get_screenshots().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Screenshots { screenshots },
+                    })
+                    .await;
+            }
+            SocketQuery::ScreenPollStatus => {
+                let status = screen_capture::get_poll_status().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::ScreenPollStatus { status },
                     })
                     .await;
             }
