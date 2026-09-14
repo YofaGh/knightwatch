@@ -5,17 +5,24 @@ use tokio::{
     task::JoinHandle,
     time::{Duration, timeout},
 };
+use tokio_util::sync::CancellationToken;
 
 use super::{
     client::Client,
     event::SocketServerEvent,
-    message::{CorrelatedSocketMessage, SocketCommandRequset, SocketMessage, SocketQueryRequset},
+    message::{
+        AuthFailedReason, CorrelatedSocketMessage, SocketAction, SocketActionRequset,
+        SocketCommandRequset, SocketMessage, SocketQueryRequset,
+    },
     transport::Transport,
 };
 use crate::prelude::*;
 
 struct Server {
     clients: HashMap<ClientId, Client>,
+    cancel_token: CancellationToken,
+    action_rx: Option<mpsc::Receiver<SocketActionRequset>>,
+    action_tx: mpsc::Sender<SocketActionRequset>,
     query_rx: Option<mpsc::Receiver<SocketQueryRequset>>,
     query_tx: mpsc::Sender<SocketQueryRequset>,
     command_rx: Option<mpsc::Receiver<SocketCommandRequset>>,
@@ -28,11 +35,16 @@ impl Server {
     pub fn new(
         event_rx: mpsc::Receiver<SocketServerEvent>,
         event_tx: mpsc::Sender<SocketServerEvent>,
+        cancel_token: CancellationToken,
     ) -> Self {
+        let (action_tx, action_rx) = mpsc::channel(1024);
         let (query_tx, query_rx) = mpsc::channel(1024);
         let (command_tx, command_rx) = mpsc::channel(1024);
         Self {
             clients: HashMap::new(),
+            cancel_token,
+            action_rx: Some(action_rx),
+            action_tx,
             query_rx: Some(query_rx),
             query_tx,
             command_rx: Some(command_rx),
@@ -71,7 +83,7 @@ impl Server {
     }
 
     pub async fn start(mut self) -> Result<()> {
-        let (mut command_rx, mut query_rx, mut event_rx) = self.take_receivers()?;
+        let (mut command_rx, mut query_rx, mut event_rx, mut action_rx) = self.take_receivers()?;
         tokio::select! {
             Some(query_req) = query_rx.recv() => {
                 if let Err(err) = self.handle_query(query_req).await {
@@ -86,6 +98,11 @@ impl Server {
             Some(event_req) = event_rx.recv() => {
                 self.handle_event(event_req).await;
             }
+            Some(action_req) = action_rx.recv() => {
+                if let Err(err) = self.handle_action(action_req).await {
+                    error!("Failed to handle action err: {err}");
+                }
+            }
         }
         Ok(())
     }
@@ -93,7 +110,7 @@ impl Server {
     pub async fn handle_query(&self, query_req: SocketQueryRequset) -> Result<()> {
         Ok(())
     }
-    
+
     pub async fn handle_command(&self, command_req: SocketCommandRequset) -> Result<()> {
         Ok(())
     }
@@ -109,12 +126,75 @@ impl Server {
         }
     }
 
+    pub async fn handle_action(&mut self, action_req: SocketActionRequset) -> Result<()> {
+        let Some(client) = self.get_client_mut(action_req.client_id) else {
+            return Ok(());
+        };
+        match action_req.action {
+            SocketAction::Login { username, password } => {
+                if client.is_authenticated() {
+                    return Ok(());
+                }
+                let Some(users) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
+                    return client
+                        .send_message(SocketMessage::AuthenticationFailed {
+                            reason: AuthFailedReason::WrongCredentials,
+                        })
+                        .await;
+                };
+                let Some(user) = users.find(&username).cloned() else {
+                    return client
+                        .send_message(SocketMessage::AuthenticationFailed {
+                            reason: AuthFailedReason::WrongCredentials,
+                        })
+                        .await;
+                };
+                match users.verify_password(&username, &password) {
+                    Ok(true) => {}
+                    _ => {
+                        return client
+                            .send_message(SocketMessage::AuthenticationFailed {
+                                reason: AuthFailedReason::WrongCredentials,
+                            })
+                            .await;
+                    }
+                }
+                let result = client
+                    .send_message(SocketMessage::AuthenticationSucceed)
+                    .await;
+                if result.is_ok() {
+                    client.set_authentication(true);
+                    client.set_display_user(user.into());
+                }
+                return result;
+            }
+            SocketAction::Logout => {
+                client.clear_display_user();
+                client.set_authentication(false);
+            }
+            SocketAction::Shutdown => {
+                let config = &get_config().args;
+                if !config.enable_shutdown {
+                    return client.send_message(SocketMessage::ShutdownNotEnabled).await;
+                }
+                if config.enable_auth && !client.is_authenticated() {
+                    return client.send_message(SocketMessage::Unauthorized).await;
+                }
+                let result = client.send_message(SocketMessage::ShuttingDown).await;
+                self.cancel_token.cancel();
+                return result;
+            }
+        }
+        Ok(())
+    }
+
     pub fn take_receivers(
         &mut self,
     ) -> Result<(
         mpsc::Receiver<SocketCommandRequset>,
         mpsc::Receiver<SocketQueryRequset>,
         mpsc::Receiver<SocketServerEvent>,
+        mpsc::Receiver<SocketActionRequset>,
     )> {
         let command_rx = self
             .command_rx
@@ -128,7 +208,11 @@ impl Server {
             .event_rx
             .take()
             .ok_or_else(|| Error::Socket("Event receiver already taken".into()))?;
-        Ok((command_rx, query_rx, event_rx))
+        let action_rx = self
+            .action_rx
+            .take()
+            .ok_or_else(|| Error::Socket("Action receiver already taken".into()))?;
+        Ok((command_rx, query_rx, event_rx, action_rx))
     }
 
     pub fn setup_client_connection(
@@ -164,6 +248,7 @@ impl Server {
         mut reader: ReadHalf<Transport>,
         mut shutdown_rx: oneshot::Receiver<()>,
     ) -> JoinHandle<ReadHalf<Transport>> {
+        let action_tx = self.action_tx.clone();
         let query_tx = self.query_tx.clone();
         let command_tx = self.command_tx.clone();
         let event_tx = self.event_tx.clone();
@@ -178,6 +263,12 @@ impl Server {
                         match message_result {
                             Ok(message) => {
                                 match message {
+                                    SocketMessage::Action { action } => {
+                                        let _ = action_tx.send(SocketActionRequset {
+                                            client_id,
+                                            action
+                                        }).await;
+                                    }
                                     SocketMessage::Query { query } => {
                                         let _ = query_tx.send(SocketQueryRequset {
                                             client_id,
@@ -296,14 +387,14 @@ impl Server {
 
 pub static SOCKET_SERVER_EVENT_SENDER: OnceLock<mpsc::Sender<SocketServerEvent>> = OnceLock::new();
 
-pub fn init_socket_server() {
+pub fn init_socket_server(cancel_token: CancellationToken) {
     let args = &get_config().args;
     if !args.tcp_socket && !args.ws_socket {
         return;
     }
     let (event_tx, event_rx) = mpsc::channel(1024);
     let _ = SOCKET_SERVER_EVENT_SENDER.set(event_tx.clone());
-    let server = Server::new(event_rx, event_tx);
+    let server = Server::new(event_rx, event_tx, cancel_token);
     tokio::spawn(async move {
         if let Err(e) = server.start().await {
             error!(?e, "server exited with error");

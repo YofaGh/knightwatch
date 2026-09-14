@@ -6,9 +6,15 @@ use crate::prelude::*;
 pub enum SocketMessage {
     Handshake,
     HandshakeResponse,
+    Action { action: SocketAction },
     Query { query: SocketQuery },
     Command { command: SocketCommand },
     Event { event: SocketEvent },
+    AuthenticationFailed { reason: AuthFailedReason },
+    AuthenticationSucceed,
+    ShutdownNotEnabled,
+    Unauthorized,
+    ShuttingDown,
 }
 
 #[derive(Debug)]
@@ -19,6 +25,19 @@ pub struct SocketQueryRequset {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketQuery {}
+
+#[derive(Debug)]
+pub struct SocketActionRequset {
+    pub client_id: ClientId,
+    pub action: SocketAction,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketAction {
+    Login { username: String, password: String },
+    Logout,
+    Shutdown,
+}
 
 #[derive(Debug)]
 pub struct SocketCommandRequset {
@@ -35,4 +54,10 @@ pub enum SocketEvent {}
 pub struct CorrelatedSocketMessage {
     pub message: SocketMessage,
     pub response_tx: tokio::sync::oneshot::Sender<Result<(), crate::errors::Error>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum AuthFailedReason {
+    WrongCredentials,
+    InternalServerError,
 }
