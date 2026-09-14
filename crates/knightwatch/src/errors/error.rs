@@ -1,6 +1,6 @@
 use std::io::Error as IoError;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum Error {
     Network(String),
     ChannelClosed(String),

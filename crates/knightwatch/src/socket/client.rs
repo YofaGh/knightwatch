@@ -58,6 +58,10 @@ impl Client {
         self.display_user = None;
     }
 
+    pub fn get_display_user(&self) -> Option<DisplayUser> {
+        self.display_user.clone()
+    }
+
     pub async fn send_message(&self, message: SocketMessage) -> Result<()> {
         send_message_to_client(self
             .message_writer_tx

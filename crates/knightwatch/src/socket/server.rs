@@ -12,7 +12,8 @@ use super::{
     event::ClientManagerEvent,
     message::{
         AuthFailedReason, CorrelatedSocketMessage, SocketAction, SocketActionRequset,
-        SocketCommandRequset, SocketMessage, SocketQuery, SocketQueryRequset, SocketQueryResponse,
+        SocketCommand, SocketCommandRequset, SocketCommandResponse, SocketMessage, SocketQuery,
+        SocketQueryRequset, SocketQueryResponse,
     },
     transport::Transport,
 };
@@ -138,6 +139,13 @@ impl ClientManager {
                     })
                     .await;
             }
+            _ => {}
+        }
+        if get_config().args.enable_auth && !client.is_authenticated() {
+            return client.send_message(SocketMessage::Unauthorized).await;
+        }
+        match query_req.query {
+            SocketQuery::Info => Ok(()),
             SocketQuery::Screenshots => {
                 let screenshots = screen_capture::get_screenshots().await;
                 return client
@@ -159,7 +167,47 @@ impl ClientManager {
     }
 
     pub async fn handle_command(&self, command_req: SocketCommandRequset) -> Result<()> {
-        Ok(())
+        let Some(client) = self.get_client(command_req.client_id) else {
+            return Ok(());
+        };
+        if !client.is_authenticated() {
+            return client.send_message(SocketMessage::Unauthorized).await;
+        }
+        let Some(display_user) = client.get_display_user() else {
+            return client.send_message(SocketMessage::Unauthorized).await;
+        };
+        match command_req.command {
+            SocketCommand::ScreenPollInterval { interval } => {
+                let result = screen_capture::set_poll_interval(display_user, interval).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ScreenPollInterval,
+                    })
+                    .await;
+            }
+            SocketCommand::ScreenPollPause => {
+                let result = screen_capture::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ScreenPollPause,
+                    })
+                    .await;
+            }
+            SocketCommand::ScreenPollResume => {
+                let result = screen_capture::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ScreenPollResume,
+                    })
+                    .await;
+            }
+        }
     }
 
     pub async fn handle_event(&mut self, event_req: ClientManagerEvent) {

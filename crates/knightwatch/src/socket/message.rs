@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::prelude::*;
 
@@ -6,12 +7,29 @@ use crate::prelude::*;
 pub enum SocketMessage {
     Handshake,
     HandshakeResponse,
-    Action { action: SocketAction },
-    Query { query: SocketQuery },
-    QueryResponse { response: SocketQueryResponse },
-    Command { command: SocketCommand },
-    Event { event: SocketEvent },
-    AuthenticationFailed { reason: AuthFailedReason },
+    Action {
+        action: SocketAction,
+    },
+    Query {
+        query: SocketQuery,
+    },
+    QueryResponse {
+        response: SocketQueryResponse,
+    },
+    Command {
+        command: SocketCommand,
+    },
+    CommandResponse {
+        success: bool,
+        err: Option<Error>,
+        response: SocketCommandResponse,
+    },
+    Event {
+        event: SocketEvent,
+    },
+    AuthenticationFailed {
+        reason: AuthFailedReason,
+    },
     AuthenticationSucceed,
     ShutdownNotEnabled,
     Unauthorized,
@@ -38,8 +56,12 @@ pub enum SocketQueryResponse {
     /// Common
     Info { info: kw_types::api::InfoResponse },
     /// Screen
-    Screenshots { screenshots: Vec<kw_types::screen::Screenshot> },
-    ScreenPollStatus { status: Option<kw_types::polling::PollStatus> }
+    Screenshots {
+        screenshots: Vec<kw_types::screen::Screenshot>,
+    },
+    ScreenPollStatus {
+        status: Option<kw_types::polling::PollStatus>,
+    },
 }
 
 #[derive(Debug)]
@@ -62,7 +84,22 @@ pub struct SocketCommandRequset {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum SocketCommand {}
+pub enum SocketCommand {
+    /// Screen
+    ScreenPollInterval {
+        interval: Duration,
+    },
+    ScreenPollPause,
+    ScreenPollResume,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketCommandResponse {
+    /// Screen
+    ScreenPollInterval,
+    ScreenPollPause,
+    ScreenPollResume,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketEvent {}
