@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub enum SocketServerEvent {
+pub enum ClientManagerEvent {
     AddClient { transport: super::transport::Transport },
     ClientDisconnected { client_id: crate::types::ClientId },
 }

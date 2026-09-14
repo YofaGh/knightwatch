@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     client::Client,
-    event::SocketServerEvent,
+    event::ClientManagerEvent,
     message::{
         AuthFailedReason, CorrelatedSocketMessage, SocketAction, SocketActionRequset,
         SocketCommandRequset, SocketMessage, SocketQuery, SocketQueryRequset, SocketQueryResponse,
@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{prelude::*, screen_capture};
 
-struct Server {
+struct ClientManager {
     clients: HashMap<ClientId, Client>,
     cancel_token: CancellationToken,
     action_rx: Option<mpsc::Receiver<SocketActionRequset>>,
@@ -27,14 +27,14 @@ struct Server {
     query_tx: mpsc::Sender<SocketQueryRequset>,
     command_rx: Option<mpsc::Receiver<SocketCommandRequset>>,
     command_tx: mpsc::Sender<SocketCommandRequset>,
-    event_rx: Option<mpsc::Receiver<SocketServerEvent>>,
-    event_tx: mpsc::Sender<SocketServerEvent>,
+    event_rx: Option<mpsc::Receiver<ClientManagerEvent>>,
+    event_tx: mpsc::Sender<ClientManagerEvent>,
 }
 
-impl Server {
+impl ClientManager {
     pub fn new(
-        event_rx: mpsc::Receiver<SocketServerEvent>,
-        event_tx: mpsc::Sender<SocketServerEvent>,
+        event_rx: mpsc::Receiver<ClientManagerEvent>,
+        event_tx: mpsc::Sender<ClientManagerEvent>,
         cancel_token: CancellationToken,
     ) -> Self {
         let (action_tx, action_rx) = mpsc::channel(1024);
@@ -162,12 +162,12 @@ impl Server {
         Ok(())
     }
 
-    pub async fn handle_event(&mut self, event_req: SocketServerEvent) {
+    pub async fn handle_event(&mut self, event_req: ClientManagerEvent) {
         match event_req {
-            SocketServerEvent::AddClient { transport } => {
+            ClientManagerEvent::AddClient { transport } => {
                 self.add_client(transport);
             }
-            SocketServerEvent::ClientDisconnected { client_id } => {
+            ClientManagerEvent::ClientDisconnected { client_id } => {
                 self.close_client_connection(client_id).await;
             }
         }
@@ -240,7 +240,7 @@ impl Server {
     ) -> Result<(
         mpsc::Receiver<SocketCommandRequset>,
         mpsc::Receiver<SocketQueryRequset>,
-        mpsc::Receiver<SocketServerEvent>,
+        mpsc::Receiver<ClientManagerEvent>,
         mpsc::Receiver<SocketActionRequset>,
     )> {
         let command_rx = self
@@ -384,10 +384,10 @@ impl Server {
     }
 
     pub fn notify_client_disconnection(
-        event_tx: &mpsc::Sender<SocketServerEvent>,
+        event_tx: &mpsc::Sender<ClientManagerEvent>,
         client_id: ClientId,
     ) {
-        let _ = event_tx.send(SocketServerEvent::ClientDisconnected { client_id });
+        let _ = event_tx.send(ClientManagerEvent::ClientDisconnected { client_id });
     }
 
     async fn close_client_connection(&mut self, client_id: ClientId) {
@@ -432,28 +432,30 @@ impl Server {
     }
 }
 
-pub static SOCKET_SERVER_EVENT_SENDER: OnceLock<mpsc::Sender<SocketServerEvent>> = OnceLock::new();
+pub static CLIENT_MANAGER_EVENT_SENDER: OnceLock<mpsc::Sender<ClientManagerEvent>> =
+    OnceLock::new();
 
-pub fn init_socket_server(cancel_token: CancellationToken) {
+pub fn init_client_manager(cancel_token: CancellationToken) {
     let args = &get_config().args;
     if !args.tcp_socket && !args.ws_socket {
         return;
     }
     let (event_tx, event_rx) = mpsc::channel(1024);
-    let _ = SOCKET_SERVER_EVENT_SENDER.set(event_tx.clone());
-    let server = Server::new(event_rx, event_tx, cancel_token);
+    let _ = CLIENT_MANAGER_EVENT_SENDER.set(event_tx.clone());
+    let client_manager = ClientManager::new(event_rx, event_tx, cancel_token);
     tokio::spawn(async move {
-        if let Err(e) = server.start().await {
-            error!(?e, "server exited with error");
+        if let Err(e) = client_manager.start().await {
+            error!(?e, "Client manager exited with error");
         }
     });
+    info!("Client manager started");
 }
 
 pub async fn add_client(transport: Transport) -> Result<()> {
-    let _ = SOCKET_SERVER_EVENT_SENDER
+    let _ = CLIENT_MANAGER_EVENT_SENDER
         .get()
-        .ok_or_else(|| Error::Socket("Socket server event server not initialized".into()))?
-        .send(SocketServerEvent::AddClient { transport })
+        .ok_or_else(|| Error::Socket("Client manager event server not initialized".into()))?
+        .send(ClientManagerEvent::AddClient { transport })
         .await;
     Ok(())
 }

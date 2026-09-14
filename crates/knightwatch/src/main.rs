@@ -43,7 +43,7 @@ async fn main() -> Result<(), errors::Error> {
     webhook::init_webhook_dispatcher(cancel_token.clone());
     sse::init_sse_dispatcher(cancel_token.clone());
     let tg_bot = telegram_bot::init_bot(cancel_token.clone());
-    socket::init_socket_server(cancel_token.clone());
+    socket::init_client_manager(cancel_token.clone());
     let _tcp_socket = socket::init_tcp_server();
     let _ws_socket = socket::init_ws_server();
 
