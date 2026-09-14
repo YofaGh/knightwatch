@@ -80,6 +80,30 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub docker: bool,
 
+    /// Enable raw TCP socket server
+    #[arg(long, default_value_t = false)]
+    pub tcp_socket: bool,
+
+    /// Host address for the raw TCP socket server
+    #[arg(long, default_value = "0.0.0.0")]
+    pub tcp_host: String,
+
+    /// Port for the raw TCP socket server
+    #[arg(long, default_value_t = 8084)]
+    pub tcp_port: u16,
+
+    /// Enable WebSocket server
+    #[arg(long, default_value_t = false)]
+    pub ws_socket: bool,
+
+    /// Host address for the WebSocket server
+    #[arg(long, default_value = "0.0.0.0")]
+    pub ws_host: String,
+
+    /// Port for the WebSocket server
+    #[arg(long, default_value_t = 8085)]
+    pub ws_port: u16,
+
     /// Allow process commands (kill, track, etc.)
     #[arg(long, default_value_t = false)]
     pub allow_process_commands: bool,

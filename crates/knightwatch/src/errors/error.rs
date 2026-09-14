@@ -1,3 +1,5 @@
+use std::io::Error as IoError;
+
 #[derive(Debug)]
 pub enum Error {
     Network(String),
@@ -8,12 +10,16 @@ pub enum Error {
     SystemResources(String),
     DockerTracker(String),
     Systemd(String),
+    Socket(String),
     Other(String),
     TelegramBot(String),
 }
 
 impl Error {
-    pub fn bind_address(address: &str, err: &std::io::Error) -> Self {
+    pub fn connection(err: IoError) -> Self {
+        Self::Socket(format!("Connection error {err}"))
+    }
+    pub fn bind_address(address: &str, err: &IoError) -> Self {
         Self::Network(format!("Failed to bind address: {address}, {err}"))
     }
     pub fn channel_closed(err: &tokio::sync::oneshot::error::RecvError) -> Self {
@@ -63,6 +69,7 @@ impl std::fmt::Display for Error {
             | Self::SystemResources(msg)
             | Self::DockerTracker(msg)
             | Self::Systemd(msg)
+            | Self::Socket(msg)
             | Self::ProcessTracker(msg) => {
                 write!(f, "{msg}")
             }

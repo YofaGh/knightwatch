@@ -8,6 +8,7 @@ mod observability;
 mod prelude;
 mod process_tracker;
 mod screen_capture;
+mod socket;
 mod sse;
 mod system_resources;
 mod systemd;
@@ -42,6 +43,9 @@ async fn main() -> Result<(), errors::Error> {
     webhook::init_webhook_dispatcher(cancel_token.clone());
     sse::init_sse_dispatcher(cancel_token.clone());
     let tg_bot = telegram_bot::init_bot(cancel_token.clone());
+    socket::init_socket_server();
+    let _tcp_socket = socket::init_tcp_server();
+    let _ws_socket = socket::init_ws_server();
 
     // start subsystems
     #[cfg(feature = "screenshot")]

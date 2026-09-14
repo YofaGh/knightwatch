@@ -1,0 +1,38 @@
+use serde::{Deserialize, Serialize};
+
+use crate::prelude::*;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketMessage {
+    Handshake,
+    HandshakeResponse,
+    Query { query: SocketQuery },
+    Command { command: SocketCommand },
+    Event { event: SocketEvent },
+}
+
+#[derive(Debug)]
+pub struct SocketQueryRequset {
+    pub client_id: ClientId,
+    pub query: SocketQuery,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketQuery {}
+
+#[derive(Debug)]
+pub struct SocketCommandRequset {
+    pub client_id: ClientId,
+    pub command: SocketCommand,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketCommand {}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SocketEvent {}
+
+pub struct CorrelatedSocketMessage {
+    pub message: SocketMessage,
+    pub response_tx: tokio::sync::oneshot::Sender<Result<(), crate::errors::Error>>,
+}
