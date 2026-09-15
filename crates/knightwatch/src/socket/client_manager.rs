@@ -18,7 +18,8 @@ use super::{
     transport::Transport,
 };
 use crate::{
-    events::EventPayload, prelude::*, process_tracker, screen_capture, system_resources, systemd,
+    docker_tracker, events::EventPayload, prelude::*, process_tracker, screen_capture,
+    system_resources, systemd,
 };
 
 #[derive(Clone)]
@@ -392,6 +393,38 @@ impl ClientManager {
                     })
                     .await;
             }
+            SocketQuery::ListContainers => {
+                let snapshots = docker_tracker::list_containers().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::ListContainers { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::Container { id_or_name } => {
+                let snapshot = docker_tracker::get_container(id_or_name).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Container { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::TopContainers { by, limit } => {
+                let snapshots = docker_tracker::get_top_containers(by, limit).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::TopContainers { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::DockerTrackerPollStatus => {
+                let status = docker_tracker::get_poll_status().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::DockerTrackerPollStatus { status },
+                    })
+                    .await;
+            }
         }
     }
 
@@ -604,6 +637,104 @@ impl ClientManager {
                         success: result.is_ok(),
                         err: result.err(),
                         response: SocketCommandResponse::SystemdPollResume,
+                    })
+                    .await;
+            }
+            SocketCommand::StopContainer {
+                id_or_name,
+                timeout_secs,
+            } => {
+                let result =
+                    docker_tracker::stop_container(display_user, id_or_name, timeout_secs).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::StopContainer,
+                    })
+                    .await;
+            }
+            SocketCommand::KillContainer { id_or_name, signal } => {
+                let result = docker_tracker::kill_container(display_user, id_or_name, signal).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::KillContainer,
+                    })
+                    .await;
+            }
+            SocketCommand::StartContainer { id_or_name } => {
+                let result = docker_tracker::start_container(display_user, id_or_name).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::StartContainer,
+                    })
+                    .await;
+            }
+            SocketCommand::RestartContainer {
+                id_or_name,
+                timeout_secs,
+            } => {
+                let result =
+                    docker_tracker::restart_container(display_user, id_or_name, timeout_secs).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::RestartContainer,
+                    })
+                    .await;
+            }
+            SocketCommand::PauseContainer { id_or_name } => {
+                let result = docker_tracker::pause_container(display_user, id_or_name).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::PauseContainer,
+                    })
+                    .await;
+            }
+            SocketCommand::UnpauseContainer { id_or_name } => {
+                let result = docker_tracker::unpause_container(display_user, id_or_name).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::UnpauseContainer,
+                    })
+                    .await;
+            }
+            SocketCommand::DockerTrackerPollInterval { interval } => {
+                let result = docker_tracker::set_poll_interval(display_user, interval).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::DockerTrackerPollInterval,
+                    })
+                    .await;
+            }
+            SocketCommand::DockerTrackerPollPause => {
+                let result = docker_tracker::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::DockerTrackerPollPause,
+                    })
+                    .await;
+            }
+            SocketCommand::DockerTrackerPollResume => {
+                let result = docker_tracker::resume_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::DockerTrackerPollResume,
                     })
                     .await;
             }

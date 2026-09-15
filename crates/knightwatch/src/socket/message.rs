@@ -5,6 +5,7 @@ use kw_types::polling::PollStatus;
 
 use super::client::ClientId;
 use crate::{
+    docker_tracker::{self, ContainerSnapshot},
     prelude::*,
     process_tracker::{self, ProcessSnapshot, ProcessTree},
     system_resources,
@@ -105,6 +106,16 @@ pub enum SocketQuery {
     },
     FailedUnits,
     SystemdPollStatus,
+    // Docker Tracker
+    ListContainers,
+    Container {
+        id_or_name: String,
+    },
+    TopContainers {
+        by: docker_tracker::DockerSortKey,
+        limit: usize,
+    },
+    DockerTrackerPollStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -204,6 +215,19 @@ pub enum SocketQueryResponse {
     SystemdPollStatus {
         status: Option<PollStatus>,
     },
+    // Docker Tracker
+    ListContainers {
+        snapshots: Vec<ContainerSnapshot>,
+    },
+    Container {
+        snapshot: Option<ContainerSnapshot>,
+    },
+    TopContainers {
+        snapshots: Vec<ContainerSnapshot>,
+    },
+    DockerTrackerPollStatus {
+        status: Option<PollStatus>,
+    },
 }
 
 #[derive(Debug)]
@@ -281,6 +305,33 @@ pub enum SocketCommand {
     },
     SystemdPollPause,
     SystemdPollResume,
+    // Docker Tracker
+    StopContainer {
+        id_or_name: String,
+        timeout_secs: Option<i32>,
+    },
+    KillContainer {
+        id_or_name: String,
+        signal: Option<String>,
+    },
+    StartContainer {
+        id_or_name: String,
+    },
+    RestartContainer {
+        id_or_name: String,
+        timeout_secs: Option<i32>,
+    },
+    PauseContainer {
+        id_or_name: String,
+    },
+    UnpauseContainer {
+        id_or_name: String,
+    },
+    DockerTrackerPollInterval {
+        interval: Duration,
+    },
+    DockerTrackerPollPause,
+    DockerTrackerPollResume,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -308,6 +359,16 @@ pub enum SocketCommandResponse {
     SystemdPollInterval,
     SystemdPollPause,
     SystemdPollResume,
+    // Docker Tracker
+    StopContainer,
+    KillContainer,
+    StartContainer,
+    RestartContainer,
+    PauseContainer,
+    UnpauseContainer,
+    DockerTrackerPollInterval,
+    DockerTrackerPollPause,
+    DockerTrackerPollResume,
 }
 
 pub struct CorrelatedSocketMessage {
