@@ -17,7 +17,7 @@ use super::{
     },
     transport::Transport,
 };
-use crate::{events::EventPayload, prelude::*, screen_capture};
+use crate::{events::EventPayload, prelude::*, process_tracker, screen_capture};
 
 #[derive(Clone)]
 struct ChannelSenders {
@@ -145,39 +145,16 @@ impl ClientManager {
         let Some(client) = self.get_client(query_req.client_id) else {
             return Ok(());
         };
-        match query_req.query {
-            SocketQuery::Info => {
-                let args = &crate::prelude::get_config().args;
-                let response = kw_types::api::InfoResponse {
-                    auth_enabled: args.enable_auth,
-                    shutdown_enabled: args.enable_shutdown,
-                    blind: args.is_blind(),
-                    pid: crate::process_tracker::get_root_pids().await,
-                    top_processes: args.top_processes,
-                    limit_processes: args.limit_processes,
-                    telegram_bot: args.telegram,
-                    system_resources: args.system_resources,
-                    systemd: args.systemd,
-                    docker: args.docker,
-                    allow_process_commands: args.allow_process_commands,
-                    allow_screen_commands: args.is_screen_commands_allowed(),
-                    allow_system_resources_commands: args.allow_system_resources_commands,
-                    allow_systemd_commands: args.allow_systemd_commands,
-                    allow_docker_commands: args.allow_docker_commands,
-                };
-                return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Info { info: response },
-                    })
-                    .await;
-            }
-            _ => {}
+        if matches!(query_req.query, SocketQuery::Info) {
+            return self.send_info(&client).await;
         }
         if get_config().args.enable_auth && !client.is_authenticated() {
             return client.send_message(SocketMessage::Unauthorized).await;
         }
         match query_req.query {
-            SocketQuery::Info => Ok(()),
+            // Common
+            SocketQuery::Info => return self.send_info(&client).await,
+            // Screen
             SocketQuery::Screenshots => {
                 let screenshots = screen_capture::get_screenshots().await;
                 return client
@@ -186,11 +163,84 @@ impl ClientManager {
                     })
                     .await;
             }
-            SocketQuery::ScreenPollStatus => {
+            SocketQuery::ScreenCapturePollStatus => {
                 let status = screen_capture::get_poll_status().await;
                 return client
                     .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::ScreenPollStatus { status },
+                        response: SocketQueryResponse::ScreenCapturePollStatus { status },
+                    })
+                    .await;
+            }
+            // Process Tracker
+            SocketQuery::RootPids => {
+                let pids = process_tracker::get_root_pids().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::RootPids { pids },
+                    })
+                    .await;
+            }
+            SocketQuery::Root { root_pid } => {
+                let snapshot = process_tracker::get_root(root_pid).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Root { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::Children { root_pid } => {
+                let snapshots = process_tracker::get_children(root_pid).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Children { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::IsProcessDone { root_pid } => {
+                let done = process_tracker::is_process_done(root_pid).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::IsProcessDone { done },
+                    })
+                    .await;
+            }
+            SocketQuery::ProcessTree { root_pid } => {
+                let tree = process_tracker::get_process_tree(root_pid).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::ProcessTree { tree },
+                    })
+                    .await;
+            }
+            SocketQuery::AllProcessTrees => {
+                let trees = process_tracker::get_all_process_trees().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::AllProcessTrees { trees },
+                    })
+                    .await;
+            }
+            SocketQuery::ProcessStatus { root_pid } => {
+                let status = process_tracker::get_process_status(root_pid).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::ProcessStatus { status },
+                    })
+                    .await;
+            }
+            SocketQuery::TopProcesses { by, limit } => {
+                let snapshots = process_tracker::get_top_processes(by, limit).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::TopProcesses { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::ProcessTrackerPollStatus => {
+                let status = process_tracker::get_poll_status().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::ProcessTrackerPollStatus { status },
                     })
                     .await;
             }
@@ -209,7 +259,7 @@ impl ClientManager {
             return client.send_message(SocketMessage::Unauthorized).await;
         };
         match command_req.command {
-            SocketCommand::ScreenPollInterval { interval } => {
+            SocketCommand::ScreenCapturePollInterval { interval } => {
                 let result = screen_capture::set_poll_interval(display_user, interval).await;
                 return client
                     .send_message(SocketMessage::CommandResponse {
@@ -219,7 +269,7 @@ impl ClientManager {
                     })
                     .await;
             }
-            SocketCommand::ScreenPollPause => {
+            SocketCommand::ScreenCapturePollPause => {
                 let result = screen_capture::pause_poll(display_user).await;
                 return client
                     .send_message(SocketMessage::CommandResponse {
@@ -229,13 +279,91 @@ impl ClientManager {
                     })
                     .await;
             }
-            SocketCommand::ScreenPollResume => {
+            SocketCommand::ScreenCapturePollResume => {
                 let result = screen_capture::pause_poll(display_user).await;
                 return client
                     .send_message(SocketMessage::CommandResponse {
                         success: result.is_ok(),
                         err: result.err(),
                         response: SocketCommandResponse::ScreenPollResume,
+                    })
+                    .await;
+            }
+            SocketCommand::KillProcess { pid, signal } => {
+                let result = process_tracker::kill_process(display_user, pid, signal).await;
+                let (success, os_result, err) = match result {
+                    Ok(val) => (true, val, None),
+                    Err(e) => (false, false, Some(e)),
+                };
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success,
+                        err,
+                        response: SocketCommandResponse::KillProcess { os_result },
+                    })
+                    .await;
+            }
+            SocketCommand::KillTree { root_pid } => {
+                let result = process_tracker::kill_tree(display_user, root_pid).await;
+                let (success, killed_pids, err) = match result {
+                    Ok(val) => (true, val, None),
+                    Err(e) => (false, vec![], Some(e)),
+                };
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success,
+                        err,
+                        response: SocketCommandResponse::KillTree { killed_pids },
+                    })
+                    .await;
+            }
+            SocketCommand::TrackPid { pid } => {
+                let result = process_tracker::track_pid(display_user, pid).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::TrackPid,
+                    })
+                    .await;
+            }
+            SocketCommand::UntrackPid { pid } => {
+                let result = process_tracker::untrack_pid(display_user, pid).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::UntrackPid,
+                    })
+                    .await;
+            }
+            SocketCommand::ProcessTrackerPollInterval { interval } => {
+                let result = process_tracker::set_poll_interval(display_user, interval).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ProcessTrackerPollInterval,
+                    })
+                    .await;
+            }
+            SocketCommand::ProcessTrackerPollPause => {
+                let result = process_tracker::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ProcessTrackerPollPause,
+                    })
+                    .await;
+            }
+            SocketCommand::ProcessTrackerPollResume => {
+                let result = process_tracker::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ProcessTrackerPollResume,
                     })
                     .await;
             }
@@ -327,6 +455,32 @@ impl ClientManager {
             }
         }
         Ok(())
+    }
+
+    async fn send_info(&self, client: &Client) -> Result<()> {
+        let args = &crate::prelude::get_config().args;
+        let response = kw_types::api::InfoResponse {
+            auth_enabled: args.enable_auth,
+            shutdown_enabled: args.enable_shutdown,
+            blind: args.is_blind(),
+            pid: crate::process_tracker::get_root_pids().await,
+            top_processes: args.top_processes,
+            limit_processes: args.limit_processes,
+            telegram_bot: args.telegram,
+            system_resources: args.system_resources,
+            systemd: args.systemd,
+            docker: args.docker,
+            allow_process_commands: args.allow_process_commands,
+            allow_screen_commands: args.is_screen_commands_allowed(),
+            allow_system_resources_commands: args.allow_system_resources_commands,
+            allow_systemd_commands: args.allow_systemd_commands,
+            allow_docker_commands: args.allow_docker_commands,
+        };
+        client
+            .send_message(SocketMessage::QueryResponse {
+                response: SocketQueryResponse::Info { info: response },
+            })
+            .await
     }
 
     pub fn take_receivers(&mut self) -> Result<ChannelReceivers> {
