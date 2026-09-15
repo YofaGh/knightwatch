@@ -17,7 +17,9 @@ use super::{
     },
     transport::Transport,
 };
-use crate::{events::EventPayload, prelude::*, process_tracker, screen_capture, system_resources};
+use crate::{
+    events::EventPayload, prelude::*, process_tracker, screen_capture, system_resources, systemd,
+};
 
 #[derive(Clone)]
 struct ChannelSenders {
@@ -349,6 +351,47 @@ impl ClientManager {
                     })
                     .await;
             }
+            // Systemd
+            SocketQuery::SystemdSnapshot => {
+                let snapshot = systemd::get_snapshot().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::SystemdSnapshot { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::Unit { unit_name } => {
+                let snapshot = systemd::get_unit(unit_name).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Unit { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::UnitsByActiveState { state } => {
+                let snapshots = systemd::get_units_by_active_state(state).await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::UnitsByActiveState { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::FailedUnits => {
+                let snapshots = systemd::get_failed_units().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::FailedUnits { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::SystemdPollStatus => {
+                let status = systemd::get_poll_status().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::SystemdPollStatus { status },
+                    })
+                    .await;
+            }
         }
     }
 
@@ -521,6 +564,46 @@ impl ClientManager {
                         success: result.is_ok(),
                         err: result.err(),
                         response: SocketCommandResponse::SystemResourcesPollResume,
+                    })
+                    .await;
+            }
+            SocketCommand::ControlUnit { unit_name, action } => {
+                let result = systemd::control_unit(display_user, unit_name, action).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::ControlUnit,
+                    })
+                    .await;
+            }
+            SocketCommand::SystemdPollInterval { interval } => {
+                let result = systemd::set_poll_interval(display_user, interval).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SystemdPollInterval,
+                    })
+                    .await;
+            }
+            SocketCommand::SystemdPollPause => {
+                let result = systemd::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SystemdPollPause,
+                    })
+                    .await;
+            }
+            SocketCommand::SystemdPollResume => {
+                let result = systemd::resume_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SystemdPollResume,
                     })
                     .await;
             }

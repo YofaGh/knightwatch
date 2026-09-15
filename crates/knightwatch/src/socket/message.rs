@@ -8,6 +8,7 @@ use crate::{
     prelude::*,
     process_tracker::{self, ProcessSnapshot, ProcessTree},
     system_resources,
+    systemd::{self, UnitSnapshot},
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -94,6 +95,16 @@ pub enum SocketQuery {
     Thresholds,
     RefreshMask,
     SystemResourcesPollStatus,
+    // Systemd
+    SystemdSnapshot,
+    Unit {
+        unit_name: String,
+    },
+    UnitsByActiveState {
+        state: systemd::UnitActiveState,
+    },
+    FailedUnits,
+    SystemdPollStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -177,6 +188,22 @@ pub enum SocketQueryResponse {
     SystemResourcesPollStatus {
         status: Option<PollStatus>,
     },
+    // Systemd
+    SystemdSnapshot {
+        snapshot: Option<systemd::SystemdSnapshot>,
+    },
+    Unit {
+        snapshot: Option<UnitSnapshot>,
+    },
+    UnitsByActiveState {
+        snapshots: Vec<UnitSnapshot>,
+    },
+    FailedUnits {
+        snapshots: Vec<UnitSnapshot>,
+    },
+    SystemdPollStatus {
+        status: Option<PollStatus>,
+    },
 }
 
 #[derive(Debug)]
@@ -244,6 +271,16 @@ pub enum SocketCommand {
     },
     SystemResourcesPollPause,
     SystemResourcesPollResume,
+    // Systemd
+    ControlUnit {
+        unit_name: String,
+        action: systemd::ServiceAction,
+    },
+    SystemdPollInterval {
+        interval: Duration,
+    },
+    SystemdPollPause,
+    SystemdPollResume,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -266,6 +303,11 @@ pub enum SocketCommandResponse {
     SystemResourcesPollInterval,
     SystemResourcesPollPause,
     SystemResourcesPollResume,
+    // Systemd
+    ControlUnit,
+    SystemdPollInterval,
+    SystemdPollPause,
+    SystemdPollResume,
 }
 
 pub struct CorrelatedSocketMessage {
