@@ -14,7 +14,7 @@ pub fn internal_server_error(error: &crate::errors::Error) -> (StatusCode, Strin
     (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
 }
 
-pub fn screenshot_to_image(screenshot: kw_types::screen::Screenshot) -> ScreenshotImage {
+pub fn screenshot_to_image(screenshot: crate::screen_capture::Screenshot) -> ScreenshotImage {
     ScreenshotImage {
         data: base64::Engine::encode(
             &base64::engine::general_purpose::STANDARD,

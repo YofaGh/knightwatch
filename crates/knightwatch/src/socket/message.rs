@@ -1,13 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use kw_types::{
-    polling::PollStatus,
-    process::{self, ProcessSnapshot, ProcessTree},
-};
+use kw_types::polling::PollStatus;
 
 use super::client::ClientId;
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    process_tracker::{self, ProcessSnapshot, ProcessTree},
+    system_resources,
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketMessage {
@@ -75,10 +76,24 @@ pub enum SocketQuery {
         root_pid: u32,
     },
     TopProcesses {
-        by: kw_types::process::ProcessesSortKey,
+        by: process_tracker::ProcessesSortKey,
         limit: usize,
     },
     ProcessTrackerPollStatus,
+    // System Resources
+    SystemSnapshot,
+    Cpu,
+    Memory,
+    Disks,
+    Networks,
+    Gpus,
+    Battery,
+    HostInfo,
+    Temperatures,
+    Alarms,
+    Thresholds,
+    RefreshMask,
+    SystemResourcesPollStatus,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -87,9 +102,9 @@ pub enum SocketQueryResponse {
     Info {
         info: kw_types::api::InfoResponse,
     },
-    // Screen
+    // Screen Capture
     Screenshots {
-        screenshots: Vec<kw_types::screen::Screenshot>,
+        screenshots: Vec<crate::screen_capture::Screenshot>,
     },
     ScreenCapturePollStatus {
         status: Option<PollStatus>,
@@ -114,12 +129,52 @@ pub enum SocketQueryResponse {
         trees: Vec<ProcessTree>,
     },
     ProcessStatus {
-        status: Option<process::ProcessStatus>,
+        status: Option<process_tracker::ProcessStatus>,
     },
     TopProcesses {
         snapshots: Vec<ProcessSnapshot>,
     },
     ProcessTrackerPollStatus {
+        status: Option<PollStatus>,
+    },
+    // System Resources
+    SystemSnapshot {
+        snapshot: Option<system_resources::SystemSnapshot>,
+    },
+    Cpu {
+        snapshot: Option<system_resources::CpuSnapshot>,
+    },
+    Memory {
+        snapshot: Option<system_resources::MemorySnapshot>,
+    },
+    Disks {
+        snapshots: Vec<system_resources::DiskSnapshot>,
+    },
+    Networks {
+        snapshots: Vec<system_resources::NetworkSnapshot>,
+    },
+    Gpus {
+        snapshots: Vec<system_resources::GpuSnapshot>,
+    },
+    Battery {
+        snapshot: Option<system_resources::BatterySnapshot>,
+    },
+    HostInfo {
+        info: Option<system_resources::HostInfo>,
+    },
+    Temperatures {
+        snapshots: Vec<system_resources::ThermalSnapshot>,
+    },
+    Alarms {
+        snapshot: Option<system_resources::AlarmSnapshot>,
+    },
+    Thresholds {
+        thresholds: Option<system_resources::Thresholds>,
+    },
+    RefreshMask {
+        refresh_mask: Option<system_resources::RefreshMask>,
+    },
+    SystemResourcesPollStatus {
         status: Option<PollStatus>,
     },
 }
@@ -161,7 +216,7 @@ pub enum SocketCommand {
     // Process Tracker
     KillProcess {
         pid: u32,
-        signal: kw_types::process::ProcessSignal,
+        signal: process_tracker::ProcessSignal,
     },
     KillTree {
         root_pid: u32,
@@ -177,11 +232,23 @@ pub enum SocketCommand {
     },
     ProcessTrackerPollPause,
     ProcessTrackerPollResume,
+    // System Resources
+    SetThresholds {
+        thresholds: system_resources::Thresholds,
+    },
+    SetRefreshMask {
+        refresh_mask: system_resources::RefreshMask,
+    },
+    SystemResourcesPollInterval {
+        interval: Duration,
+    },
+    SystemResourcesPollPause,
+    SystemResourcesPollResume,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketCommandResponse {
-    // Screen
+    // Screen Capture
     ScreenPollInterval,
     ScreenPollPause,
     ScreenPollResume,
@@ -193,6 +260,12 @@ pub enum SocketCommandResponse {
     ProcessTrackerPollInterval,
     ProcessTrackerPollPause,
     ProcessTrackerPollResume,
+    // System Resources
+    SetThresholds,
+    SetRefreshMask,
+    SystemResourcesPollInterval,
+    SystemResourcesPollPause,
+    SystemResourcesPollResume,
 }
 
 pub struct CorrelatedSocketMessage {

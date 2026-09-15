@@ -4,6 +4,8 @@ mod client;
 mod commands;
 mod event;
 
+pub use kw_types::screen::Screenshot;
+
 #[cfg(feature = "screenshot")]
 pub use capture::{init_screen_capture, start_screen_capture};
 pub use client::*;

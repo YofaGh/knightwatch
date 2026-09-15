@@ -17,7 +17,7 @@ use super::{
     },
     transport::Transport,
 };
-use crate::{events::EventPayload, prelude::*, process_tracker, screen_capture};
+use crate::{events::EventPayload, prelude::*, process_tracker, screen_capture, system_resources};
 
 #[derive(Clone)]
 struct ChannelSenders {
@@ -154,7 +154,7 @@ impl ClientManager {
         match query_req.query {
             // Common
             SocketQuery::Info => return self.send_info(&client).await,
-            // Screen
+            // Screen Capture
             SocketQuery::Screenshots => {
                 let screenshots = screen_capture::get_screenshots().await;
                 return client
@@ -244,8 +244,112 @@ impl ClientManager {
                     })
                     .await;
             }
+            // System Resources
+            SocketQuery::SystemSnapshot => {
+                let snapshot = system_resources::get_snapshot().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::SystemSnapshot { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::Cpu => {
+                let snapshot = system_resources::get_cpu().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Cpu { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::Memory => {
+                let snapshot = system_resources::get_memory().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Memory { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::Disks => {
+                let snapshots = system_resources::get_disks().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Disks { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::Networks => {
+                let snapshots = system_resources::get_networks().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Networks { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::Gpus => {
+                let snapshots = system_resources::get_gpus().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Gpus { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::Battery => {
+                let snapshot = system_resources::get_battery().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Battery { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::HostInfo => {
+                let info = system_resources::get_host_info().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::HostInfo { info },
+                    })
+                    .await;
+            }
+            SocketQuery::Temperatures => {
+                let snapshots = system_resources::get_temperatures().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Temperatures { snapshots },
+                    })
+                    .await;
+            }
+            SocketQuery::Alarms => {
+                let snapshot = system_resources::get_alarms().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Alarms { snapshot },
+                    })
+                    .await;
+            }
+            SocketQuery::Thresholds => {
+                let thresholds = system_resources::get_thresholds().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::Thresholds { thresholds },
+                    })
+                    .await;
+            }
+            SocketQuery::RefreshMask => {
+                let refresh_mask = system_resources::get_refresh_mask().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::RefreshMask { refresh_mask },
+                    })
+                    .await;
+            }
+            SocketQuery::SystemResourcesPollStatus => {
+                let status = system_resources::get_poll_status().await;
+                return client
+                    .send_message(SocketMessage::QueryResponse {
+                        response: SocketQueryResponse::SystemResourcesPollStatus { status },
+                    })
+                    .await;
+            }
         }
-        // Ok(())
     }
 
     pub async fn handle_command(&self, command_req: SocketCommandRequset) -> Result<()> {
@@ -259,6 +363,7 @@ impl ClientManager {
             return client.send_message(SocketMessage::Unauthorized).await;
         };
         match command_req.command {
+            // Screen Capture
             SocketCommand::ScreenCapturePollInterval { interval } => {
                 let result = screen_capture::set_poll_interval(display_user, interval).await;
                 return client
@@ -289,6 +394,7 @@ impl ClientManager {
                     })
                     .await;
             }
+            // Process Tracker
             SocketCommand::KillProcess { pid, signal } => {
                 let result = process_tracker::kill_process(display_user, pid, signal).await;
                 let (success, os_result, err) = match result {
@@ -364,6 +470,57 @@ impl ClientManager {
                         success: result.is_ok(),
                         err: result.err(),
                         response: SocketCommandResponse::ProcessTrackerPollResume,
+                    })
+                    .await;
+            }
+            // System Resources
+            SocketCommand::SetThresholds { thresholds } => {
+                let result = system_resources::set_thresholds(display_user, thresholds).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SetThresholds,
+                    })
+                    .await;
+            }
+            SocketCommand::SetRefreshMask { refresh_mask } => {
+                let result = system_resources::set_refresh_mask(display_user, refresh_mask).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SetRefreshMask,
+                    })
+                    .await;
+            }
+            SocketCommand::SystemResourcesPollInterval { interval } => {
+                let result = system_resources::set_poll_interval(display_user, interval).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SystemResourcesPollInterval,
+                    })
+                    .await;
+            }
+            SocketCommand::SystemResourcesPollPause => {
+                let result = system_resources::pause_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SystemResourcesPollPause,
+                    })
+                    .await;
+            }
+            SocketCommand::SystemResourcesPollResume => {
+                let result = system_resources::resume_poll(display_user).await;
+                return client
+                    .send_message(SocketMessage::CommandResponse {
+                        success: result.is_ok(),
+                        err: result.err(),
+                        response: SocketCommandResponse::SystemResourcesPollResume,
                     })
                     .await;
             }
@@ -458,12 +615,12 @@ impl ClientManager {
     }
 
     async fn send_info(&self, client: &Client) -> Result<()> {
-        let args = &crate::prelude::get_config().args;
+        let args = &get_config().args;
         let response = kw_types::api::InfoResponse {
             auth_enabled: args.enable_auth,
             shutdown_enabled: args.enable_shutdown,
             blind: args.is_blind(),
-            pid: crate::process_tracker::get_root_pids().await,
+            pid: process_tracker::get_root_pids().await,
             top_processes: args.top_processes,
             limit_processes: args.limit_processes,
             telegram_bot: args.telegram,
