@@ -1,14 +1,13 @@
-use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use kw_utils::conv;
 
+use super::message::SocketMessage;
 use crate::prelude::*;
 
-pub async fn send_message<W, T>(writer: &mut W, message: &T) -> Result<()>
+pub async fn send_message<W>(writer: &mut W, message: &SocketMessage) -> Result<()>
 where
     W: AsyncWriteExt + Unpin + Send,
-    T: serde::Serialize + Debug + Sync,
 {
     let data = serde_json::to_vec(message).map_err(|err| {
         Error::Other(format!(
@@ -27,10 +26,9 @@ where
     writer.flush().await.map_err(|err| Error::connection(&err))
 }
 
-pub async fn receive_message<R, T>(reader: &mut R) -> Result<T>
+pub async fn receive_message<R>(reader: &mut R) -> Result<SocketMessage>
 where
     R: AsyncReadExt + Unpin + Send,
-    T: for<'de> serde::Deserialize<'de> + Debug + Sync,
 {
     let mut length_buf = [0u8; 4];
     reader
@@ -48,8 +46,6 @@ where
             "Failed to Deserialize message_buf: {message_buf:?} err: {err}"
         ))
     })?;
-    tracing::Span::current().record("message", tracing::field::debug(&message));
-    debug!(?message, "close receive_message");
     Ok(message)
 }
 
