@@ -5,7 +5,7 @@ use axum::{
 };
 use axum_extra::{TypedHeader, headers};
 
-use kw_types::api::{HealthResponse, InfoResponse, LoginRequest, LoginResponse};
+use kw_types::api::{HealthResponse, LoginRequest, LoginResponse};
 
 use super::super::{session, utils::internal_server_error};
 use crate::observability::history;
@@ -29,25 +29,8 @@ pub async fn health() -> Json<HealthResponse> {
     })
 }
 
-pub async fn info() -> Json<InfoResponse> {
-    let args = &crate::prelude::get_config().args;
-    Json(InfoResponse {
-        auth_enabled: args.enable_auth,
-        shutdown_enabled: args.enable_shutdown,
-        blind: args.is_blind(),
-        pid: crate::process_tracker::get_root_pids().await,
-        top_processes: args.top_processes,
-        limit_processes: args.limit_processes,
-        telegram_bot: args.telegram,
-        system_resources: args.system_resources,
-        systemd: args.systemd,
-        docker: args.docker,
-        allow_process_commands: args.allow_process_commands,
-        allow_screen_commands: args.is_screen_commands_allowed(),
-        allow_system_resources_commands: args.allow_system_resources_commands,
-        allow_systemd_commands: args.allow_systemd_commands,
-        allow_docker_commands: args.allow_docker_commands,
-    })
+pub async fn info() -> Json<kw_types::Info> {
+    Json(crate::utils::get_info().await)
 }
 
 pub async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>, StatusCode> {

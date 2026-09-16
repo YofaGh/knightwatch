@@ -53,7 +53,7 @@ impl App {
     pub fn new(
         picker: Picker,
         api: Arc<ApiClient>,
-        info: &kw_types::api::InfoResponse,
+        info: &kw_types::Info,
         tx: Sender<AppEvent>,
     ) -> Self {
         let mut tabs: Vec<Box<dyn Tab>> = vec![];

@@ -122,7 +122,7 @@ pub enum SocketQuery {
 pub enum SocketQueryResponse {
     // Common
     Info {
-        info: kw_types::api::InfoResponse,
+        info: kw_types::Info,
     },
     // Screen Capture
     Screenshots {

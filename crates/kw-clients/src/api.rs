@@ -113,7 +113,7 @@ impl ApiClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or the response cannot be deserialized.
-    pub async fn info(&self) -> Result<kw_types::api::InfoResponse> {
+    pub async fn info(&self) -> Result<kw_types::Info> {
         self.get_typed("/info").await
     }
 

@@ -661,24 +661,7 @@ impl ClientManager {
     }
 
     async fn send_info(&self, client: &Client) -> Result<()> {
-        let args = &get_config().args;
-        let info = kw_types::api::InfoResponse {
-            auth_enabled: args.enable_auth,
-            shutdown_enabled: args.enable_shutdown,
-            blind: args.is_blind(),
-            pid: process_tracker::get_root_pids().await,
-            top_processes: args.top_processes,
-            limit_processes: args.limit_processes,
-            telegram_bot: args.telegram,
-            system_resources: args.system_resources,
-            systemd: args.systemd,
-            docker: args.docker,
-            allow_process_commands: args.allow_process_commands,
-            allow_screen_commands: args.is_screen_commands_allowed(),
-            allow_system_resources_commands: args.allow_system_resources_commands,
-            allow_systemd_commands: args.allow_systemd_commands,
-            allow_docker_commands: args.allow_docker_commands,
-        };
+        let info = crate::utils::get_info().await;
         client
             .respond_to_query(SocketQueryResponse::Info { info })
             .await

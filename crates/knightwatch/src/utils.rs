@@ -1,5 +1,7 @@
 use tokio::{net::TcpListener, sync::broadcast};
 
+use kw_types::Info;
+
 use crate::prelude::*;
 
 #[cfg(debug_assertions)]
@@ -70,5 +72,26 @@ pub async fn recv_or_pending<T: Clone>(rx: &mut Option<broadcast::Receiver<T>>, 
             }
         },
         None => std::future::pending().await,
+    }
+}
+
+pub async fn get_info() -> Info {
+    let args = &get_config().args;
+    Info {
+        auth_enabled: args.enable_auth,
+        shutdown_enabled: args.enable_shutdown,
+        blind: args.is_blind(),
+        pid: crate::process_tracker::get_root_pids().await,
+        top_processes: args.top_processes,
+        limit_processes: args.limit_processes,
+        telegram_bot: args.telegram,
+        system_resources: args.system_resources,
+        systemd: args.systemd,
+        docker: args.docker,
+        allow_process_commands: args.allow_process_commands,
+        allow_screen_commands: args.is_screen_commands_allowed(),
+        allow_system_resources_commands: args.allow_system_resources_commands,
+        allow_systemd_commands: args.allow_systemd_commands,
+        allow_docker_commands: args.allow_docker_commands,
     }
 }
