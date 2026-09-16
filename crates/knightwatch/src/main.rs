@@ -44,8 +44,8 @@ async fn main() -> Result<(), errors::Error> {
     sse::init_sse_dispatcher(cancel_token.clone());
     let tg_bot = telegram_bot::init_bot(cancel_token.clone());
     socket::init_client_manager(cancel_token.clone());
-    let _tcp_socket = socket::init_tcp_server();
-    let _ws_socket = socket::init_ws_server();
+    let tcp_socket = socket::init_tcp_server(cancel_token.clone());
+    let ws_socket = socket::init_ws_server(cancel_token.clone());
 
     // start subsystems
     #[cfg(feature = "screenshot")]
@@ -74,5 +74,14 @@ async fn main() -> Result<(), errors::Error> {
     if let Some(bot) = tg_bot {
         bot.shutdown().await;
     }
+
+    // wait for socket listeners to shutdown
+    if let Some(handle) = tcp_socket {
+        let _ = handle.await;
+    }
+    if let Some(handle) = ws_socket {
+        let _ = handle.await;
+    }
+
     Ok(())
 }
