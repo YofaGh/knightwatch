@@ -24,18 +24,18 @@ use crate::{
 
 #[derive(Clone)]
 struct ChannelSenders {
-    action_tx: mpsc::Sender<SocketActionRequset>,
-    query_tx: mpsc::Sender<SocketQueryRequset>,
-    command_tx: mpsc::Sender<SocketCommandRequset>,
-    event_tx: mpsc::Sender<ClientManagerEvent>,
+    action: mpsc::Sender<SocketActionRequset>,
+    query: mpsc::Sender<SocketQueryRequset>,
+    command: mpsc::Sender<SocketCommandRequset>,
+    event: mpsc::Sender<ClientManagerEvent>,
 }
 
 struct ChannelReceivers {
-    action_rx: mpsc::Receiver<SocketActionRequset>,
-    query_rx: mpsc::Receiver<SocketQueryRequset>,
-    command_rx: mpsc::Receiver<SocketCommandRequset>,
-    event_rx: mpsc::Receiver<ClientManagerEvent>,
-    subsystem_event_rx: mpsc::Receiver<EventPayload>,
+    action: mpsc::Receiver<SocketActionRequset>,
+    query: mpsc::Receiver<SocketQueryRequset>,
+    command: mpsc::Receiver<SocketCommandRequset>,
+    event: mpsc::Receiver<ClientManagerEvent>,
+    subsystem_event: mpsc::Receiver<EventPayload>,
 }
 
 struct ClientManager {
@@ -59,17 +59,17 @@ impl ClientManager {
             clients: HashMap::new(),
             cancel_token,
             senders: ChannelSenders {
-                action_tx,
-                query_tx,
-                command_tx,
-                event_tx,
+                action: action_tx,
+                query: query_tx,
+                command: command_tx,
+                event: event_tx,
             },
             receivers: Some(ChannelReceivers {
-                action_rx,
-                query_rx,
-                command_rx,
-                event_rx,
-                subsystem_event_rx,
+                action: action_rx,
+                query: query_rx,
+                command: command_rx,
+                event: event_rx,
+                subsystem_event: subsystem_event_rx,
             }),
         }
     }
@@ -111,33 +111,33 @@ impl ClientManager {
 
     pub async fn start(mut self) -> Result<()> {
         let ChannelReceivers {
-            mut command_rx,
-            mut query_rx,
-            mut event_rx,
-            mut action_rx,
-            mut subsystem_event_rx,
+            mut command,
+            mut query,
+            mut event,
+            mut action,
+            mut subsystem_event,
         } = self.take_receivers()?;
         loop {
             tokio::select! {
-                Some(query_req) = query_rx.recv() => {
+                Some(query_req) = query.recv() => {
                     if let Err(err) = self.handle_query(query_req).await {
                         error!("Failed to handle query err: {err}");
                     }
                 }
-                Some(command_req) = command_rx.recv() => {
+                Some(command_req) = command.recv() => {
                     if let Err(err) = self.handle_command(command_req).await {
                         error!("Failed to handle command err: {err}");
                     }
                 }
-                Some(event_req) = event_rx.recv() => {
+                Some(event_req) = event.recv() => {
                     self.handle_event(event_req).await;
                 }
-                Some(action_req) = action_rx.recv() => {
+                Some(action_req) = action.recv() => {
                     if let Err(err) = self.handle_action(action_req).await {
                         error!("Failed to handle action err: {err}");
                     }
                 }
-                Some(payload) = subsystem_event_rx.recv() => {
+                Some(payload) = subsystem_event.recv() => {
                     self.broadcast_event(payload).await;
                 }
             }
@@ -149,280 +149,216 @@ impl ClientManager {
             return Ok(());
         };
         if matches!(query_req.query, SocketQuery::Info) {
-            return self.send_info(&client).await;
+            return self.send_info(client).await;
         }
         if get_config().args.enable_auth && !client.is_authenticated() {
             return client.send_message(SocketMessage::Unauthorized).await;
         }
         match query_req.query {
             // Common
-            SocketQuery::Info => return self.send_info(&client).await,
+            SocketQuery::Info => return self.send_info(client).await,
             // Screen Capture
             SocketQuery::Screenshots => {
                 let screenshots = screen_capture::get_screenshots().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Screenshots { screenshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::Screenshots { screenshots })
                     .await;
             }
             SocketQuery::ScreenCapturePollStatus => {
                 let status = screen_capture::get_poll_status().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::ScreenCapturePollStatus { status },
-                    })
+                    .respond_to_query(SocketQueryResponse::ScreenCapturePollStatus { status })
                     .await;
             }
             // Process Tracker
             SocketQuery::RootPids => {
                 let pids = process_tracker::get_root_pids().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::RootPids { pids },
-                    })
+                    .respond_to_query(SocketQueryResponse::RootPids { pids })
                     .await;
             }
             SocketQuery::Root { root_pid } => {
                 let snapshot = process_tracker::get_root(root_pid).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Root { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Root { snapshot })
                     .await;
             }
             SocketQuery::Children { root_pid } => {
                 let snapshots = process_tracker::get_children(root_pid).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Children { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::Children { snapshots })
                     .await;
             }
             SocketQuery::IsProcessDone { root_pid } => {
                 let done = process_tracker::is_process_done(root_pid).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::IsProcessDone { done },
-                    })
+                    .respond_to_query(SocketQueryResponse::IsProcessDone { done })
                     .await;
             }
             SocketQuery::ProcessTree { root_pid } => {
                 let tree = process_tracker::get_process_tree(root_pid).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::ProcessTree { tree },
-                    })
+                    .respond_to_query(SocketQueryResponse::ProcessTree { tree })
                     .await;
             }
             SocketQuery::AllProcessTrees => {
                 let trees = process_tracker::get_all_process_trees().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::AllProcessTrees { trees },
-                    })
+                    .respond_to_query(SocketQueryResponse::AllProcessTrees { trees })
                     .await;
             }
             SocketQuery::ProcessStatus { root_pid } => {
                 let status = process_tracker::get_process_status(root_pid).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::ProcessStatus { status },
-                    })
+                    .respond_to_query(SocketQueryResponse::ProcessStatus { status })
                     .await;
             }
             SocketQuery::TopProcesses { by, limit } => {
                 let snapshots = process_tracker::get_top_processes(by, limit).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::TopProcesses { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::TopProcesses { snapshots })
                     .await;
             }
             SocketQuery::ProcessTrackerPollStatus => {
                 let status = process_tracker::get_poll_status().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::ProcessTrackerPollStatus { status },
-                    })
+                    .respond_to_query(SocketQueryResponse::ProcessTrackerPollStatus { status })
                     .await;
             }
             // System Resources
             SocketQuery::SystemSnapshot => {
                 let snapshot = system_resources::get_snapshot().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::SystemSnapshot { snapshot },
+                    .respond_to_query(SocketQueryResponse::SystemSnapshot {
+                        snapshot: Box::new(snapshot),
                     })
                     .await;
             }
             SocketQuery::Cpu => {
                 let snapshot = system_resources::get_cpu().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Cpu { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Cpu { snapshot })
                     .await;
             }
             SocketQuery::Memory => {
                 let snapshot = system_resources::get_memory().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Memory { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Memory { snapshot })
                     .await;
             }
             SocketQuery::Disks => {
                 let snapshots = system_resources::get_disks().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Disks { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::Disks { snapshots })
                     .await;
             }
             SocketQuery::Networks => {
                 let snapshots = system_resources::get_networks().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Networks { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::Networks { snapshots })
                     .await;
             }
             SocketQuery::Gpus => {
                 let snapshots = system_resources::get_gpus().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Gpus { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::Gpus { snapshots })
                     .await;
             }
             SocketQuery::Battery => {
                 let snapshot = system_resources::get_battery().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Battery { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Battery { snapshot })
                     .await;
             }
             SocketQuery::HostInfo => {
                 let info = system_resources::get_host_info().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::HostInfo { info },
-                    })
+                    .respond_to_query(SocketQueryResponse::HostInfo { info })
                     .await;
             }
             SocketQuery::Temperatures => {
                 let snapshots = system_resources::get_temperatures().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Temperatures { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::Temperatures { snapshots })
                     .await;
             }
             SocketQuery::Alarms => {
                 let snapshot = system_resources::get_alarms().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Alarms { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Alarms { snapshot })
                     .await;
             }
             SocketQuery::Thresholds => {
                 let thresholds = system_resources::get_thresholds().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Thresholds { thresholds },
-                    })
+                    .respond_to_query(SocketQueryResponse::Thresholds { thresholds })
                     .await;
             }
             SocketQuery::RefreshMask => {
                 let refresh_mask = system_resources::get_refresh_mask().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::RefreshMask { refresh_mask },
-                    })
+                    .respond_to_query(SocketQueryResponse::RefreshMask { refresh_mask })
                     .await;
             }
             SocketQuery::SystemResourcesPollStatus => {
                 let status = system_resources::get_poll_status().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::SystemResourcesPollStatus { status },
-                    })
+                    .respond_to_query(SocketQueryResponse::SystemResourcesPollStatus { status })
                     .await;
             }
             // Systemd
             SocketQuery::SystemdSnapshot => {
                 let snapshot = systemd::get_snapshot().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::SystemdSnapshot { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::SystemdSnapshot { snapshot })
                     .await;
             }
             SocketQuery::Unit { unit_name } => {
                 let snapshot = systemd::get_unit(unit_name).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Unit { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Unit { snapshot })
                     .await;
             }
             SocketQuery::UnitsByActiveState { state } => {
                 let snapshots = systemd::get_units_by_active_state(state).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::UnitsByActiveState { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::UnitsByActiveState { snapshots })
                     .await;
             }
             SocketQuery::FailedUnits => {
                 let snapshots = systemd::get_failed_units().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::FailedUnits { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::FailedUnits { snapshots })
                     .await;
             }
             SocketQuery::SystemdPollStatus => {
                 let status = systemd::get_poll_status().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::SystemdPollStatus { status },
-                    })
+                    .respond_to_query(SocketQueryResponse::SystemdPollStatus { status })
                     .await;
             }
             SocketQuery::ListContainers => {
                 let snapshots = docker_tracker::list_containers().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::ListContainers { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::ListContainers { snapshots })
                     .await;
             }
             SocketQuery::Container { id_or_name } => {
                 let snapshot = docker_tracker::get_container(id_or_name).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::Container { snapshot },
-                    })
+                    .respond_to_query(SocketQueryResponse::Container { snapshot })
                     .await;
             }
             SocketQuery::TopContainers { by, limit } => {
                 let snapshots = docker_tracker::get_top_containers(by, limit).await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::TopContainers { snapshots },
-                    })
+                    .respond_to_query(SocketQueryResponse::TopContainers { snapshots })
                     .await;
             }
             SocketQuery::DockerTrackerPollStatus => {
                 let status = docker_tracker::get_poll_status().await;
                 return client
-                    .send_message(SocketMessage::QueryResponse {
-                        response: SocketQueryResponse::DockerTrackerPollStatus { status },
-                    })
+                    .respond_to_query(SocketQueryResponse::DockerTrackerPollStatus { status })
                     .await;
             }
         }
@@ -443,31 +379,19 @@ impl ClientManager {
             SocketCommand::ScreenCapturePollInterval { interval } => {
                 let result = screen_capture::set_poll_interval(display_user, interval).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ScreenPollInterval,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ScreenPollInterval)
                     .await;
             }
             SocketCommand::ScreenCapturePollPause => {
                 let result = screen_capture::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ScreenPollPause,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ScreenPollPause)
                     .await;
             }
             SocketCommand::ScreenCapturePollResume => {
                 let result = screen_capture::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ScreenPollResume,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ScreenPollResume)
                     .await;
             }
             // Process Tracker
@@ -502,142 +426,86 @@ impl ClientManager {
             SocketCommand::TrackPid { pid } => {
                 let result = process_tracker::track_pid(display_user, pid).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::TrackPid,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::TrackPid)
                     .await;
             }
             SocketCommand::UntrackPid { pid } => {
                 let result = process_tracker::untrack_pid(display_user, pid).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::UntrackPid,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::UntrackPid)
                     .await;
             }
             SocketCommand::ProcessTrackerPollInterval { interval } => {
                 let result = process_tracker::set_poll_interval(display_user, interval).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ProcessTrackerPollInterval,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ProcessTrackerPollInterval)
                     .await;
             }
             SocketCommand::ProcessTrackerPollPause => {
                 let result = process_tracker::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ProcessTrackerPollPause,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ProcessTrackerPollPause)
                     .await;
             }
             SocketCommand::ProcessTrackerPollResume => {
                 let result = process_tracker::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ProcessTrackerPollResume,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ProcessTrackerPollResume)
                     .await;
             }
             // System Resources
             SocketCommand::SetThresholds { thresholds } => {
                 let result = system_resources::set_thresholds(display_user, thresholds).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SetThresholds,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SetThresholds)
                     .await;
             }
             SocketCommand::SetRefreshMask { refresh_mask } => {
                 let result = system_resources::set_refresh_mask(display_user, refresh_mask).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SetRefreshMask,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SetRefreshMask)
                     .await;
             }
             SocketCommand::SystemResourcesPollInterval { interval } => {
                 let result = system_resources::set_poll_interval(display_user, interval).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SystemResourcesPollInterval,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SystemResourcesPollInterval)
                     .await;
             }
             SocketCommand::SystemResourcesPollPause => {
                 let result = system_resources::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SystemResourcesPollPause,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SystemResourcesPollPause)
                     .await;
             }
             SocketCommand::SystemResourcesPollResume => {
                 let result = system_resources::resume_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SystemResourcesPollResume,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SystemResourcesPollResume)
                     .await;
             }
             SocketCommand::ControlUnit { unit_name, action } => {
                 let result = systemd::control_unit(display_user, unit_name, action).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::ControlUnit,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::ControlUnit)
                     .await;
             }
             SocketCommand::SystemdPollInterval { interval } => {
                 let result = systemd::set_poll_interval(display_user, interval).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SystemdPollInterval,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SystemdPollInterval)
                     .await;
             }
             SocketCommand::SystemdPollPause => {
                 let result = systemd::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SystemdPollPause,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SystemdPollPause)
                     .await;
             }
             SocketCommand::SystemdPollResume => {
                 let result = systemd::resume_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::SystemdPollResume,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::SystemdPollResume)
                     .await;
             }
             SocketCommand::StopContainer {
@@ -647,31 +515,19 @@ impl ClientManager {
                 let result =
                     docker_tracker::stop_container(display_user, id_or_name, timeout_secs).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::StopContainer,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::StopContainer)
                     .await;
             }
             SocketCommand::KillContainer { id_or_name, signal } => {
                 let result = docker_tracker::kill_container(display_user, id_or_name, signal).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::KillContainer,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::KillContainer)
                     .await;
             }
             SocketCommand::StartContainer { id_or_name } => {
                 let result = docker_tracker::start_container(display_user, id_or_name).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::StartContainer,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::StartContainer)
                     .await;
             }
             SocketCommand::RestartContainer {
@@ -681,61 +537,37 @@ impl ClientManager {
                 let result =
                     docker_tracker::restart_container(display_user, id_or_name, timeout_secs).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::RestartContainer,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::RestartContainer)
                     .await;
             }
             SocketCommand::PauseContainer { id_or_name } => {
                 let result = docker_tracker::pause_container(display_user, id_or_name).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::PauseContainer,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::PauseContainer)
                     .await;
             }
             SocketCommand::UnpauseContainer { id_or_name } => {
                 let result = docker_tracker::unpause_container(display_user, id_or_name).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::UnpauseContainer,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::UnpauseContainer)
                     .await;
             }
             SocketCommand::DockerTrackerPollInterval { interval } => {
                 let result = docker_tracker::set_poll_interval(display_user, interval).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::DockerTrackerPollInterval,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::DockerTrackerPollInterval)
                     .await;
             }
             SocketCommand::DockerTrackerPollPause => {
                 let result = docker_tracker::pause_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::DockerTrackerPollPause,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::DockerTrackerPollPause)
                     .await;
             }
             SocketCommand::DockerTrackerPollResume => {
                 let result = docker_tracker::resume_poll(display_user).await;
                 return client
-                    .send_message(SocketMessage::CommandResponse {
-                        success: result.is_ok(),
-                        err: result.err(),
-                        response: SocketCommandResponse::DockerTrackerPollResume,
-                    })
+                    .respond_to_command(result, SocketCommandResponse::DockerTrackerPollResume)
                     .await;
             }
         }
@@ -830,7 +662,7 @@ impl ClientManager {
 
     async fn send_info(&self, client: &Client) -> Result<()> {
         let args = &get_config().args;
-        let response = kw_types::api::InfoResponse {
+        let info = kw_types::api::InfoResponse {
             auth_enabled: args.enable_auth,
             shutdown_enabled: args.enable_shutdown,
             blind: args.is_blind(),
@@ -848,9 +680,7 @@ impl ClientManager {
             allow_docker_commands: args.allow_docker_commands,
         };
         client
-            .send_message(SocketMessage::QueryResponse {
-                response: SocketQueryResponse::Info { info: response },
-            })
+            .respond_to_query(SocketQueryResponse::Info { info })
             .await
     }
 
@@ -861,7 +691,7 @@ impl ClientManager {
     }
 
     pub fn setup_client_connection(
-        &mut self,
+        &self,
         transport: Transport,
         client_id: ClientId,
     ) -> ClientConnection {
@@ -900,19 +730,19 @@ impl ClientManager {
                             Ok(message) => {
                                 match message {
                                     SocketMessage::Action { action } => {
-                                        let _ = senders.action_tx.send(SocketActionRequset {
+                                        let _ = senders.action.send(SocketActionRequset {
                                             client_id,
                                             action
                                         }).await;
                                     }
                                     SocketMessage::Query { query } => {
-                                        let _ = senders.query_tx.send(SocketQueryRequset {
+                                        let _ = senders.query.send(SocketQueryRequset {
                                             client_id,
                                             query
                                         }).await;
                                     }
                                     SocketMessage::Command { command } => {
-                                        let _ = senders.command_tx.send(SocketCommandRequset {
+                                        let _ = senders.command.send(SocketCommandRequset {
                                             client_id,
                                             command
                                         }).await;
@@ -922,7 +752,7 @@ impl ClientManager {
                             }
                             Err(err) => {
                                 warn!("Client {client_id} disconnected err: {err}");
-                                Self::notify_client_disconnection(&senders.event_tx, client_id);
+                                Self::notify_client_disconnection(&senders.event, client_id).await;
                                 break;
                             }
                         }
@@ -940,7 +770,7 @@ impl ClientManager {
         mut receiver: mpsc::Receiver<CorrelatedSocketMessage>,
         mut shutdown_rx: oneshot::Receiver<()>,
     ) -> JoinHandle<WriteHalf<Transport>> {
-        let event_tx = self.senders.event_tx.clone();
+        let event_tx = self.senders.event.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -956,7 +786,7 @@ impl ClientManager {
                                 if result.is_err() {
                                     should_break = true;
                                     warn!("Failed to send message to client {client_id}: {result:?}");
-                                    Self::notify_client_disconnection(&event_tx, client_id);
+                                    Self::notify_client_disconnection(&event_tx, client_id).await;
                                 }
                                 let _ = response_tx.send(result);
                                 if should_break {
@@ -972,11 +802,13 @@ impl ClientManager {
         })
     }
 
-    pub fn notify_client_disconnection(
+    pub async fn notify_client_disconnection(
         event_tx: &mpsc::Sender<ClientManagerEvent>,
         client_id: ClientId,
     ) {
-        let _ = event_tx.send(ClientManagerEvent::ClientDisconnected { client_id });
+        let _ = event_tx
+            .send(ClientManagerEvent::ClientDisconnected { client_id })
+            .await;
     }
 
     async fn close_client_connection(&mut self, client_id: ClientId) {

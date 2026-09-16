@@ -1,7 +1,11 @@
 use tokio::task::JoinHandle;
 use tokio_tungstenite::accept_async;
 
-use super::{framing::*, message::SocketMessage, transport::Transport};
+use super::{
+    framing::{receive_message, send_message},
+    message::SocketMessage,
+    transport::Transport,
+};
 use crate::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,12 +48,12 @@ async fn handle_client(connection: &mut Transport) -> Result<()> {
                 "Expected HandshakeResponse, Received {invalid:?}"
             )));
         }
-    };
+    }
     Ok(())
 }
 
 fn spawn_server(host: &str, port: u16, protocol: ServerProtocol) -> Result<JoinHandle<()>> {
-    let listener = crate::utils::get_listener(&format!("{}:{}", host, port))?;
+    let listener = crate::utils::get_listener(&format!("{host}:{port}"))?;
     let server = tokio::spawn(async move {
         loop {
             match listener.accept().await {
@@ -57,13 +61,13 @@ fn spawn_server(host: &str, port: u16, protocol: ServerProtocol) -> Result<JoinH
                     tokio::spawn(async move {
                         let mut stream = match protocol {
                             ServerProtocol::WebSocket => match accept_async(stream).await {
-                                Ok(ws) => Transport::new_websocket_plain(ws),
+                                Ok(ws) => Transport::new_websocket(ws),
                                 Err(err) => {
                                     error!("WebSocket handshake failed for {addr}: {err}");
                                     return;
                                 }
                             },
-                            ServerProtocol::Tcp => Transport::new_plain(stream),
+                            ServerProtocol::Tcp => Transport::new_tcp(stream),
                         };
                         match handle_client(&mut stream).await {
                             Ok(()) => match super::client_manager::add_client(stream).await {

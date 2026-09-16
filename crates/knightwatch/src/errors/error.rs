@@ -16,7 +16,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn connection(err: IoError) -> Self {
+    pub fn connection(err: &IoError) -> Self {
         Self::Socket(format!("Connection error {err}"))
     }
     pub fn bind_address(address: &str, err: &IoError) -> Self {

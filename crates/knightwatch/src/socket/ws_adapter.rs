@@ -15,7 +15,7 @@ pub struct WebSocketAdapter<S> {
 }
 
 impl<S> WebSocketAdapter<S> {
-    pub fn new(ws: WebSocketStream<S>) -> Self {
+    pub const fn new(ws: WebSocketStream<S>) -> Self {
         Self {
             inner: ws,
             read_buffer: VecDeque::new(),
@@ -44,10 +44,9 @@ where
         match futures::Stream::poll_next(Pin::new(&mut self.inner), cx) {
             Poll::Ready(Some(Ok(Message::Binary(data)))) => {
                 let to_read = buf.remaining().min(data.len());
-                buf.put_slice(&data[..to_read]);
-                for byte in data.into_iter().skip(to_read) {
-                    self.read_buffer.push_back(byte);
-                }
+                let (head, tail) = data.split_at(to_read);
+                buf.put_slice(head);
+                self.read_buffer.extend(tail.iter().copied());
                 Poll::Ready(Ok(()))
             }
             Poll::Ready(Some(Ok(Message::Close(_)))) => Poll::Ready(Err(Error::new(
@@ -59,8 +58,7 @@ where
                 ErrorKind::UnexpectedEof,
                 "WebSocket stream ended",
             ))),
-            Poll::Pending => Poll::Pending,
-            _ => Poll::Pending,
+            Poll::Pending | Poll::Ready(_) => Poll::Pending,
         }
     }
 }

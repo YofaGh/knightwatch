@@ -5,6 +5,7 @@ use tokio::{
 };
 
 use super::{
+    message,
     message::{CorrelatedSocketMessage, SocketMessage},
     transport::Transport,
 };
@@ -31,7 +32,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(id: ClientId, connection: ClientConnection) -> Self {
+    pub const fn new(id: ClientId, connection: ClientConnection) -> Self {
         Self {
             id,
             is_authenticated: false,
@@ -42,16 +43,16 @@ impl Client {
         }
     }
 
-    pub fn is_authenticated(&self) -> bool {
+    pub const fn is_authenticated(&self) -> bool {
         self.is_authenticated
     }
 
-    pub fn set_authentication(&mut self, authentication: bool) {
+    pub const fn set_authentication(&mut self, authentication: bool) {
         self.is_authenticated = authentication;
     }
 
     pub fn set_display_user(&mut self, display_user: DisplayUser) {
-        self.display_user = Some(display_user)
+        self.display_user = Some(display_user);
     }
 
     pub fn clear_display_user(&mut self) {
@@ -62,20 +63,20 @@ impl Client {
         self.display_user.clone()
     }
 
-    pub fn take_connection(&mut self) -> Option<ClientConnection> {
+    pub const fn take_connection(&mut self) -> Option<ClientConnection> {
         self.connection.take()
     }
 
-    pub fn events_enabled(&self) -> bool {
+    pub const fn events_enabled(&self) -> bool {
         self.events_enabled
     }
-    pub fn set_events_enabled(&mut self, enabled: bool) {
+    pub const fn set_events_enabled(&mut self, enabled: bool) {
         self.events_enabled = enabled;
     }
-    pub fn ticks_enabled(&self) -> bool {
+    pub const fn ticks_enabled(&self) -> bool {
         self.ticks_enabled
     }
-    pub fn set_ticks_enabled(&mut self, enabled: bool) {
+    pub const fn set_ticks_enabled(&mut self, enabled: bool) {
         self.ticks_enabled = enabled;
     }
 
@@ -87,6 +88,24 @@ impl Client {
                 .ok_or_else(|| Error::Socket("Client message_writer_tx is None".into()))?,
             message,
         )
+        .await
+    }
+
+    pub async fn respond_to_query(&self, response: message::SocketQueryResponse) -> Result<()> {
+        self.send_message(SocketMessage::QueryResponse { response })
+            .await
+    }
+
+    pub async fn respond_to_command(
+        &self,
+        result: Result<()>,
+        response: message::SocketCommandResponse,
+    ) -> Result<()> {
+        self.send_message(SocketMessage::CommandResponse {
+            success: result.is_ok(),
+            err: result.err(),
+            response,
+        })
         .await
     }
 }
@@ -104,10 +123,9 @@ pub async fn send_message_to_client(
         .send(correlated_message)
         .await
         .map_err(|_| Error::Socket("Failed to send message to client".to_string()))?;
-    match response_rx.await {
-        Ok(result) => result,
-        Err(_) => Err(Error::Socket(
+    response_rx.await.unwrap_or_else(|_| {
+        Err(Error::Socket(
             "Response channel closed for client".to_string(),
-        )),
-    }
+        ))
+    })
 }

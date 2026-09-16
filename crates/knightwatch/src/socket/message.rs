@@ -161,7 +161,7 @@ pub enum SocketQueryResponse {
     },
     // System Resources
     SystemSnapshot {
-        snapshot: Option<system_resources::SystemSnapshot>,
+        snapshot: Box<Option<system_resources::SystemSnapshot>>,
     },
     Cpu {
         snapshot: Option<system_resources::CpuSnapshot>,

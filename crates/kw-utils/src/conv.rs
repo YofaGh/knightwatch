@@ -60,6 +60,13 @@ pub fn usize_to_f64(v: usize) -> f64 {
     v.to_f64().unwrap_or(0.0)
 }
 
+/// `u32 -> usize`. Always exact on 32-bit+ targets (usize is at least as
+/// wide as u32 on every platform we build for).
+#[must_use]
+pub fn u32_to_usize(v: u32) -> usize {
+    usize::try_from(v).unwrap_or(usize::MAX)
+}
+
 /// `f64 -> usize`, saturating on negative/NaN instead of the UB-ish `as` cast.
 #[must_use]
 pub fn f64_to_usize_saturating(v: f64) -> usize {

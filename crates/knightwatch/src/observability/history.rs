@@ -25,7 +25,7 @@ pub struct StoredEvent {
 impl From<&EventPayload> for StoredEvent {
     fn from(p: &EventPayload) -> Self {
         Self {
-            event: p.event.to_string(),
+            event: p.event.clone(),
             timestamp: p.timestamp.clone(),
             source: p.source,
             data: p.data.clone(),
