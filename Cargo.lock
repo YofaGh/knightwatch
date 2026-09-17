@@ -2684,6 +2684,7 @@ dependencies = [
  "nvml-wrapper",
  "procfs",
  "serde",
+ "serde_json",
  "starship-battery",
  "sysinfo",
  "tokio",

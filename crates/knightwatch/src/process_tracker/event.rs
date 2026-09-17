@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use kw_types::process::ProcessSnapshot;
+use kw_types::{event, process::ProcessSnapshot};
 
 #[derive(Debug, Clone)]
 pub enum ProcessTrackerEvent {
@@ -47,7 +47,7 @@ pub enum ProcessTrackerEvent {
     },
 }
 
-impl From<&ProcessTrackerEvent> for crate::events::EventPayload {
+impl From<&ProcessTrackerEvent> for event::EventPayload {
     fn from(event: &ProcessTrackerEvent) -> Self {
         let (event_name, data) = match event {
             ProcessTrackerEvent::RootExited { pid } => {
@@ -94,6 +94,12 @@ impl From<&ProcessTrackerEvent> for crate::events::EventPayload {
                 }),
             ),
         };
-        Self::new(crate::events::EventSource::ProcessTracker, event_name, data)
+        Self::new(
+            crate::utils::get_version().to_string(),
+            event::EventSource::ProcessTracker,
+            event_name,
+            crate::utils::now_rfc3339(),
+            data,
+        )
     }
 }

@@ -1,5 +1,7 @@
 use serde_json::json;
 
+use kw_types::event;
+
 #[derive(Debug, Clone)]
 pub enum ScreenCaptureEvent {
     /// A user issued a mutating command (poll-control),
@@ -13,7 +15,7 @@ pub enum ScreenCaptureEvent {
     },
 }
 
-impl From<&ScreenCaptureEvent> for crate::events::EventPayload {
+impl From<&ScreenCaptureEvent> for event::EventPayload {
     fn from(event: &ScreenCaptureEvent) -> Self {
         let (event_name, data) = match event {
             ScreenCaptureEvent::CommandExecuted {
@@ -32,6 +34,12 @@ impl From<&ScreenCaptureEvent> for crate::events::EventPayload {
                 }),
             ),
         };
-        Self::new(crate::events::EventSource::ScreenCapture, event_name, data)
+        Self::new(
+            crate::utils::get_version().to_string(),
+            event::EventSource::ScreenCapture,
+            event_name,
+            crate::utils::now_rfc3339(),
+            data,
+        )
     }
 }

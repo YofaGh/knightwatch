@@ -1,4 +1,6 @@
-use crate::{events::EventPayload, prelude::*, utils::recv_or_pending};
+use kw_types::event::EventPayload;
+
+use crate::{prelude::*, utils::recv_or_pending};
 
 pub async fn run_dispatcher(cancel_token: tokio_util::sync::CancellationToken) {
     let mut screen_capture_rx = crate::screen_capture::subscribe_events();

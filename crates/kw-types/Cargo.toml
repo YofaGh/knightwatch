@@ -14,6 +14,7 @@ server = ["bollard", "nvml-wrapper", "procfs", "starship-battery", "sysinfo", "t
 bollard = { workspace = true, optional = true }
 nvml-wrapper = { workspace = true, optional = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 starship-battery = { workspace = true, optional = true }
 sysinfo = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }

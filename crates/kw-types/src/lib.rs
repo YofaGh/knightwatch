@@ -1,9 +1,11 @@
 pub mod api;
 pub mod docker;
+pub mod event;
 pub mod polling;
 pub mod process;
 pub mod resources;
 pub mod screen;
+pub mod socket;
 pub mod systemd;
 pub mod systemd_helper;
 

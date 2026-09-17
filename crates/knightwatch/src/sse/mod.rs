@@ -4,7 +4,9 @@ pub mod handlers;
 use std::sync::OnceLock;
 use tokio::sync::broadcast;
 
-use crate::{prelude::*, events::EventPayload};
+use kw_types::event::EventPayload;
+
+use crate::prelude::*;
 
 const CHANNEL_CAPACITY: usize = 256;
 

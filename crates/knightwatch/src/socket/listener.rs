@@ -1,9 +1,10 @@
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use kw_types::socket::SocketMessage;
+
 use super::{
     framing::{receive_message, send_message},
-    message::SocketMessage,
     transport::Transport,
 };
 use crate::prelude::*;

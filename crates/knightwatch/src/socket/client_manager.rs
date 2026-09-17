@@ -7,19 +7,24 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+use kw_types::{
+    event::EventPayload,
+    socket::{
+        AuthFailedReason, SocketAction, SocketCommand, SocketCommandResponse, SocketMessage,
+        SocketQuery, SocketQueryResponse,
+    },
+};
+
 use super::{
     client::{Client, ClientConnection, ClientId},
     event::ClientManagerEvent,
     message::{
-        AuthFailedReason, CorrelatedSocketMessage, SocketAction, SocketActionRequset,
-        SocketCommand, SocketCommandRequset, SocketCommandResponse, SocketMessage, SocketQuery,
-        SocketQueryRequset, SocketQueryResponse,
+        CorrelatedSocketMessage, SocketActionRequset, SocketCommandRequset, SocketQueryRequset,
     },
     transport::Transport,
 };
 use crate::{
-    docker_tracker, events::EventPayload, prelude::*, process_tracker, screen_capture,
-    system_resources, systemd,
+    docker_tracker, prelude::*, process_tracker, screen_capture, system_resources, systemd,
 };
 
 #[derive(Clone)]
@@ -404,7 +409,7 @@ impl ClientManager {
                 return client
                     .send_message(SocketMessage::CommandResponse {
                         success,
-                        err,
+                        err: err.map(|err| err.to_string()),
                         response: SocketCommandResponse::KillProcess { os_result },
                     })
                     .await;
@@ -418,7 +423,7 @@ impl ClientManager {
                 return client
                     .send_message(SocketMessage::CommandResponse {
                         success,
-                        err,
+                        err: err.map(|err| err.to_string()),
                         response: SocketCommandResponse::KillTree { killed_pids },
                     })
                     .await;
@@ -852,7 +857,7 @@ pub fn init_client_manager(cancel_token: CancellationToken) {
 pub async fn add_client(transport: Transport) -> Result<()> {
     let _ = CLIENT_MANAGER_EVENT_SENDER
         .get()
-        .ok_or_else(|| Error::Socket("Client manager event server not initialized".into()))?
+        .ok_or_else(|| Error::Socket("Client manager event sender not initialized".into()))?
         .send(ClientManagerEvent::AddClient { transport })
         .await;
     Ok(())

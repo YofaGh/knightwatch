@@ -1,7 +1,9 @@
 use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 
-use crate::{events::EventPayload, prelude::*, utils::recv_or_pending};
+use kw_types::event::EventPayload;
+
+use crate::{prelude::*, utils::recv_or_pending};
 
 pub async fn run_dispatcher(targets: Vec<super::WebhookTarget>, cancel_token: CancellationToken) {
     let mut screen_capture_rx = crate::screen_capture::subscribe_events();

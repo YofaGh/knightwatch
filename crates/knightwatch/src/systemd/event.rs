@@ -2,7 +2,10 @@
 
 use serde_json::json;
 
-use kw_types::systemd::{SystemdSnapshot, UnitSnapshot};
+use kw_types::{
+    event,
+    systemd::{SystemdSnapshot, UnitSnapshot},
+};
 
 #[derive(Debug, Clone)]
 pub enum SystemdEvent {
@@ -31,7 +34,7 @@ pub enum SystemdEvent {
     },
 }
 
-impl From<&SystemdEvent> for crate::events::EventPayload {
+impl From<&SystemdEvent> for event::EventPayload {
     fn from(event: &SystemdEvent) -> Self {
         let (event_name, data) = match event {
             SystemdEvent::InitialSnapshot { snapshot } => (
@@ -96,6 +99,12 @@ impl From<&SystemdEvent> for crate::events::EventPayload {
                 }),
             ),
         };
-        Self::new(crate::events::EventSource::Systemd, event_name, data)
+        Self::new(
+            crate::utils::get_version().to_string(),
+            event::EventSource::Systemd,
+            event_name,
+            crate::utils::now_rfc3339(),
+            data,
+        )
     }
 }

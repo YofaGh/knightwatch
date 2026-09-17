@@ -4,9 +4,10 @@ use std::{io, path::Path, time::Duration};
 use tokio::{fs, io::AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
+use kw_types::event::{EventPayload, EventSource};
+
 use crate::{
     config::log_dir,
-    events::{EventPayload, EventSource},
     prelude::*,
     utils::recv_or_pending,
 };

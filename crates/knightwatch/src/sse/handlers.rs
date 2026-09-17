@@ -6,7 +6,9 @@ use futures::stream::Stream;
 use std::convert::Infallible;
 use tokio_stream::StreamExt;
 
-use crate::{events::EventPayload, prelude::warn};
+use kw_types::event::EventPayload;
+
+use crate::prelude::warn;
 
 #[derive(serde::Deserialize)]
 pub struct SseQuery {

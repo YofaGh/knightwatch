@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use kw_types::docker::ContainerSnapshot;
+use kw_types::{docker::ContainerSnapshot, event};
 
 #[derive(Debug, Clone)]
 pub enum DockerTrackerEvent {
@@ -40,7 +40,7 @@ pub enum DockerTrackerEvent {
     },
 }
 
-impl From<&DockerTrackerEvent> for crate::events::EventPayload {
+impl From<&DockerTrackerEvent> for event::EventPayload {
     fn from(event: &DockerTrackerEvent) -> Self {
         let (event_name, data) = match event {
             DockerTrackerEvent::InitialSnapshot { containers } => (
@@ -115,6 +115,12 @@ impl From<&DockerTrackerEvent> for crate::events::EventPayload {
                 }),
             ),
         };
-        Self::new(crate::events::EventSource::DockerTracker, event_name, data)
+        Self::new(
+            crate::utils::get_version().to_string(),
+            event::EventSource::DockerTracker,
+            event_name,
+            crate::utils::now_rfc3339(),
+            data,
+        )
     }
 }

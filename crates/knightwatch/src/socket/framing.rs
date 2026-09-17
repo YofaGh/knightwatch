@@ -1,8 +1,8 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use kw_utils::conv;
+use kw_types::socket::SocketMessage;
 
-use super::message::SocketMessage;
 use crate::prelude::*;
 
 pub async fn send_message<W>(writer: &mut W, message: &SocketMessage) -> Result<()>

@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use kw_types::resources::SystemSnapshot;
+use kw_types::{event, resources::SystemSnapshot};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub enum SystemResourcesEvent {
@@ -27,7 +27,9 @@ pub enum SystemResourcesEvent {
     BatteryLow { charge_percent: f32, threshold: f32 },
 
     /// Battery state changed (e.g. plugged in / unplugged).
-    BatteryStateChanged { state: kw_types::resources::BatteryState },
+    BatteryStateChanged {
+        state: kw_types::resources::BatteryState,
+    },
     /// A user issued a mutating command (action or poll-control),
     /// along with whether it succeeded.
     CommandExecuted {
@@ -38,7 +40,7 @@ pub enum SystemResourcesEvent {
     },
 }
 
-impl From<&SystemResourcesEvent> for crate::events::EventPayload {
+impl From<&SystemResourcesEvent> for event::EventPayload {
     fn from(event: &SystemResourcesEvent) -> Self {
         let (event_name, data) = match event {
             SystemResourcesEvent::InitialSnapshot { snapshot } => (
@@ -96,6 +98,12 @@ impl From<&SystemResourcesEvent> for crate::events::EventPayload {
                 }),
             ),
         };
-        Self::new(crate::events::EventSource::SystemResources, event_name, data)
+        Self::new(
+            crate::utils::get_version().to_string(),
+            event::EventSource::SystemResources,
+            event_name,
+            crate::utils::now_rfc3339(),
+            data,
+        )
     }
 }

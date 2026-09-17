@@ -1,4 +1,6 @@
-use crate::{events::EventPayload, utils::recv_or_pending};
+use kw_types::event::EventPayload;
+
+use crate::utils::recv_or_pending;
 
 pub fn spawn_event_dispatcher(
     tx: tokio::sync::mpsc::Sender<EventPayload>,

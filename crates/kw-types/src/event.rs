@@ -22,12 +22,18 @@ pub struct EventPayload {
 }
 
 impl EventPayload {
-    pub fn new(source: EventSource, event: &'static str, data: Value) -> Self {
+    pub fn new(
+        version: String,
+        source: EventSource,
+        event: &'static str,
+        timestamp: String,
+        data: Value,
+    ) -> Self {
         Self {
-            version: crate::utils::get_version().to_string(),
+            version,
             source,
             event: event.to_string(),
-            timestamp: crate::utils::now_rfc3339(),
+            timestamp,
             data,
         }
     }

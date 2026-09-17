@@ -4,11 +4,9 @@ use tokio::{
     task::JoinHandle,
 };
 
-use super::{
-    message,
-    message::{CorrelatedSocketMessage, SocketMessage},
-    transport::Transport,
-};
+use kw_types::socket::{SocketCommandResponse, SocketMessage, SocketQueryResponse};
+
+use super::{message::CorrelatedSocketMessage, transport::Transport};
 use crate::prelude::*;
 
 pub type ClientId = uuid::Uuid;
@@ -91,7 +89,7 @@ impl Client {
         .await
     }
 
-    pub async fn respond_to_query(&self, response: message::SocketQueryResponse) -> Result<()> {
+    pub async fn respond_to_query(&self, response: SocketQueryResponse) -> Result<()> {
         self.send_message(SocketMessage::QueryResponse { response })
             .await
     }
@@ -99,11 +97,11 @@ impl Client {
     pub async fn respond_to_command(
         &self,
         result: Result<()>,
-        response: message::SocketCommandResponse,
+        response: SocketCommandResponse,
     ) -> Result<()> {
         self.send_message(SocketMessage::CommandResponse {
             success: result.is_ok(),
-            err: result.err(),
+            err: result.err().map(|err| err.to_string()),
             response,
         })
         .await
