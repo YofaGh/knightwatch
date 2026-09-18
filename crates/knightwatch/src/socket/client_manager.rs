@@ -596,9 +596,11 @@ impl ClientManager {
         match action_req.action {
             SocketAction::Login { username, password } => {
                 if client.is_authenticated() {
-                    return Ok(());
+                    return client
+                        .send_message(SocketMessage::AlreadyAuthenticated)
+                        .await;
                 }
-                let Some(users) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
+                let Some(users) = get_users().filter(|u| !u.users.is_empty()) else {
                     return client
                         .send_message(SocketMessage::AuthenticationFailed {
                             reason: AuthFailedReason::WrongCredentials,

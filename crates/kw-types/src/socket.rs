@@ -39,6 +39,7 @@ pub enum SocketMessage {
     AuthenticationSucceed,
     ShutdownNotEnabled,
     Unauthorized,
+    AlreadyAuthenticated,
     ShuttingDown,
     SetEventPreferences,
 }
