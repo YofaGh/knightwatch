@@ -1,6 +1,7 @@
 pub mod api;
 pub mod docker;
 pub mod event;
+pub mod history;
 pub mod polling;
 pub mod process;
 pub mod resources;

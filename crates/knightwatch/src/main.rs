@@ -2,7 +2,6 @@ mod api;
 mod config;
 mod docker_tracker;
 mod errors;
-// mod events;
 mod macros;
 mod observability;
 mod prelude;

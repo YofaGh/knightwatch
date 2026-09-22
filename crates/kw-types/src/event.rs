@@ -56,3 +56,22 @@ impl EventPayload {
         matches!(self.event.as_str(), "resources.tick" | "systemd.tick")
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredEvent {
+    pub event: String,
+    pub timestamp: String,
+    pub source: EventSource,
+    pub data: Value,
+}
+
+impl From<&EventPayload> for StoredEvent {
+    fn from(p: &EventPayload) -> Self {
+        Self {
+            event: p.event.clone(),
+            timestamp: p.timestamp.clone(),
+            source: p.source,
+            data: p.data.clone(),
+        }
+    }
+}

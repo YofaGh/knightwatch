@@ -65,8 +65,8 @@ pub async fn logout(
 }
 
 pub async fn history(
-    Query(query): Query<history::HistoryQuery>,
-) -> Result<Json<Vec<history::StoredEvent>>, (StatusCode, String)> {
+    Query(query): Query<kw_types::history::HistoryQuery>,
+) -> Result<Json<Vec<kw_types::event::StoredEvent>>, (StatusCode, String)> {
     history::query_history(query)
         .await
         .map(Json)

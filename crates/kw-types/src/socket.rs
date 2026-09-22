@@ -7,6 +7,7 @@ use crate::{
     process::{self, ProcessSnapshot, ProcessTree},
     resources,
     systemd::{self, UnitSnapshot},
+    event,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,7 +32,7 @@ pub enum SocketMessage {
         response: SocketCommandResponse,
     },
     Event {
-        event: crate::event::EventPayload,
+        event: event::EventPayload,
     },
     AuthenticationFailed {
         reason: AuthFailedReason,
@@ -48,6 +49,9 @@ pub enum SocketMessage {
 pub enum SocketQuery {
     // Common
     Info,
+    History {
+        query: crate::history::HistoryQuery,
+    },
     // Screen Capture
     Screenshots,
     ScreenCapturePollStatus,
@@ -115,6 +119,9 @@ pub enum SocketQueryResponse {
     // Common
     Info {
         info: crate::Info,
+    },
+    History {
+        events: Vec<event::StoredEvent>,
     },
     // Screen Capture
     Screenshots {

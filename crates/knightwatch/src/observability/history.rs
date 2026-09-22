@@ -1,38 +1,13 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{io, path::Path, time::Duration};
 use tokio::{fs, io::AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
-use kw_types::event::{EventPayload, EventSource};
+use kw_types::event::{EventPayload, StoredEvent};
 
-use crate::{
-    config::log_dir,
-    prelude::*,
-    utils::recv_or_pending,
-};
+use crate::{config::log_dir, prelude::*, utils::recv_or_pending};
 
 const RETENTION_DAYS: i64 = 30;
 const PRUNE_INTERVAL: Duration = Duration::from_hours(24);
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StoredEvent {
-    pub event: String,
-    pub timestamp: String,
-    pub source: EventSource,
-    pub data: Value,
-}
-
-impl From<&EventPayload> for StoredEvent {
-    fn from(p: &EventPayload) -> Self {
-        Self {
-            event: p.event.clone(),
-            timestamp: p.timestamp.clone(),
-            source: p.source,
-            data: p.data.clone(),
-        }
-    }
-}
 
 /// First 10 chars of an RFC3339 timestamp, i.e. "YYYY-MM-DD".
 /// Falls back to the whole string if it's shorter than expected.
@@ -103,30 +78,7 @@ fn extract_log_date(filename: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct HistoryQuery {
-    pub since: Option<String>,
-    pub until: Option<String>,
-    pub event: Option<String>,
-    pub source: Option<EventSource>,
-    pub limit: Option<usize>,
-}
-
-impl HistoryQuery {
-    pub fn filter(&self, event: &StoredEvent) -> bool {
-        self.since
-            .as_ref()
-            .is_none_or(|since| &event.timestamp >= since)
-            && self
-                .until
-                .as_ref()
-                .is_none_or(|until| &event.timestamp <= until)
-            && self.event.as_ref().is_none_or(|ev| &event.event == ev)
-            && self.source.is_none_or(|src| event.source == src)
-    }
-}
-
-pub async fn query_history(query: HistoryQuery) -> Result<Vec<StoredEvent>> {
+pub async fn query_history(query: kw_types::history::HistoryQuery) -> Result<Vec<StoredEvent>> {
     let dir = log_dir().ok_or_else(|| Error::Other("Failed to get logs directory".into()))?;
     let mut files = match fs::read_dir(&dir).await {
         Ok(mut entries) => {
@@ -170,7 +122,7 @@ pub async fn query_history(query: HistoryQuery) -> Result<Vec<StoredEvent>> {
         };
         let mut matches: Vec<StoredEvent> = content
             .lines()
-            .filter_map(|line| serde_json::from_str::<StoredEvent>(line).ok())
+            .filter_map(|line| serde_json::from_str(line).ok())
             .filter(|r| query.filter(r))
             .collect();
         if newest_first {

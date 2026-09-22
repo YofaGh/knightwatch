@@ -24,7 +24,8 @@ use super::{
     transport::Transport,
 };
 use crate::{
-    docker_tracker, prelude::*, process_tracker, screen_capture, system_resources, systemd,
+    docker_tracker, observability::history, prelude::*, process_tracker, screen_capture,
+    system_resources, systemd,
 };
 
 #[derive(Clone)]
@@ -162,6 +163,13 @@ impl ClientManager {
         match query_req.query {
             // Common
             SocketQuery::Info => return self.send_info(client).await,
+            SocketQuery::History { query } => {
+                return client
+                    .respond_to_query(SocketQueryResponse::History {
+                        events: history::query_history(query).await.unwrap_or_default(),
+                    })
+                    .await;
+            }
             // Screen Capture
             SocketQuery::Screenshots => {
                 let screenshots = screen_capture::get_screenshots().await;
