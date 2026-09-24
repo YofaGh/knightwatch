@@ -22,6 +22,7 @@ pub struct EventPayload {
 }
 
 impl EventPayload {
+    #[must_use]
     pub fn new(
         version: String,
         source: EventSource,
@@ -37,21 +38,27 @@ impl EventPayload {
             data,
         }
     }
+    #[must_use]
     pub fn is_screen_capture(&self) -> bool {
         self.source == EventSource::ScreenCapture
     }
+    #[must_use]
     pub fn is_process_tracker(&self) -> bool {
         self.source == EventSource::ProcessTracker
     }
+    #[must_use]
     pub fn is_system_resources(&self) -> bool {
         self.source == EventSource::SystemResources
     }
+    #[must_use]
     pub fn is_systemd(&self) -> bool {
         self.source == EventSource::Systemd
     }
+    #[must_use]
     pub fn is_docker_tracker(&self) -> bool {
         self.source == EventSource::DockerTracker
     }
+    #[must_use]
     pub fn is_tick(&self) -> bool {
         matches!(self.event.as_str(), "resources.tick" | "systemd.tick")
     }

@@ -10,6 +10,7 @@ pub struct HistoryQuery {
 }
 
 impl HistoryQuery {
+    #[must_use]
     pub fn filter(&self, event: &event::StoredEvent) -> bool {
         self.since
             .as_ref()
