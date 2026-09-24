@@ -73,6 +73,7 @@ pub struct CliArgs {
     pub system_resources: bool,
 
     /// Enable systemd
+    #[cfg(target_os = "linux")]
     #[arg(long, default_value_t = false)]
     pub systemd: bool,
 
@@ -118,6 +119,7 @@ pub struct CliArgs {
     pub allow_system_resources_commands: bool,
 
     /// Allow systemd commands
+    #[cfg(target_os = "linux")]
     #[arg(long, default_value_t = false)]
     pub allow_systemd_commands: bool,
 
@@ -138,6 +140,20 @@ impl CliArgs {
         #[cfg(feature = "screenshot")]
         return self.allow_screen_commands;
         #[cfg(not(feature = "screenshot"))]
+        return false;
+    }
+
+    pub const fn is_systemd_enabled(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.systemd;
+        #[cfg(not(target_os = "linux"))]
+        return false;
+    }
+
+    pub const fn is_systemd_commands_allowed(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return self.allow_systemd_commands;
+        #[cfg(not(target_os = "linux"))]
         return false;
     }
 }

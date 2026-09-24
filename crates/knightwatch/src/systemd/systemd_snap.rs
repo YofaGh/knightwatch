@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use kw_types::systemd::{UnitActiveState, UnitType};
 
 pub struct UnitFilter {

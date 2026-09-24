@@ -186,7 +186,7 @@ const fn should_enable_auth(config: &crate::config::AppConfig) -> bool {
         || config.args.allow_process_commands
         || (!config.args.is_blind() && config.args.is_screen_commands_allowed())
         || (config.args.system_resources && config.args.allow_system_resources_commands)
-        || (config.args.systemd && config.args.allow_systemd_commands)
+        || (config.args.is_systemd_enabled() && config.args.is_systemd_commands_allowed())
         || (config.args.docker && config.args.allow_docker_commands)
 }
 
@@ -214,7 +214,7 @@ pub fn create_routers(
     if config.args.allow_system_resources_commands {
         app = app.nest("/api", create_sr_commands_router());
     }
-    if config.args.allow_systemd_commands {
+    if config.args.is_systemd_commands_allowed() {
         app = app.nest("/api", create_systemd_commands_router());
     }
     if config.args.allow_docker_commands {

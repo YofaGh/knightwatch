@@ -31,6 +31,7 @@ async fn main() -> Result<(), errors::Error> {
     process_tracker::init_process_tracker();
     system_resources::init_system_resources();
     docker_tracker::init_docker_tracker();
+    #[cfg(target_os = "linux")]
     systemd::init_systemd_monitor().await;
 
     // create cancellation token to stop interfaces
@@ -52,6 +53,7 @@ async fn main() -> Result<(), errors::Error> {
     process_tracker::start_process_tracker();
     system_resources::start_system_resources();
     docker_tracker::start_docker_tracker();
+    #[cfg(target_os = "linux")]
     systemd::start_systemd_monitor();
 
     // wait for cancel token or Ctrl+c signal

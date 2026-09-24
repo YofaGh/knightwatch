@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 use tokio::sync::{OnceCell, broadcast, mpsc};
 use zbus::{Connection, zvariant::OwnedObjectPath};
@@ -520,4 +520,57 @@ pub static SYSTEMD_QUERY_SENDER: OnceLock<mpsc::Sender<SystemdQuery>> = OnceLock
 pub static SYSTEMD_EVENT_SENDER: OnceLock<broadcast::Sender<SystemdEvent>> = OnceLock::new();
 pub static SYSTEMD_COMMAND_SENDER: OnceLock<mpsc::Sender<SystemdCommand>> = OnceLock::new();
 
-pub static SYSTEMD_MONITOR: OnceLock<std::sync::Mutex<Option<SystemdMonitor>>> = OnceLock::new();
+static SYSTEMD_MONITOR: OnceLock<Mutex<Option<SystemdMonitor>>> = OnceLock::new();
+
+pub async fn init_systemd_monitor() {
+    if !get_config().args.systemd {
+        return;
+    }
+    match SystemdMonitor::new().await {
+        Ok(m) => {
+            let _ = SYSTEMD_QUERY_SENDER.set(m.channels.query_tx.clone());
+            let _ = SYSTEMD_EVENT_SENDER.set(m.channels.event_tx.clone());
+            let _ = SYSTEMD_MONITOR.set(Mutex::new(Some(m)));
+        }
+        Err(e) => {
+            error!(
+                ?e,
+                "failed to initialise systemd monitor — is D-Bus available?"
+            );
+        }
+    }
+}
+
+pub fn start_systemd_monitor() {
+    let Some(monitor) = SYSTEMD_MONITOR
+        .get()
+        .and_then(|cell| cell.lock().ok())
+        .and_then(|mut guard| guard.take())
+    else {
+        return;
+    };
+    if get_config().args.allow_systemd_commands {
+        let helper_slot = monitor.helper_handle();
+        let command_tx = monitor.channels.command_tx.clone();
+        tokio::spawn(async move {
+            match SystemdHelperClient::spawn().await {
+                Ok(Some(helper)) => {
+                    if helper_slot.set(helper).is_ok() {
+                        let _ = SYSTEMD_COMMAND_SENDER.set(command_tx);
+                        info!("Systemd command helper ready");
+                    }
+                }
+                Ok(None) => {
+                    warn!("Systemd command helper was not authorized — commands stay disabled");
+                }
+                Err(e) => error!(?e, "failed to start systemd command helper"),
+            }
+        });
+    }
+    tokio::spawn(async move {
+        info!("Systemd Monitor started");
+        if let Err(e) = monitor.start_monitor_loop().await {
+            error!(?e, "systemd monitor loop exited with error");
+        }
+    });
+}
