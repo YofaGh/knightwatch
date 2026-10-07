@@ -402,7 +402,7 @@ impl ClientManager {
                     .await;
             }
             SocketCommand::ScreenCapturePollResume => {
-                let result = screen_capture::pause_poll(display_user).await;
+                let result = screen_capture::resume_poll(display_user).await;
                 return client
                     .respond_to_command(result, SocketCommandResponse::ScreenPollResume)
                     .await;
@@ -461,7 +461,7 @@ impl ClientManager {
                     .await;
             }
             SocketCommand::ProcessTrackerPollResume => {
-                let result = process_tracker::pause_poll(display_user).await;
+                let result = process_tracker::resume_poll(display_user).await;
                 return client
                     .respond_to_command(result, SocketCommandResponse::ProcessTrackerPollResume)
                     .await;
