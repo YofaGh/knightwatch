@@ -16,6 +16,7 @@ companions `knightwatch-cli` and `knightwatch-tui` clients are also available fo
 
 - **REST API** — Axum-powered HTTP API for querying state and sending commands programmatically
 - **Server-Sent Events (SSE)** — Real-time event stream available at `/sse` via the Axum API server
+- **TCP & WebSocket Sockets** — Optional persistent, bidirectional socket interfaces (length-prefixed JSON) for queries, commands, and live event streaming over a single connection
 - **Live Screenshots** — Displays one or more connected screens, refreshed every 2 seconds
 - **Process Monitor** — Tracks a root process and its children with real-time CPU, memory, and state indicators
 - **Process Commands** — Kill, track, untrack processesm
@@ -27,6 +28,7 @@ companions `knightwatch-cli` and `knightwatch-tui` clients are also available fo
 - **Systemd Commands** — control units
 - **Docker Containers Monitor** — Monitor docker containers and track their resource usages
 - **Docker Commands** — Manager Containers
+- **Event History** — Events from every enabled monitor (screen capture, processes, system resources, systemd, docker) are persisted to daily log files (one JSON event per line) and can be queried later by time range, with a 30-day automatic retention
 - **Telegram Bot** — Optional bot for remote monitoring, push notifications, and run commands
 - **Webhook Dispatcher** — POST process and system events to one or more URLs with automatic retry
 
@@ -132,6 +134,12 @@ knightwatch --telegram
 # Enable webhook dispatching
 knightwatch --webhook https://example.com/hook
 
+# Enable the TCP socket server
+knightwatch --tcp-socket
+
+# Enable the WebSocket server
+knightwatch --ws-socket
+
 # Run headless (no screen capture)
 knightwatch --pid <PID> --blind
 
@@ -164,8 +172,24 @@ knightwatch --pid <PID> --allow-process-commands
 | `--allow-system-resources-commands` | `false`   | Enable system resources command endpoints (set tresholds, refresh masks, poll control) — **always requires authentication** |
 | `--allow-systemd-commands`          | `false`   | Enable systemd command endpoints (control units, poll control) — **always requires authentication**                         |
 | `--allow-docker-commands`           | `false`   | Enable docker command endpoints (manager containers, poll control) — **always requires authentication**                     |
+| `--tcp-socket`                      | `false`   | Enable the TCP socket server                                                                                                |
+| `--tcp-host <HOST>`                 | `0.0.0.0` | Host address for the TCP socket server                                                                                      |
+| `--tcp-port <PORT>`                 | `8084`    | Port for the TCP socket server                                                                                              |
+| `--ws-socket`                       | `false`   | Enable the WebSocket server                                                                                                 |
+| `--ws-host <HOST>`                  | `0.0.0.0` | Host address for the WebSocket server                                                                                       |
+| `--ws-port <PORT>`                  | `8085`    | Port for the WebSocket server                                                                                               |
 
 > **Note:** `allowing commands` always requires authentication regardless of the `--enable-auth` flag. The auth session endpoints are automatically enabled when this flag is set.
+
+### Event History
+
+Whenever at least one monitor is enabled, Knightwatch records the events they emit (screen capture, process tracker, system resources, systemd, docker) to disk. Periodic tick events are skipped, so only meaningful changes are stored.
+
+- **Format** — one JSON event per line, in daily files named `knightwatch-events-YYYY-MM-DD.log` inside the Knightwatch logs directory
+- **Retention** — files older than 30 days are deleted automatically, once at startup and then every 24 hours
+- **Querying** — history can be queried by time range (`since` / `until`), with an optional limit, and returns matching events oldest-to-newest. With a limit and no `until`, the most recent matching events are returned
+  No extra flag is needed — event history is active as soon as any tracker is enabled.
+  history can be queried by api or socket clients and can be viewed, downloaded and uploaded in web dashboard.
 
 ### Log Level
 
@@ -182,14 +206,17 @@ RUST_LOG=debug knightwatch --pid <PID>
 Full reference documentation is available in the [Wiki](https://github.com/YofaGh/knightwatch/wiki):
 
 - [API Reference](https://github.com/YofaGh/knightwatch/wiki/API-Reference) — All endpoints and response shapes
-- [Process Tracker](https://github.com/YofaGh/knightwatch/wiki/Process-Tracker) — Process tracking, commands, and events
+- [Process Tracker](https://github.com/YofaGh/knightwatch/wiki/Process-Tracker) — Process tracking, commands and events
+- [Screen Capture](https://github.com/YofaGh/knightwatch/wiki/Screen-Capture) — Captures screenshots from monitors, commands and events
 - [System Resources Monitor](https://github.com/YofaGh/knightwatch/wiki/System-Resources-Monitor) — Hardware telemetry, alarms and thresholds
 - [Systemd Monitor](https://github.com/YofaGh/knightwatch/wiki/Systemd-Monitor) — Unit tracking and events (Linux only)
 - [Docker Tracker](https://github.com/YofaGh/knightwatch/wiki/Docker-Tracker) — Docker containers tracking, commands and events
+- [Event History](https://github.com/YofaGh/knightwatch/wiki/Event-History) — Persisted event logs, retention and history queries
 - [Telegram Bot](https://github.com/YofaGh/knightwatch/wiki/Telegram-Bot) — Setup, commands, and notifications
 - [Webhooks](https://github.com/YofaGh/knightwatch/wiki/Webhooks) — Payload format and event catalogue
 - [Authentication](https://github.com/YofaGh/knightwatch/wiki/Authentication) — User management and API auth
 - [Persistent Configuration](https://github.com/YofaGh/knightwatch/wiki/Persistent-Configuration) — Stored settings via `config` subcommand
+- [Socket](https://github.com/YofaGh/knightwatch/wiki/Socket) — TCP/WebSocket protocol, handshake, queries, commands and events
 - [Knightwatch CLI](https://github.com/YofaGh/knightwatch/wiki/Knightwatch-cli) — Using `knightwatch-cli` to connect to a remote or local server
 - [Knightwatch TUI](https://github.com/YofaGh/knightwatch/wiki/Knightwatch-tui) — Using `knightwatch-tui` to connect to a remote or local server
 
