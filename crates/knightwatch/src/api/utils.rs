@@ -28,3 +28,12 @@ pub fn screenshot_to_image(screenshot: crate::screen_capture::Screenshot) -> Scr
         timestamp: crate::utils::now_rfc3339(),
     }
 }
+
+pub const fn should_enable_auth(config: &crate::config::AppConfig) -> bool {
+    config.args.enable_auth
+        || config.args.allow_process_commands
+        || (!config.args.is_blind() && config.args.is_screen_commands_allowed())
+        || (config.args.system_resources && config.args.allow_system_resources_commands)
+        || (config.args.is_systemd_enabled() && config.args.is_systemd_commands_allowed())
+        || (config.args.docker && config.args.allow_docker_commands)
+}

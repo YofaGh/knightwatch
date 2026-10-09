@@ -1,14 +1,11 @@
 #![allow(clippy::unused_self)]
 
 use clap::Subcommand;
+use std::time::Duration;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(clap::Parser, Debug)]
-#[command(
-    name = "knightwatch",
-    about = "Screen monitoring and notification tool",
-    version
-)]
+#[command(name = "knightwatch", about = "Monitoring tool", version)]
 pub struct CliArgs {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -28,6 +25,14 @@ pub struct CliArgs {
     /// Enable shutdown command
     #[arg(long, default_value_t = false)]
     pub enable_shutdown: bool,
+
+    /// Session idle timeout in minutes (0 disables idle expiry)
+    #[arg(long, default_value_t = 30)]
+    pub session_idle_timeout_mins: u64,
+
+    /// Session absolute TTL in hours (0 disables absolute expiry)
+    #[arg(long, default_value_t = 12)]
+    pub session_ttl_hours: u64,
 
     /// Disable the API server entirely
     #[arg(long, default_value_t = false)]
@@ -129,6 +134,20 @@ pub struct CliArgs {
 }
 
 impl CliArgs {
+    pub fn session_timeouts(&self) -> (Duration, Duration) {
+        let idle = if self.session_idle_timeout_mins == 0 {
+            Duration::MAX
+        } else {
+            Duration::from_secs(self.session_idle_timeout_mins * 60)
+        };
+        let ttl = if self.session_ttl_hours == 0 {
+            Duration::MAX
+        } else {
+            Duration::from_secs(self.session_ttl_hours * 3600)
+        };
+        (idle, ttl)
+    }
+
     pub const fn is_blind(&self) -> bool {
         #[cfg(feature = "screenshot")]
         return self.blind;

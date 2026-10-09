@@ -1,5 +1,11 @@
-use axum::{body::Body, http::StatusCode, response::Response};
+use axum::{
+    Router,
+    body::Body,
+    http::{HeaderName, HeaderValue, StatusCode},
+    response::Response,
+};
 use std::{sync::OnceLock, time::Instant};
+use tower_http::{set_header::SetResponseHeaderLayer, trace::TraceLayer};
 
 use super::{models::Vite, routers::create_routers};
 use crate::prelude::*;
@@ -69,12 +75,32 @@ async fn serve_dashboard(uri: axum::http::Uri) -> Response {
     }
 }
 
+fn with_security_headers(app: Router) -> Router {
+    app.layer(TraceLayer::new_for_http())
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("no-referrer"),
+        ))
+}
+
 pub fn init_api_server(cancel_token: tokio_util::sync::CancellationToken) -> Result<Option<Vite>> {
     let config = get_config();
     if config.args.no_api {
         return Ok(None);
     }
     init_start_time();
+    if super::utils::should_enable_auth(config) {
+        let (idle, ttl) = config.args.session_timeouts();
+        super::session::spawn_session_reaper(idle, ttl, cancel_token.clone());
+    }
     let mut app = create_routers(config, cancel_token.clone());
     #[cfg(debug_assertions)]
     let vite = if config.args.no_dashboard {
@@ -90,6 +116,7 @@ pub fn init_api_server(cancel_token: tokio_util::sync::CancellationToken) -> Res
         }
         None
     };
+    let app = with_security_headers(app);
     let api_listener = crate::utils::get_listener(&config.server_address())?;
     tokio::spawn(async move {
         if let Err(err) = axum::serve(api_listener, app)

@@ -42,14 +42,11 @@ pub async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>
         _ => return Err(StatusCode::UNAUTHORIZED),
     }
     let token = uuid::Uuid::new_v4().to_string();
-    let session = session::Session {
-        username: body.username,
-        token: token.clone(),
-    };
+    let user_session = session::Session::new(body.username, token.clone());
     session::get_sessions()
         .write()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .insert(session);
+        .insert(user_session);
     Ok(Json(LoginResponse { token }))
 }
 

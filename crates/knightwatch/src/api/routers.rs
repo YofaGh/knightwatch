@@ -1,8 +1,11 @@
 use axum::{
-    Router, middleware,
+    Router,
+    http::StatusCode,
+    middleware,
     routing::{get, post},
 };
 use tokio_util::sync::CancellationToken;
+use tower_http::{limit::RequestBodyLimitLayer, timeout::TimeoutLayer};
 
 use super::{
     end_points::{
@@ -56,6 +59,20 @@ fn create_common_router() -> Router {
         .route("/info", get(info))
 }
 
+fn create_sse_router(auth_layer: bool) -> Router {
+    let mut sse = Router::new()
+        .route("/sse", get(sse_stream))
+        .route("/sse/screen-capture", get(sse_stream_screen))
+        .route("/sse/process-tracker", get(sse_stream_process))
+        .route("/sse/system-resources", get(sse_stream_system_resources))
+        .route("/sse/systemd", get(sse_stream_systemd))
+        .route("/sse/docker-tracker", get(sse_stream_docker));
+    if auth_layer {
+        sse = sse.layer(middleware::from_fn(auth_middleware));
+    }
+    sse
+}
+
 fn create_api_router(
     cancel_token: CancellationToken,
     enable_shutdown: bool,
@@ -102,14 +119,7 @@ fn create_api_router(
         .route("/docker-containers", get(list_docker_containers)) // docker containers
         .route("/container/{id_or_name}", get(get_docker_container)) // container by name or id
         .route("/top-containers", get(top_docker_containers)) // top containers
-        .route("/docker/poll/status", get(docker_tracker_poll_status)) // docker tracker poll status
-        // ── SSE ───────────────────────────────────────────────────────
-        .route("/sse", get(sse_stream))
-        .route("/sse/screen-capture", get(sse_stream_screen))
-        .route("/sse/process-tracker", get(sse_stream_process))
-        .route("/sse/system-resources", get(sse_stream_system_resources))
-        .route("/sse/systemd", get(sse_stream_systemd))
-        .route("/sse/docker-tracker", get(sse_stream_docker));
+        .route("/docker/poll/status", get(docker_tracker_poll_status)); // docker tracker poll status
     if enable_shutdown {
         api = api.route("/shutdown", post(shutdown));
     }
@@ -181,15 +191,6 @@ fn create_docker_commands_router() -> Router {
         .layer(middleware::from_fn(auth_middleware))
 }
 
-const fn should_enable_auth(config: &crate::config::AppConfig) -> bool {
-    config.args.enable_auth
-        || config.args.allow_process_commands
-        || (!config.args.is_blind() && config.args.is_screen_commands_allowed())
-        || (config.args.system_resources && config.args.allow_system_resources_commands)
-        || (config.args.is_systemd_enabled() && config.args.is_systemd_commands_allowed())
-        || (config.args.docker && config.args.allow_docker_commands)
-}
-
 pub fn create_routers(
     config: &crate::config::AppConfig,
     cancel_token: CancellationToken,
@@ -199,10 +200,11 @@ pub fn create_routers(
         config.args.enable_shutdown,
         config.args.enable_auth,
     );
+    let sse_router = create_sse_router(config.args.enable_auth);
     let mut app = Router::new()
         .nest("/api", api_router)
         .nest("/api", create_common_router());
-    if should_enable_auth(config) {
+    if super::utils::should_enable_auth(config) {
         app = app.nest("/api/auth", create_auth_router());
     }
     if config.args.allow_process_commands {
@@ -220,5 +222,11 @@ pub fn create_routers(
     if config.args.allow_docker_commands {
         app = app.nest("/api", create_docker_commands_router());
     }
-    app
+    let app = app
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(30),
+        ))
+        .layer(RequestBodyLimitLayer::new(10 * 1024 * 1024));
+    app.nest("/api", sse_router)
 }
