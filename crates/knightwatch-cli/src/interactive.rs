@@ -269,6 +269,10 @@ fn print_help() {
         ("common", &["health", "info", "shutdown"]),
         ("auth", &["login -u USER -p PASS", "logout"]),
         (
+            "events",
+            &["watch [all|screen|process|resources|systemd|docker] [--ticks]"],
+        ),
+        (
             "screen",
             &[
                 "screenshot",

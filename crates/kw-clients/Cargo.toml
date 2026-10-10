@@ -8,11 +8,13 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-reqwest = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 kw-types = { path = "../kw-types" }
+eventsource-stream = "0.2.3"
 
 [lints]
 workspace = true

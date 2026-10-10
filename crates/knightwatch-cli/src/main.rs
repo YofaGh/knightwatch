@@ -1,17 +1,31 @@
 #![allow(clippy::print_stdout)]
 
 use clap::Parser;
-use std::error::Error;
+use futures::{Stream, StreamExt};
+use std::{error::Error, pin::Pin};
 
 use kw_clients::ApiClient;
 use kw_types::{
     docker::DockerSortKey,
+    event::EventPayload,
     process::{ProcessSignal, ProcessesSortKey},
     systemd::ServiceAction,
 };
 
+use colors::{CYAN, DIM, RED, RESET};
+
 mod colors;
 mod interactive;
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum WatchStream {
+    All,
+    Screen,
+    Process,
+    Resources,
+    Systemd,
+    Docker,
+}
 
 /// CLI client for Knightwatch API
 #[derive(Parser)]
@@ -40,6 +54,16 @@ enum Commands {
     Info,
     /// Shut down the server
     Shutdown,
+    // ── Live events (SSE) ─────────────────────────────────────────────────
+    /// Stream live server events until Ctrl-C
+    Watch {
+        /// Which stream to follow
+        #[arg(value_enum, default_value_t = WatchStream::All)]
+        stream: WatchStream,
+        /// Also print tick events
+        #[arg(long)]
+        ticks: bool,
+    },
 
     // ── Auth ──────────────────────────────────────────────────────────────
     /// Log in and receive a bearer token
@@ -322,6 +346,7 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
                 ok();
             }
         }
+        Commands::Watch { stream, ticks } => watch(api, stream, ticks).await?,
 
         // ── Auth ──────────────────────────────────────────────────────────
         Commands::Login { username, password } => {
@@ -353,7 +378,10 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             }
         }
         Commands::ScreenCapturePollStatus => {
-            println!("screen capture poll status: {}", api.screen_capture_poll_status().await?);
+            println!(
+                "screen capture poll status: {}",
+                api.screen_capture_poll_status().await?
+            );
         }
 
         // ── Screen capture commands ───────────────────────────────────────
@@ -404,7 +432,10 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             print(&api.supported_signals().await?);
         }
         Commands::ProcessTrackerPollStatus => {
-            println!("process tracker poll status: {}", api.process_tracker_poll_status().await?);
+            println!(
+                "process tracker poll status: {}",
+                api.process_tracker_poll_status().await?
+            );
         }
 
         // ── Process commands ──────────────────────────────────────────────
@@ -480,7 +511,10 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             println!("{}", api.alarms().await?);
         }
         Commands::SystemResourcesPollStatus => {
-            println!("screen capture poll status: {}", api.system_resources_poll_status().await?);
+            println!(
+                "screen capture poll status: {}",
+                api.system_resources_poll_status().await?
+            );
         }
         Commands::SystemResourcesThresholds => {
             print(&api.system_resources_thresholds().await?);
@@ -584,7 +618,10 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
             }
         }
         Commands::DockerTrackerPollStatus => {
-            println!("docker tracker poll status: {}", api.docker_tracker_poll_status().await?);
+            println!(
+                "docker tracker poll status: {}",
+                api.docker_tracker_poll_status().await?
+            );
         }
 
         // ── Docker commands ───────────────────────────────────────────────
@@ -632,7 +669,48 @@ async fn dispatch(command: Commands, api: &ApiClient) -> Result<(), Box<dyn Erro
         }
         Commands::Interactive => {
             // Handled before dispatch is called — should never reach here.
-            // unreachable!()
+        }
+    }
+    Ok(())
+}
+
+async fn watch(api: &ApiClient, stream: WatchStream, ticks: bool) -> Result<(), Box<dyn Error>> {
+    type Events<'a> = Pin<Box<dyn Stream<Item = Result<EventPayload, Box<dyn Error>>> + 'a>>;
+
+    let mut events: Events = match stream {
+        WatchStream::All => Box::pin(api.sse_all(ticks).await?),
+        WatchStream::Screen => Box::pin(api.sse_screen_capture(ticks).await?),
+        WatchStream::Process => Box::pin(api.sse_process_tracker(ticks).await?),
+        WatchStream::Resources => Box::pin(api.sse_system_resources(ticks).await?),
+        WatchStream::Systemd => Box::pin(api.sse_systemd(ticks).await?),
+        WatchStream::Docker => Box::pin(api.sse_docker_tracker(ticks).await?),
+    };
+
+    println!("{DIM}watching events, press Ctrl-C to stop{RESET}");
+
+    let ctrl_c = tokio::signal::ctrl_c();
+    tokio::pin!(ctrl_c);
+
+    loop {
+        tokio::select! {
+            _ = &mut ctrl_c => {
+                println!("{DIM}stopped{RESET}");
+                break;
+            }
+            next = events.next() => match next {
+                Some(Ok(payload)) => {
+                    let json = serde_json::to_string(&payload).unwrap_or_default();
+                    println!("{CYAN}{}{RESET} {json}", payload.event);
+                }
+                Some(Err(e)) => {
+                    println!("{RED}stream error:{RESET} {e}");
+                    break;
+                }
+                None => {
+                    println!("{DIM}stream closed by server{RESET}");
+                    break;
+                }
+            }
         }
     }
     Ok(())

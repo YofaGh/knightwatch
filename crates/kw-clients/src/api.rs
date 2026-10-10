@@ -1,3 +1,5 @@
+use eventsource_stream::Eventsource;
+use futures::{Stream, StreamExt};
 use reqwest::{Client, RequestBuilder};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -5,6 +7,7 @@ use serde_json::{Value, json};
 use kw_types::{
     api::{ContainerRequest, ContainerTimeoutRequest, LoginResponse, SetPollIntervalRequest},
     docker::ContainerSnapshot,
+    event::EventPayload,
     polling::PollStatus,
     process::{ProcessSignal, ProcessSnapshot, ProcessTree},
     resources,
@@ -95,6 +98,78 @@ impl ApiClient {
             .await?;
         let text = resp.text().await?;
         Ok(serde_json::from_str(&text)?)
+    }
+
+    async fn sse(
+        &self,
+        path: &str,
+        ticks: bool,
+    ) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        let resp = self
+            .bearer(
+                self.client
+                    .get(self.url(path))
+                    .query(&[("ticks", ticks)])
+                    .header(reqwest::header::ACCEPT, "text/event-stream"),
+            )
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("HTTP {status}: {text}").into());
+        }
+
+        Ok(resp
+            .bytes_stream()
+            .eventsource()
+            .map(|ev| -> Result<EventPayload> {
+                let ev = ev?;
+                Ok(serde_json::from_str(&ev.data)?)
+            }))
+    }
+
+    // ── SSE ───────────────────────────────────────────────────────────
+
+    /// Streams all events. Set `ticks` to also receive tick events.
+    pub async fn sse_all(&self, ticks: bool) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        self.sse("/sse", ticks).await
+    }
+
+    pub async fn sse_screen_capture(
+        &self,
+        ticks: bool,
+    ) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        self.sse("/sse/screen-capture", ticks).await
+    }
+
+    pub async fn sse_process_tracker(
+        &self,
+        ticks: bool,
+    ) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        self.sse("/sse/process-tracker", ticks).await
+    }
+
+    pub async fn sse_system_resources(
+        &self,
+        ticks: bool,
+    ) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        self.sse("/sse/system-resources", ticks).await
+    }
+
+    pub async fn sse_systemd(
+        &self,
+        ticks: bool,
+    ) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        self.sse("/sse/systemd", ticks).await
+    }
+
+    pub async fn sse_docker_tracker(
+        &self,
+        ticks: bool,
+    ) -> Result<impl Stream<Item = Result<EventPayload>>> {
+        self.sse("/sse/docker-tracker", ticks).await
     }
 
     // ── Common ────────────────────────────────────────────────────────
