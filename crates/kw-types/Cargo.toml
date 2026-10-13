@@ -20,6 +20,9 @@ sysinfo = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 kw-utils = { path = "../kw-utils" }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = { version = "0.18.0", optional = true }
 
