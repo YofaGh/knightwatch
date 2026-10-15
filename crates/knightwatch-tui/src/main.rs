@@ -29,8 +29,18 @@ fn restore_terminal() -> io::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    if std::env::args()
+        .skip(1)
+        .any(|a| a == "--version" || a == "-V")
+    {
+        println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    enable_raw_mode()?;
     enable_raw_mode()?;
 
     // Make sure a panic anywhere (main loop or a spawned task) doesn't leave
@@ -104,7 +114,7 @@ async fn main() -> io::Result<()> {
     // Every producer below just sends into a clone of `tx`.
     let (tx, mut rx) = tokio::sync::mpsc::channel(32);
 
-    let mut app = app::App::new(picker, api, &info, tx.clone());
+    let mut app = app::App::new(picker, api, info, tx.clone());
 
     // Drop our own sender. If we didn't, `rx.recv()` would never return
     // `None` even after every spawned task above exits, since a sender

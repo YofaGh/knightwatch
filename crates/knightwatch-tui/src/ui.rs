@@ -52,8 +52,12 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     // Right-hand cluster: telegram status (only when active) + shutdown.
     let shutdown_label = format!(" {} Shutdown ", icon::POWER);
     let telegram_label = format!(" {} Telegram ", icon::BOT);
-    let mut right_width = usize_to_u16_saturating(shutdown_label.chars().count());
-    if app.telegram_bot {
+    let mut right_width = if app.info.shutdown_enabled {
+        usize_to_u16_saturating(shutdown_label.chars().count())
+    } else {
+        0
+    };
+    if app.info.telegram_bot {
         right_width =
             right_width.saturating_add(usize_to_u16_saturating(telegram_label.chars().count()));
     }
@@ -103,7 +107,7 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
     frame.render_widget(Paragraph::new(Line::from(spans)), tabs_area);
 
     let mut right_spans = Vec::new();
-    if app.telegram_bot {
+    if app.info.telegram_bot {
         right_spans.push(Span::styled(
             telegram_label,
             Style::default()
@@ -111,13 +115,15 @@ pub fn render(frame: &mut ratatui::Frame, app: &mut crate::app::App) {
                 .add_modifier(Modifier::BOLD),
         ));
     }
-    right_spans.push(Span::styled(
-        shutdown_label.clone(),
-        Style::default()
-            .fg(theme::TEXT)
-            .bg(theme::DANGER)
-            .add_modifier(Modifier::BOLD),
-    ));
+    if app.info.shutdown_enabled {
+        right_spans.push(Span::styled(
+            shutdown_label.clone(),
+            Style::default()
+                .fg(theme::TEXT)
+                .bg(theme::DANGER)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
     frame.render_widget(
         Paragraph::new(Line::from(right_spans)).alignment(Alignment::Right),
         right_area,

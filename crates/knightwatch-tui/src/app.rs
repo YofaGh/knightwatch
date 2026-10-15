@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 use kw_clients::ApiClient;
+use kw_types::Info;
 use kw_utils::conv;
 
 use crate::{
@@ -38,24 +39,17 @@ pub struct App {
     pub authenticated: bool,
     api: Arc<ApiClient>,
     tx: Sender<AppEvent>,
-    auth_enabled: bool,
     /// `Some` while the shutdown confirmation modal is open.
     pub confirm_shutdown: Option<ConfirmState>,
-    /// Whether the server reports its Telegram bot as active. Pure
-    /// display info, set once from `/info` and never changes at runtime.
-    pub telegram_bot: bool,
+    // app info fetched from server through api
+    pub info: Info,
     /// Screen-space rect of the shutdown button, recomputed every render
     /// so mouse clicks can be matched against it.
     pub shutdown_hit_rect: Option<Rect>,
 }
 
 impl App {
-    pub fn new(
-        picker: Picker,
-        api: Arc<ApiClient>,
-        info: &kw_types::Info,
-        tx: Sender<AppEvent>,
-    ) -> Self {
+    pub fn new(picker: Picker, api: Arc<ApiClient>, info: Info, tx: Sender<AppEvent>) -> Self {
         let mut tabs: Vec<Box<dyn Tab>> = vec![];
 
         // --- Keyboard / mouse input ---
@@ -175,10 +169,9 @@ impl App {
             login,
             api,
             tx,
-            auth_enabled: info.auth_enabled,
             authenticated: false,
             confirm_shutdown: None,
-            telegram_bot: info.telegram_bot,
+            info,
             shutdown_hit_rect: None,
         }
     }
@@ -293,7 +286,7 @@ impl App {
     /// True whenever commands can actually run: auth is off entirely, or
     /// it's on and login has succeeded.
     pub const fn logged_in(&self) -> bool {
-        self.authenticated || !self.auth_enabled
+        self.authenticated || !self.info.auth_enabled
     }
 
     pub fn handle_event(&mut self, event: &Event) {
@@ -392,7 +385,7 @@ impl App {
         // Reopen the login screen immediately — it's non-cancellable
         // only if the server actually requires auth; otherwise the user
         // can still Esc out and browse unauthenticated.
-        self.login = Some(LoginState::new(!self.auth_enabled));
+        self.login = Some(LoginState::new(!self.info.auth_enabled));
         self.authenticated = false;
         tokio::spawn(async move {
             if let Err(_e) = api.logout().await {
