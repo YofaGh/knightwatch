@@ -755,6 +755,8 @@ fn message_exhaustive(m: &SocketMessage) {
         | M::AuthenticationSucceed
         | M::ShutdownNotEnabled
         | M::Unauthorized
+        | M::LoggedOut
+        | M::NotLoggedIn
         | M::AlreadyAuthenticated
         | M::ShuttingDown
         | M::SetEventPreferences => {}

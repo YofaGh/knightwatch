@@ -642,8 +642,14 @@ impl ClientManager {
                 return result;
             }
             SocketAction::Logout => {
-                client.clear_display_user();
-                client.set_authentication(false);
+                let result = if client.is_authenticated() {
+                    client.clear_display_user();
+                    client.set_authentication(false);
+                    client.send_message(SocketMessage::LoggedOut).await
+                } else {
+                    client.send_message(SocketMessage::NotLoggedIn).await
+                };
+                return result;
             }
             SocketAction::Shutdown => {
                 let config = &get_config().args;
@@ -672,7 +678,6 @@ impl ClientManager {
                     .await;
             }
         }
-        Ok(())
     }
 
     async fn send_info(&self, client: &Client) -> Result<()> {

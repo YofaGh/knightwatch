@@ -38,6 +38,8 @@ pub enum SocketMessage {
         reason: AuthFailedReason,
     },
     AuthenticationSucceed,
+    LoggedOut,
+    NotLoggedIn,
     ShutdownNotEnabled,
     Unauthorized,
     AlreadyAuthenticated,
