@@ -97,10 +97,12 @@ impl ClientManager {
 
     async fn broadcast_event(&self, payload: EventPayload) {
         let is_tick = payload.is_tick();
+        let auth_enabled = get_config().args.enable_auth;
         let sends = self
             .clients
             .values()
-            .filter(|c| c.is_authenticated() && c.events_enabled())
+            .filter(|c| !auth_enabled || c.is_authenticated())
+            .filter(|c| c.events_enabled())
             .filter(|c| !is_tick || c.ticks_enabled())
             .map(|client| {
                 let message = SocketMessage::Event {
