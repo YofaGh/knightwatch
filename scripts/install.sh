@@ -5,7 +5,8 @@
 #   curl -LsSf .../install.sh | sh -s -- --package knightwatch-cli
 #   curl -LsSf .../install.sh | sh -s -- --version 1.0.17
 #   curl -LsSf .../install.sh | sh -s -- --package knightwatch-cli --version 1.0.0
-set -euo pipefail
+set -eu
+(set -o pipefail) 2>/dev/null && set -o pipefail
 
 REPO="YofaGh/knightwatch"
 PACKAGE="knightwatch"
