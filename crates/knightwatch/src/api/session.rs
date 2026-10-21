@@ -20,7 +20,12 @@ pub struct Session {
 impl Session {
     pub fn new(username: String, token: String) -> Self {
         let now = Instant::now();
-        Self { username, token, created_at: now, last_seen: now }
+        Self {
+            username,
+            token,
+            created_at: now,
+            last_seen: now,
+        }
     }
 
     fn is_expired(&self, idle: Duration, ttl: Duration) -> bool {
@@ -64,7 +69,11 @@ impl Sessions {
     }
 }
 
-pub fn spawn_session_reaper(idle: Duration, ttl: Duration, cancel: tokio_util::sync::CancellationToken) {
+pub fn spawn_session_reaper(
+    idle: Duration,
+    ttl: Duration,
+    cancel: tokio_util::sync::CancellationToken,
+) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(300));
         loop {
@@ -79,3 +88,7 @@ pub fn spawn_session_reaper(idle: Duration, ttl: Duration, cancel: tokio_util::s
         }
     });
 }
+
+#[cfg(test)]
+#[path = "session_tests.rs"]
+mod tests;

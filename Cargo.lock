@@ -2612,6 +2612,7 @@ dependencies = [
  "starship-battery",
  "sysinfo",
  "teloxide",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
