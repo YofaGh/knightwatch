@@ -11,11 +11,11 @@ const PRUNE_INTERVAL: Duration = Duration::from_hours(24);
 
 /// First 10 chars of an RFC3339 timestamp, i.e. "YYYY-MM-DD".
 /// Falls back to the whole string if it's shorter than expected.
-fn date_part(timestamp: &str) -> &str {
+pub fn date_part(timestamp: &str) -> &str {
     timestamp.get(0..10).unwrap_or(timestamp)
 }
 
-fn log_file_name(date: &str) -> String {
+pub fn log_file_name(date: &str) -> String {
     format!("knightwatch-events-{date}.log")
 }
 
@@ -71,7 +71,7 @@ pub async fn prune_old_event_logs(dir: &Path) {
 }
 
 /// Parses "events-YYYY-MM-DD.log" -> "YYYY-MM-DD"
-fn extract_log_date(filename: &str) -> Option<String> {
+pub fn extract_log_date(filename: &str) -> Option<String> {
     filename
         .strip_prefix("knightwatch-events-")?
         .strip_suffix(".log")
@@ -80,6 +80,13 @@ fn extract_log_date(filename: &str) -> Option<String> {
 
 pub async fn query_history(query: kw_types::history::HistoryQuery) -> Result<Vec<StoredEvent>> {
     let dir = log_dir().ok_or_else(|| Error::Other("Failed to get logs directory".into()))?;
+    query_history_in(&dir, query).await
+}
+
+pub async fn query_history_in(
+    dir: &Path,
+    query: kw_types::history::HistoryQuery,
+) -> Result<Vec<StoredEvent>> {
     let mut files = match fs::read_dir(&dir).await {
         Ok(mut entries) => {
             let mut names = Vec::new();
