@@ -2,7 +2,7 @@ class __CLASS__ < Formula
   desc "__DESC__"
   homepage "https://github.com/YofaGh/knightwatch"
   version "__VERSION__"
-  license "MIT"
+  license "Apache-2.0"
 
   on_macos do
     on_arm do
