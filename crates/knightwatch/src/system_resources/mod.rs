@@ -5,6 +5,9 @@ mod resources;
 mod system;
 mod utils;
 
+#[cfg(test)]
+mod utils_tests;
+
 pub use kw_types::resources::{
     AlarmSnapshot, BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
     MemorySnapshot, NetworkSnapshot, RefreshMask, SystemHealth, SystemSnapshot, ThermalSnapshot,

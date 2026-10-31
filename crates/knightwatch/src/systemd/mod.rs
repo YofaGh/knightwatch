@@ -15,6 +15,10 @@ mod types;
 #[cfg(target_os = "linux")]
 mod utils;
 
+#[cfg(test)]
+#[cfg(target_os = "linux")]
+mod utils_tests;
+
 #[cfg(target_os = "linux")]
 pub use monitor::{init_systemd_monitor, start_systemd_monitor};
 
