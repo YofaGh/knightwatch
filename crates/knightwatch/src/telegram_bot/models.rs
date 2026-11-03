@@ -38,8 +38,8 @@ pub enum Command {
 
 #[derive(Debug, Clone)]
 pub struct State {
-    chats: Arc<Mutex<HashMap<ChatId, Chat>>>,
-    auth_enabled: bool,
+    pub chats: Arc<Mutex<HashMap<ChatId, Chat>>>,
+    pub auth_enabled: bool,
 }
 
 impl State {

@@ -1,13 +1,3 @@
-//! Tests for `crates/knightwatch/src/systemd/utils.rs` (`block_on_local`).
-//!
-//! Save as `crates/knightwatch/src/systemd/utils_tests.rs` and declare it in
-//! `systemd/mod.rs` with: `#[cfg(test)] mod utils_tests;`
-//!
-//! `block_on_local` uses `block_in_place`, which only works on a worker thread of
-//! the multi-thread runtime. A plain `#[tokio::test]` body is not a worker thread
-//! (calling it there panics with "Cannot start a runtime from within a runtime"),
-//! so every call below is made from inside a spawned task, as the real code does.
-
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
