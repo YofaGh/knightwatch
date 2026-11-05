@@ -2,6 +2,7 @@ mod client;
 mod commands;
 mod event;
 mod process;
+mod source;
 mod tracker;
 
 pub use kw_types::process::{

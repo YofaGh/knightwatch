@@ -1,6 +1,7 @@
 mod client;
 mod commands;
 mod event;
+mod source;
 mod tracker;
 
 pub use kw_types::docker::{ContainerHealth, ContainerSnapshot, ContainerStatus, DockerSortKey};

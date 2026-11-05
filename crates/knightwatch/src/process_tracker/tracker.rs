@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::System;
 use tokio::sync::{broadcast, mpsc};
 
 use kw_types::{
@@ -16,6 +16,7 @@ use super::{
     },
     event::ProcessTrackerEvent,
     process::RootProcess,
+    source::{ProcessSource, SysinfoSource},
 };
 use crate::prelude::*;
 
@@ -42,10 +43,10 @@ impl ProcessTrackerState {
     }
 }
 
-struct ProcessTracker {
+struct ProcessTracker<S = SysinfoSource> {
     state: ProcessTrackerState,
     channels: ProcessTrackerChannels,
-    sys: System,
+    source: S,
     poll: Poll,
     track_top_processes: bool,
     limit_processes: usize,
@@ -57,13 +58,15 @@ impl ProcessTracker {
         Self {
             state: ProcessTrackerState::new(pids),
             channels: ProcessTrackerChannels::new(),
-            sys: System::new(),
+            source: SysinfoSource(System::new()),
             poll: Poll::new(2),
             track_top_processes: config.args.top_processes,
             limit_processes: config.args.limit_processes,
         }
     }
+}
 
+impl<S: ProcessSource> ProcessTracker<S> {
     fn emit_event(&self, event: ProcessTrackerEvent) {
         // Err means no subscribers are listening right now — that's fine.
         let _ = self.channels.event_tx.send(event);
@@ -187,16 +190,10 @@ impl ProcessTracker {
                     return;
                 };
 
-                let target = [Pid::from_u32(pid)];
-                self.sys.refresh_processes_specifics(
-                    ProcessesToUpdate::Some(&target),
-                    false,
-                    ProcessRefreshKind::nothing(),
-                );
-                let result = self.sys.process(Pid::from_u32(pid)).map_or_else(
+                self.source.refresh_pid(pid);
+                let result = self.source.kill_with(pid, sysinfo_signal).map_or_else(
                     || Err(Error::ProcessTracker(format!("Process {pid} not found"))),
-                    |process| {
-                        let success = process.kill_with(sysinfo_signal).unwrap_or(false);
+                    |success| {
                         self.emit_event(ProcessTrackerEvent::ProcessKilled { pid, success });
                         Ok(success)
                     },
@@ -212,18 +209,12 @@ impl ProcessTracker {
                 root_pid,
                 response,
             } => {
-                self.sys.refresh_processes_specifics(
-                    ProcessesToUpdate::All,
-                    true,
-                    ProcessRefreshKind::nothing(),
-                );
+                self.source.refresh_all();
                 let descendants = self.collect_descendants(root_pid);
                 let mut killed = Vec::new();
                 // Kill leaves first, then work up to the root.
                 for snap in &descendants {
-                    if let Some(proc) = self.sys.process(Pid::from_u32(snap.pid))
-                        && proc.kill()
-                    {
+                    if self.source.kill(snap.pid) {
                         killed.push(snap.pid);
                         self.emit_event(ProcessTrackerEvent::ProcessKilled {
                             pid: snap.pid,
@@ -231,9 +222,7 @@ impl ProcessTracker {
                         });
                     }
                 }
-                if let Some(proc) = self.sys.process(Pid::from_u32(root_pid))
-                    && proc.kill()
-                {
+                if self.source.kill(root_pid) {
                     killed.push(root_pid);
                     self.emit_event(ProcessTrackerEvent::ProcessKilled {
                         pid: root_pid,
@@ -315,14 +304,7 @@ impl ProcessTracker {
         // ----------------------------------------------------------------
         // Refresh all processes (need parent links to walk subtree).
         // ----------------------------------------------------------------
-        self.sys.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing()
-                .with_cpu()
-                .with_memory()
-                .with_disk_usage(),
-        );
+        self.source.refresh_usage();
         let pids: Vec<u32> = self.state.root_processes.keys().copied().collect();
         for pid in pids {
             let _ = self.update_root_pid_state(pid);
@@ -344,7 +326,7 @@ impl ProcessTracker {
         {
             return Ok(());
         }
-        let root_snap = self.sys.process(Pid::from_u32(root_pid)).map(Into::into);
+        let root_snap = self.source.snapshot(root_pid);
 
         if root_snap.is_some() {
             self.get_root_process_mut(root_pid)?.root_appeared = true;
@@ -475,32 +457,15 @@ impl ProcessTracker {
     }
 
     fn set_top_processes(&mut self) {
-        let mut all: Vec<(u32, f32, u64, u64)> = self
-            .sys
-            .processes()
-            .values()
-            .map(|p| {
-                let disk_usage = p.disk_usage();
-                (
-                    p.pid().as_u32(),
-                    p.cpu_usage(),
-                    p.memory(),
-                    disk_usage
-                        .written_bytes
-                        .saturating_add(disk_usage.read_bytes),
-                )
-            })
-            .collect();
+        let mut all = self.source.usage();
         // Rebuild the cache fresh each tick so stale/reused pids never linger.
         let mut new_cache: HashMap<u32, ProcessSnapshot> = HashMap::new();
         let mut get_or_create = |pid: u32| -> Option<ProcessSnapshot> {
             if let Some(cached) = new_cache.get(&pid) {
                 return Some(cached.clone());
             }
-            self.sys.process(Pid::from_u32(pid)).map(|p| {
-                let process = ProcessSnapshot::from(p);
+            self.source.snapshot(pid).inspect(|process| {
                 new_cache.insert(pid, process.clone());
-                process
             })
         };
         all.sort_unstable_by_key(|b| std::cmp::Reverse(b.2));
@@ -525,20 +490,17 @@ impl ProcessTracker {
     }
 
     fn collect_descendants(&self, root_pid: u32) -> Vec<ProcessSnapshot> {
-        let root = Pid::from_u32(root_pid);
-        let mut children_map: HashMap<Pid, Vec<Pid>> = HashMap::new();
-        for (pid, proc) in self.sys.processes() {
-            if let Some(parent) = proc.parent() {
-                children_map.entry(parent).or_default().push(*pid);
-            }
+        let mut children_map: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (pid, parent) in self.source.parents() {
+            children_map.entry(parent).or_default().push(pid);
         }
         let mut result = Vec::new();
-        let mut queue = vec![root];
+        let mut queue = vec![root_pid];
         while let Some(parent) = queue.pop() {
             if let Some(children) = children_map.get(&parent) {
                 for pid in children {
-                    if let Some(proc) = self.sys.process(*pid) {
-                        result.push(ProcessSnapshot::from(proc));
+                    if let Some(snap) = self.source.snapshot(*pid) {
+                        result.push(snap);
                         queue.push(*pid);
                     }
                 }

@@ -1,9 +1,7 @@
-use nvml_wrapper::Nvml;
 use std::{
     collections::HashMap,
     sync::{Mutex, OnceLock},
 };
-use sysinfo::{Components, CpuRefreshKind, Disks, Networks, System};
 use tokio::{
     sync::{broadcast, mpsc},
     time::Duration,
@@ -11,12 +9,8 @@ use tokio::{
 
 use kw_types::{
     polling::Poll,
-    resources::{
-        BatterySnapshot, BatteryState, CpuSnapshot, DiskSnapshot, GpuSnapshot, HostInfo,
-        MemorySnapshot, NetworkSnapshot, RefreshMask, SystemSnapshot, ThermalSnapshot, Thresholds,
-    },
+    resources::{BatteryState, RefreshMask, SystemSnapshot, Thresholds},
 };
-use kw_utils::conv::u64_ratio_percent_f32;
 
 use super::{
     commands::{
@@ -24,7 +18,8 @@ use super::{
         SystemResourcesQuery,
     },
     event::SystemResourcesEvent,
-    system::{StaticHostInfo, ThresholdAlarm},
+    source::{ResourceSource, SysinfoSource},
+    system::ThresholdAlarm,
 };
 use crate::prelude::*;
 
@@ -73,21 +68,14 @@ impl From<&SystemResourcesState> for kw_types::resources::AlarmSnapshot {
     }
 }
 
-struct SystemResources {
+struct SystemResources<S = SysinfoSource> {
     state: SystemResourcesState,
     channels: SystemResourcesChannels,
-    sys: System,
-    disks: Disks,
-    networks: Networks,
-    components: Components,
-    nvml: Option<Nvml>,
+    source: S,
     poll: Poll,
     thresholds: Thresholds,
     first_tick: bool,
-    static_host_info: StaticHostInfo,
     refresh_mask: RefreshMask,
-    uptime_baseline: u64,
-    uptime_started: std::time::Instant,
 }
 
 impl SystemResources {
@@ -95,26 +83,16 @@ impl SystemResources {
         Self {
             state: SystemResourcesState::new(),
             channels: SystemResourcesChannels::new(),
-            sys: System::new_with_specifics(
-                sysinfo::RefreshKind::nothing()
-                    .with_cpu(CpuRefreshKind::everything())
-                    .with_memory(sysinfo::MemoryRefreshKind::everything())
-                    .with_processes(sysinfo::ProcessRefreshKind::nothing()),
-            ),
-            disks: Disks::new_with_refreshed_list(),
-            networks: Networks::new_with_refreshed_list(),
-            components: Components::new_with_refreshed_list(),
-            nvml: Nvml::init().ok(),
+            source: SysinfoSource::new(),
             poll: Poll::new(1),
             thresholds: Thresholds::default(),
             first_tick: true,
-            static_host_info: StaticHostInfo::new(),
             refresh_mask: RefreshMask::default(),
-            uptime_baseline: System::uptime(),
-            uptime_started: std::time::Instant::now(),
         }
     }
+}
 
+impl<S: ResourceSource> SystemResources<S> {
     fn emit_event(&self, event: SystemResourcesEvent) {
         // Err means no subscribers — that's fine.
         let _ = self.channels.event_tx.send(event);
@@ -196,7 +174,7 @@ impl SystemResources {
                 );
             }
             SystemResourcesQuery::HostInfo { response } => {
-                let _ = response.send(self.build_host_info().into());
+                let _ = response.send(self.source.host().into());
             }
             SystemResourcesQuery::Temperatures { response } => {
                 let _ = response.send(
@@ -302,7 +280,7 @@ impl SystemResources {
     // -----------------------------------------------------------------------
 
     fn handle_tick(&mut self) {
-        self.refresh_all();
+        self.source.refresh(&self.refresh_mask);
         let snapshot = self.build_snapshot();
         // CPU
         if Self::should_emit(
@@ -378,146 +356,26 @@ impl SystemResources {
     }
 
     // -----------------------------------------------------------------------
-    // Refresh
-    // -----------------------------------------------------------------------
-
-    fn refresh_all(&mut self) {
-        // sysinfo requires two CPU ticks to produce non-zero usage numbers.
-        if self.refresh_mask.cpu {
-            self.sys.refresh_cpu_specifics(CpuRefreshKind::everything());
-        }
-        if self.refresh_mask.memory {
-            self.sys.refresh_memory();
-        }
-        if self.refresh_mask.disks {
-            self.disks.refresh(false);
-        }
-        if self.refresh_mask.networks {
-            self.networks.refresh(false);
-        }
-        if self.refresh_mask.temperatures {
-            self.components.refresh(false);
-        }
-    }
-
-    // -----------------------------------------------------------------------
     // Snapshot construction
     // -----------------------------------------------------------------------
 
     fn build_snapshot(&self) -> SystemSnapshot {
-        let cpu = self.build_cpu_snapshot();
-        let memory = self.build_memory_snapshot();
-        let disks = self.build_disk_snapshots();
-        let battery = Self::build_battery_snapshot();
+        let cpu = self.source.cpu();
+        let memory = self.source.memory();
+        let disks = self.source.disks();
+        let battery = self.source.battery();
         let health = super::utils::derive_health(&cpu, &memory, &disks, battery.as_ref());
         SystemSnapshot {
             timestamp: crate::utils::now_rfc3339(),
             cpu,
             memory,
             disks,
-            networks: self.build_network_snapshots(),
-            gpus: self.build_gpu_snapshots(),
+            networks: self.source.networks(),
+            gpus: self.source.gpus(),
             battery,
-            temperatures: self.build_thermal_snapshots(),
-            host: self.build_host_info(),
+            temperatures: self.source.temperatures(),
+            host: self.source.host(),
             health,
-        }
-    }
-
-    fn build_cpu_snapshot(&self) -> CpuSnapshot {
-        let cpus = self.sys.cpus();
-        let usage_percent = self.sys.global_cpu_usage();
-        let cores = cpus.iter().map(Into::into).collect();
-        let frequency_mhz = cpus.first().map_or(0, sysinfo::Cpu::frequency);
-        let brand = cpus
-            .first()
-            .map(|c| c.brand().to_string())
-            .unwrap_or_default();
-        CpuSnapshot {
-            usage_percent,
-            cores,
-            frequency_mhz,
-            brand,
-            physical_core_count: System::physical_core_count(),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            load_avg: Some(System::load_average().into()),
-            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-            load_avg: None,
-        }
-    }
-
-    fn build_memory_snapshot(&self) -> MemorySnapshot {
-        let total = self.sys.total_memory();
-        let used = self.sys.used_memory();
-        let used_percent = if total > 0 {
-            u64_ratio_percent_f32(used, total)
-        } else {
-            0.0
-        };
-
-        let swap_total = self.sys.total_swap();
-        let swap_used = self.sys.used_swap();
-        let swap_used_percent = if swap_total > 0 {
-            Some(u64_ratio_percent_f32(swap_used, swap_total))
-        } else {
-            None
-        };
-
-        MemorySnapshot {
-            total_bytes: total,
-            used_bytes: used,
-            available_bytes: self.sys.available_memory(),
-            free_bytes: self.sys.free_memory(),
-            used_percent,
-            swap_total_bytes: swap_total,
-            swap_used_bytes: swap_used,
-            swap_free_bytes: self.sys.free_swap(),
-            swap_used_percent,
-        }
-    }
-
-    fn build_disk_snapshots(&self) -> Vec<DiskSnapshot> {
-        self.disks.iter().map(Into::into).collect()
-    }
-
-    fn build_network_snapshots(&self) -> Vec<NetworkSnapshot> {
-        self.networks.iter().map(Into::into).collect()
-    }
-
-    fn build_thermal_snapshots(&self) -> Vec<ThermalSnapshot> {
-        self.components.iter().map(Into::into).collect()
-    }
-
-    fn build_battery_snapshot() -> Option<BatterySnapshot> {
-        starship_battery::Manager::new()
-            .ok()?
-            .batteries()
-            .ok()?
-            .next()?
-            .ok()
-            .map(Into::into)
-    }
-
-    fn build_gpu_snapshots(&self) -> Vec<GpuSnapshot> {
-        let Some(ref nvml) = self.nvml else {
-            return vec![];
-        };
-        let devices_count = nvml.device_count().unwrap_or(0);
-        (0..devices_count)
-            .filter_map(|i| nvml.device_by_index(i).ok().map(Into::into))
-            .collect()
-    }
-
-    fn build_host_info(&self) -> HostInfo {
-        HostInfo {
-            hostname: self.static_host_info.hostname.clone(),
-            os_name: self.static_host_info.os_name.clone(),
-            kernel_version: self.static_host_info.kernel_version.clone(),
-            cpu_arch: self.static_host_info.cpu_arch.clone(),
-            uptime_secs: self
-                .uptime_baseline
-                .saturating_add(self.uptime_started.elapsed().as_secs()),
-            process_count: self.sys.processes().len(),
         }
     }
 

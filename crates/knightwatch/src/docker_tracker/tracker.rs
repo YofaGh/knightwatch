@@ -1,5 +1,4 @@
 use bollard::Docker;
-use futures::StreamExt;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
@@ -7,7 +6,7 @@ use std::{
 use tokio::sync::{broadcast, mpsc};
 
 use kw_types::{
-    docker::{ContainerSnapshot, ContainerStats, ContainerStatus, DockerSortKey},
+    docker::{ContainerSnapshot, ContainerStatus, DockerSortKey},
     polling::Poll,
 };
 
@@ -16,6 +15,7 @@ use super::{
         DockerCommandAction, DockerTrackerChannels, DockerTrackerCommand, DockerTrackerQuery,
     },
     event::DockerTrackerEvent,
+    source::{BollardSource, DockerSource},
 };
 use crate::prelude::*;
 
@@ -45,8 +45,8 @@ impl DockerTrackerState {
     }
 }
 
-struct DockerTracker {
-    docker: Docker,
+struct DockerTracker<S = BollardSource> {
+    source: S,
     state: DockerTrackerState,
     channels: DockerTrackerChannels,
     poll: Poll,
@@ -56,14 +56,16 @@ struct DockerTracker {
 impl DockerTracker {
     pub fn new(docker: Docker) -> Self {
         Self {
-            docker,
+            source: BollardSource(docker),
             state: DockerTrackerState::new(),
             channels: DockerTrackerChannels::new(),
             poll: Poll::new(5),
             limit_containers: 20,
         }
     }
+}
 
+impl<S: DockerSource> DockerTracker<S> {
     fn emit_event(&self, event: DockerTrackerEvent) {
         // Err means no subscribers — that's fine.
         let _ = self.channels.event_tx.send(event);
@@ -80,7 +82,7 @@ impl DockerTracker {
         // Spawn the Docker event stream listener as a separate task that
         // forwards OOM events onto the broadcast bus via a dedicated channel.
         let (oom_tx, mut oom_rx) = mpsc::channel(32);
-        tokio::spawn(docker_event_listener(self.docker.clone(), oom_tx));
+        tokio::spawn(self.source.oom_listener(oom_tx));
 
         loop {
             let tick = async {
@@ -115,37 +117,11 @@ impl DockerTracker {
 
     async fn handle_tick(&mut self) -> Result<()> {
         // 1. List all containers (running + non-running so we catch exits).
-        let mut filters = HashMap::new();
-        filters.insert(
-            "status".to_string(),
-            vec![
-                "created".to_string(),
-                "removing".to_string(),
-                "running".to_string(),
-                "paused".to_string(),
-                "restarting".to_string(),
-                "exited".to_string(),
-                "dead".to_string(),
-            ],
-        );
-
-        let options = bollard::query_parameters::ListContainersOptionsBuilder::default()
-            .all(true)
-            .filters(&filters)
-            .build();
-
-        let summaries = self
-            .docker
-            .list_containers(Some(options))
-            .await
-            .map_err(|err| Error::bollard_error(&err))?;
+        let containers = self.source.list().await?;
 
         // 2. Build fresh snapshot map.
-        let mut fresh: HashMap<String, ContainerSnapshot> = summaries
-            .iter()
-            .filter_map(ContainerSnapshot::from_summary)
-            .map(|s| (s.id.clone(), s))
-            .collect();
+        let mut fresh: HashMap<String, ContainerSnapshot> =
+            containers.into_iter().map(|s| (s.id.clone(), s)).collect();
 
         // 3. Fetch stats for every running container concurrently.
         let running_ids: Vec<String> = fresh
@@ -154,25 +130,19 @@ impl DockerTracker {
             .map(|s| s.id.clone())
             .collect();
 
-        let stats_results = futures::future::join_all(running_ids.iter().map(|id| {
-            let docker = self.docker.clone();
-            let id = id.clone();
-            async move {
-                let options = bollard::query_parameters::StatsOptionsBuilder::default()
-                    .stream(false)
-                    .one_shot(true)
-                    .build();
-                let stats = docker.stats(&id, Some(options)).next().await;
-                (id, stats)
-            }
-        }))
+        let source = &self.source;
+        let stats_results = futures::future::join_all(
+            running_ids
+                .iter()
+                .map(|id| async move { (id, source.stats(id).await) }),
+        )
         .await;
 
         for (id, stats_opt) in stats_results {
-            if let Some(Ok(stats)) = stats_opt
-                && let Some(snap) = fresh.get_mut(&id)
+            if let Some(stats) = stats_opt
+                && let Some(snap) = fresh.get_mut(id)
             {
-                snap.stats = Some(ContainerStats::from_bollard(&stats));
+                snap.stats = Some(stats);
             }
         }
 
@@ -364,16 +334,7 @@ impl DockerTracker {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let opts = timeout_secs.map(|t| {
-                    bollard::query_parameters::StopContainerOptionsBuilder::default()
-                        .t(t)
-                        .build()
-                });
-                let result = self
-                    .docker
-                    .stop_container(&target, opts)
-                    .await
-                    .map_err(|err| Error::bollard_error(&err));
+                let result = self.source.stop(&target, timeout_secs).await;
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Stop {
@@ -394,16 +355,7 @@ impl DockerTracker {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let opts = signal.as_deref().map(|s| {
-                    bollard::query_parameters::KillContainerOptionsBuilder::default()
-                        .signal(s)
-                        .build()
-                });
-                let result = self
-                    .docker
-                    .kill_container(&target, opts)
-                    .await
-                    .map_err(|err| Error::bollard_error(&err));
+                let result = self.source.kill(&target, signal.as_deref()).await;
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Kill {
@@ -423,11 +375,7 @@ impl DockerTracker {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self
-                    .docker
-                    .start_container(&target, None)
-                    .await
-                    .map_err(|err| Error::bollard_error(&err));
+                let result = self.source.start(&target).await;
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Start {
@@ -447,16 +395,7 @@ impl DockerTracker {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let opts = timeout_secs.map(|t| {
-                    bollard::query_parameters::RestartContainerOptionsBuilder::default()
-                        .t(t)
-                        .build()
-                });
-                let result = self
-                    .docker
-                    .restart_container(&target, opts)
-                    .await
-                    .map_err(|err| Error::bollard_error(&err));
+                let result = self.source.restart(&target, timeout_secs).await;
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Restart {
@@ -476,11 +415,7 @@ impl DockerTracker {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self
-                    .docker
-                    .pause_container(&target)
-                    .await
-                    .map_err(|err| Error::bollard_error(&err));
+                let result = self.source.pause(&target).await;
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Pause {
@@ -499,11 +434,7 @@ impl DockerTracker {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self
-                    .docker
-                    .unpause_container(&target)
-                    .await
-                    .map_err(|err| Error::bollard_error(&err));
+                let result = self.source.unpause(&target).await;
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Unpause {
@@ -607,50 +538,6 @@ impl DockerTracker {
             success,
             error,
         });
-    }
-}
-
-// ============================================================================
-// Docker event stream listener (OOM events only)
-// ============================================================================
-
-async fn docker_event_listener(docker: Docker, oom_tx: mpsc::Sender<(String, String)>) {
-    let mut filters = HashMap::new();
-    filters.insert("type".to_string(), vec!["container".to_string()]);
-    filters.insert("event".to_string(), vec!["oom".to_string()]);
-
-    let opts = bollard::query_parameters::EventsOptionsBuilder::default()
-        .filters(&filters)
-        .build();
-
-    let mut stream = docker.events(Some(opts));
-
-    while let Some(event_result) = stream.next().await {
-        match event_result {
-            Ok(event) => {
-                let id = event
-                    .actor
-                    .as_ref()
-                    .and_then(|a| a.id.clone())
-                    .unwrap_or_default();
-                let name = event
-                    .actor
-                    .as_ref()
-                    .and_then(|a| a.attributes.as_ref())
-                    .and_then(|attrs| attrs.get("name"))
-                    .cloned()
-                    .unwrap_or_else(|| id.chars().take(12).collect());
-
-                if oom_tx.send((id, name)).await.is_err() {
-                    break;
-                }
-            }
-            Err(e) => {
-                error!(?e, "docker event stream error; reconnecting in 5 s");
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                break;
-            }
-        }
     }
 }
 

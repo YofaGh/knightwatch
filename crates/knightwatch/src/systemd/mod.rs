@@ -9,6 +9,8 @@ mod monitor;
 #[cfg(target_os = "linux")]
 mod proxies;
 #[cfg(target_os = "linux")]
+mod source;
+#[cfg(target_os = "linux")]
 mod systemd_snap;
 #[cfg(target_os = "linux")]
 mod types;

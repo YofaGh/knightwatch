@@ -2,6 +2,7 @@ mod client;
 mod commands;
 mod event;
 mod resources;
+mod source;
 mod system;
 mod utils;
 

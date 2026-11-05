@@ -195,6 +195,18 @@ impl SystemdHelperClient {
     }
 }
 
+#[cfg(test)]
+impl SystemdHelperClient {
+    /// A client that talks over `stream`, with no elevated process behind it.
+    pub fn from_parts(stream: UnixStream, socket_path: PathBuf, child: Child) -> Self {
+        Self {
+            stream: Mutex::new(BufReader::new(stream)),
+            socket_path,
+            _child: child,
+        }
+    }
+}
+
 #[must_use]
 fn current_uid() -> u32 {
     // SAFETY: getuid() has no preconditions and cannot fail.

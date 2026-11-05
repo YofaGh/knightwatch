@@ -3,22 +3,20 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 use tokio::sync::{OnceCell, broadcast, mpsc};
-use zbus::{Connection, zvariant::OwnedObjectPath};
+use zbus::Connection;
 
 use kw_types::{
     polling::Poll,
     systemd::{SystemdSnapshot, UnitActiveState, UnitLoadState, UnitSnapshot, UnitType},
 };
-use kw_utils::conv::{u64_to_u32_saturating, usize_to_u32_saturating};
+use kw_utils::conv::usize_to_u32_saturating;
 
 use super::{
     commands::{SystemdCommand, SystemdCommandAction, SystemdMonitorChannels, SystemdQuery},
     event::SystemdEvent,
     helper_client::SystemdHelperClient,
-    proxies::{SystemdManagerProxy, SystemdServiceProxy, SystemdUnitProxy},
+    source::{DbusSource, UnitSource},
     systemd_snap::UnitFilter,
-    types::{ServiceDetails, ServiceProperties, UnitProperties},
-    utils::block_on_local,
 };
 use crate::prelude::*;
 
@@ -38,10 +36,10 @@ impl SystemdMonitorState {
     }
 }
 
-pub struct SystemdMonitor {
+pub struct SystemdMonitor<S = DbusSource> {
     state: SystemdMonitorState,
     pub channels: SystemdMonitorChannels,
-    conn: Connection,
+    source: S,
     poll: Poll,
     filter: UnitFilter,
     first_tick: bool,
@@ -56,14 +54,16 @@ impl SystemdMonitor {
         Ok(Self {
             state: SystemdMonitorState::new(),
             channels: SystemdMonitorChannels::new(),
-            conn,
+            source: DbusSource(conn),
             poll: Poll::new(5),
             filter: UnitFilter::default(),
             first_tick: true,
             helper: Arc::new(OnceCell::new()),
         })
     }
+}
 
+impl<S: UnitSource> SystemdMonitor<S> {
     #[allow(dead_code)]
     pub fn with_filter(mut self, filter: UnitFilter) -> Self {
         self.filter = filter;
@@ -286,14 +286,7 @@ impl SystemdMonitor {
     }
 
     async fn build_snapshot(&self) -> Result<SystemdSnapshot> {
-        let manager = SystemdManagerProxy::new(&self.conn)
-            .await
-            .map_err(|e| Error::Systemd(format!("Failed to create manager proxy: {e}")))?;
-
-        let raw_units = manager
-            .list_units()
-            .await
-            .map_err(|e| Error::Systemd(format!("ListUnits() failed: {e}")))?;
+        let raw_units = self.source.list_units().await?;
 
         let mut units: Vec<UnitSnapshot> = Vec::new();
 
@@ -316,7 +309,7 @@ impl SystemdMonitor {
                         UnitActiveState::Active | UnitActiveState::Reloading
                     )
                 {
-                    self.fetch_service_details(&unit_name, &raw.6)
+                    self.source.service_details(&unit_name, &raw.6)
                 } else {
                     (None, None, None, None, None, None)
                 };
@@ -380,89 +373,6 @@ impl SystemdMonitor {
             UnitActiveState::Deactivating => 4,
             UnitActiveState::Inactive => 5,
         }
-    }
-
-    /// Fetch extended properties for a single active .service unit.
-    /// Delegates to two focused helpers — one per D-Bus interface — so a
-    /// missing interface on one doesn't affect the other.
-    fn fetch_service_details(
-        &self,
-        unit_name: &str,
-        object_path: &OwnedObjectPath,
-    ) -> ServiceDetails {
-        let (fragment_path, since) = self.fetch_unit_properties(unit_name, object_path);
-        let (main_pid, memory_bytes, cpu_usage_ns, restart_count) =
-            self.fetch_service_properties(object_path);
-
-        (
-            main_pid,
-            memory_bytes,
-            cpu_usage_ns,
-            restart_count,
-            since,
-            fragment_path,
-        )
-    }
-
-    /// Reads `org.freedesktop.systemd1.Unit` properties via the object path
-    /// returned by `ListUnits()`. Both calls are independent so a missing
-    /// property on one doesn't suppress the other.
-    fn fetch_unit_properties(
-        &self,
-        unit_name: &str,
-        object_path: &OwnedObjectPath,
-    ) -> UnitProperties {
-        // Build proxy once
-        let Some(proxy) = SystemdUnitProxy::builder(&self.conn)
-            .path(object_path.clone())
-            .map_err(|e| debug!(?e, unit_name, "could not build unit proxy"))
-            .ok()
-            .and_then(|b| block_on_local(async { b.build().await.ok() }))
-        else {
-            return (None, None);
-        };
-        block_on_local(async {
-            let fragment_path = proxy.fragment_path().await.ok();
-
-            let since = proxy
-                .active_enter_timestamp()
-                .await
-                .ok()
-                .and_then(|ts_usec| {
-                    if ts_usec == 0 {
-                        return None;
-                    }
-                    let secs = ts_usec / 1_000_000;
-                    let nsecs = u64_to_u32_saturating((ts_usec % 1_000_000).saturating_mul(1000));
-                    chrono::DateTime::from_timestamp(secs.cast_signed(), nsecs)
-                        .map(|dt| dt.to_rfc3339())
-                });
-
-            (fragment_path, since)
-        })
-    }
-
-    /// Reads `org.freedesktop.systemd1.Service` properties.
-    /// All four properties are fetched in a single proxy session.
-    fn fetch_service_properties(&self, object_path: &OwnedObjectPath) -> ServiceProperties {
-        let svc_proxy = SystemdServiceProxy::builder(&self.conn)
-            .path(object_path.clone())
-            .ok()
-            .and_then(|b| block_on_local(async { b.build().await.ok() }));
-
-        svc_proxy.map_or((None, None, None, None), |svc| {
-            block_on_local(async {
-                let pid = svc.main_pid().await.ok().filter(|&p| p != 0);
-                let mem = svc.memory_current().await.ok().filter(|&m| m != u64::MAX);
-                let cpu = svc
-                    .c_p_u_usage_n_sec()
-                    .await
-                    .ok()
-                    .filter(|&c| c != u64::MAX);
-                let restarts = svc.n_restarts().await.ok();
-                (pid, mem, cpu, restarts)
-            })
-        })
     }
 
     /// Handle used by `init_systemd_monitor` to inject the helper once
