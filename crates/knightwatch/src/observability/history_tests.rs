@@ -88,7 +88,7 @@ fn date_part_does_not_panic_inside_a_multibyte_char() {
 #[test]
 fn date_part_does_not_validate_that_it_is_a_date() {
     // Pinned: any 10 leading chars are taken as the "date".
-    assert_eq!(date_part("not-a-date-at-all"), "not-a-date-");
+    assert_eq!(date_part("not-a-date-at-all"), "not-a-date");
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +341,18 @@ async fn log_event_keeps_newlines_in_data_on_a_single_line() {
     assert_eq!(lines.len(), 1);
     let v: Value = serde_json::from_str(&lines[0]).unwrap();
     assert_eq!(v["data"]["text"], "line one\nline two\r\nline three");
+}
+
+#[tokio::test]
+async fn log_event_has_written_the_line_when_it_returns() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(log_name("2024-05-17"));
+    let p = payload("x", "2024-05-17T10:00:00Z", EventSource::ScreenCapture);
+
+    for written in 1..=100 {
+        log_event(dir.path(), &p).await.unwrap();
+        assert_eq!(read_lines(&path).len(), written);
+    }
 }
 
 #[tokio::test]

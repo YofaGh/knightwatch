@@ -34,7 +34,9 @@ pub async fn log_event(dir: &Path, payload: &EventPayload) -> io::Result<()> {
         .open(&path)
         .await?;
 
-    file.write_all(line.as_bytes()).await
+    file.write_all(line.as_bytes()).await?;
+    // tokio writes in the background: without this, errors are lost and readers miss the line
+    file.flush().await
 }
 
 /// Deletes daily log files older than `RETENTION_DAYS`.
