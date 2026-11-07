@@ -484,3 +484,7 @@ pub fn start_system_resources() {
     });
     info!("System Resources started");
 }
+
+#[cfg(test)]
+#[path = "resources_tests.rs"]
+mod tests;
