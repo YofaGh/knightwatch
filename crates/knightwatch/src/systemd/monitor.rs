@@ -484,3 +484,7 @@ pub fn start_systemd_monitor() {
         }
     });
 }
+
+#[cfg(test)]
+#[path = "monitor_tests.rs"]
+mod tests;

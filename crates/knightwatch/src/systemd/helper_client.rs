@@ -252,3 +252,7 @@ fn locate_helper_binary() -> Result<PathBuf> {
     // Dev fallback: rely on PATH (e.g. `cargo run` setups).
     Ok(PathBuf::from("kw-systemd-helper"))
 }
+
+#[cfg(test)]
+#[path = "helper_client_tests.rs"]
+mod tests;
