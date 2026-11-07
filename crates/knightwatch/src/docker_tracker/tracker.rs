@@ -593,3 +593,7 @@ pub fn start_docker_tracker() {
     });
     info!("Docker Tracker started");
 }
+
+#[cfg(test)]
+#[path = "tracker_tests.rs"]
+mod tests;
