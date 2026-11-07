@@ -596,3 +596,7 @@ pub fn start_process_tracker() {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "tracker_tests.rs"]
+mod tests;
