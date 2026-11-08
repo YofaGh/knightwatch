@@ -9,6 +9,7 @@ pub fn start_dev_server() -> Option<std::process::Child> {
     if std::net::TcpStream::connect("localhost:5173").is_ok() {
         return None;
     }
+    println!("1");
     info!("Starting vite server...");
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     match std::process::Command::new(npm)
@@ -95,3 +96,5 @@ pub async fn get_info() -> Info {
         allow_docker_commands: args.allow_docker_commands,
     }
 }
+
+#[cfg(test)] #[path = "utils_tests.rs"] mod utils_tests;

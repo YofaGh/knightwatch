@@ -4,3 +4,7 @@ macro_rules! all_none {
         $($opt.is_none())&&+
     };
 }
+
+#[cfg(test)]
+#[path = "macros_tests.rs"]
+mod macros_tests;
