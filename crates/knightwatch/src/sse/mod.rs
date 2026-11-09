@@ -1,6 +1,9 @@
 mod dispatcher;
 pub mod handlers;
 
+#[cfg(test)]
+mod sse_tests;
+
 use std::sync::OnceLock;
 use tokio::sync::broadcast;
 
