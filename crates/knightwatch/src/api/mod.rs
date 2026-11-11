@@ -8,5 +8,7 @@ mod utils;
 
 #[cfg(test)]
 mod auth_tests;
+#[cfg(test)]
+mod router_tests;
 
 pub use handlers::init_api_server;

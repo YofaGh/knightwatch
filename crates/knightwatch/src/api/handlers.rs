@@ -75,7 +75,7 @@ async fn serve_dashboard(uri: axum::http::Uri) -> Response {
     }
 }
 
-fn with_security_headers(app: Router) -> Router {
+pub(super) fn with_security_headers(app: Router) -> Router {
     app.layer(TraceLayer::new_for_http())
         .layer(SetResponseHeaderLayer::if_not_present(
             HeaderName::from_static("x-content-type-options"),

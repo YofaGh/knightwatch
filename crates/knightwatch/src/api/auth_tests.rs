@@ -182,7 +182,13 @@ async fn a_live_session_token_is_still_401_when_no_users_are_loaded() {
     let hits = Arc::new(AtomicUsize::new(0));
     let addr = serve(protected_router(&hits)).await;
 
-    let reply = send(addr, "GET", "/protected", &[("Authorization", &bearer(&token))]).await;
+    let reply = send(
+        addr,
+        "GET",
+        "/protected",
+        &[("Authorization", &bearer(&token))],
+    )
+    .await;
 
     assert_eq!(reply.status, 401);
     assert!(!reply.text.contains("secret"));
@@ -236,7 +242,13 @@ async fn logout_removes_the_session_and_only_that_one() {
     add_session("bob", &other);
     let addr = serve(logout_router()).await;
 
-    let reply = send(addr, "POST", "/logout", &[("Authorization", &bearer(&mine))]).await;
+    let reply = send(
+        addr,
+        "POST",
+        "/logout",
+        &[("Authorization", &bearer(&mine))],
+    )
+    .await;
 
     assert_eq!(reply.status, 200);
     assert!(!take_session(&mine), "the session should already be gone");
@@ -305,7 +317,13 @@ async fn logout_only_accepts_post() {
     add_session("alice", &token);
     let addr = serve(logout_router()).await;
 
-    let reply = send(addr, "GET", "/logout", &[("Authorization", &bearer(&token))]).await;
+    let reply = send(
+        addr,
+        "GET",
+        "/logout",
+        &[("Authorization", &bearer(&token))],
+    )
+    .await;
 
     assert_eq!(reply.status, 405);
     assert!(session_is_valid(&token));
