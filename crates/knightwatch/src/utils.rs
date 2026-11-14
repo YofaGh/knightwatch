@@ -4,6 +4,16 @@ use kw_types::Info;
 
 use crate::prelude::*;
 
+/// A zero interval makes `tokio::time::interval` panic, so reject it.
+pub fn check_poll_interval(interval: std::time::Duration) -> Result<()> {
+    if interval.is_zero() {
+        return Err(Error::Other(
+            "poll interval must be greater than zero".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(debug_assertions)]
 pub fn start_dev_server() -> Option<std::process::Child> {
     if std::net::TcpStream::connect("localhost:5173").is_ok() {
@@ -97,4 +107,6 @@ pub async fn get_info() -> Info {
     }
 }
 
-#[cfg(test)] #[path = "utils_tests.rs"] mod utils_tests;
+#[cfg(test)]
+#[path = "utils_tests.rs"]
+mod utils_tests;

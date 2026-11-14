@@ -451,12 +451,14 @@ impl<S: DockerSource> DockerTracker<S> {
                 interval,
                 response,
             } => {
-                self.poll.set_interval(interval);
-                info!(
-                    ms = interval.as_millis(),
-                    "docker tracker poll interval updated"
-                );
-                let result = Ok(());
+                let result = crate::utils::check_poll_interval(interval);
+                if result.is_ok() {
+                    self.poll.set_interval(interval);
+                    info!(
+                        ms = interval.as_millis(),
+                        "docker tracker poll interval updated"
+                    );
+                }
                 self.emit_command_event(
                     user,
                     DockerCommandAction::SetPollInterval { interval },

@@ -899,7 +899,6 @@ async fn setting_the_interval_while_paused_stays_paused() {
 }
 
 #[tokio::test]
-#[ignore = "finding 3: a zero interval panics and kills the tracker task"]
 async fn a_zero_interval_is_rejected_while_running() {
     let mut t = tracker(&[]);
     t.poll.resume();
@@ -909,7 +908,6 @@ async fn a_zero_interval_is_rejected_while_running() {
 }
 
 #[tokio::test]
-#[ignore = "finding 3: while paused, a zero interval is accepted and panics on resume"]
 async fn a_zero_interval_is_rejected_while_paused() {
     let mut t = tracker(&[]);
 

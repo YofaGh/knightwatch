@@ -146,9 +146,11 @@ impl<S: UnitSource> SystemdMonitor<S> {
                 interval,
                 response,
             } => {
-                self.poll.set_interval(interval);
-                info!(ms = interval.as_millis(), "systemd poll interval updated");
-                let result = Ok(());
+                let result = crate::utils::check_poll_interval(interval);
+                if result.is_ok() {
+                    self.poll.set_interval(interval);
+                    info!(ms = interval.as_millis(), "systemd poll interval updated");
+                }
                 self.emit_command_event(
                     user,
                     SystemdCommandAction::SetPollInterval { interval },
