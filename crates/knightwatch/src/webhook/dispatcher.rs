@@ -90,3 +90,7 @@ async fn fire_with_retry(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "dispatcher_tests.rs"]
+mod tests;

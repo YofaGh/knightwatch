@@ -1,6 +1,9 @@
 mod dispatcher;
 mod target;
 
+#[cfg(test)]
+mod target_tests;
+
 pub use target::WebhookTarget;
 
 use crate::prelude::*;
