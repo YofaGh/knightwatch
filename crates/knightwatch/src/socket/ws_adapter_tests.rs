@@ -208,27 +208,26 @@ async fn buffered_remainder_is_served_before_next_message() {
     assert_eq!(second, [5, 6, 9]);
 }
 
-// Pinned: an empty binary message completes a read with 0 bytes, which every
-// reader treats as end of stream. Should flip (skip the empty message and keep
-// reading) if the adapter is fixed. See finding 15.
+// Finding 15: an empty binary message is skipped, not read as end of stream.
 #[tokio::test]
-async fn empty_binary_message_reads_as_eof() {
+async fn empty_binary_message_is_skipped() {
     let (mut server, mut client) = ws_pair().await;
     client.send(bin(&[])).await.unwrap();
     client.send(bin(&[5])).await.unwrap();
     let mut buf = [0u8; 4];
     let n = within(server.read(&mut buf)).await.unwrap();
-    assert_eq!(n, 0);
+    assert_eq!(&buf[..n], &[5]);
 }
 
-// Pinned, same cause: `read_exact` (what `receive_message` uses) fails.
+// Same cause: `read_exact` (what `receive_message` uses) must not fail on it.
 #[tokio::test]
-async fn read_exact_on_empty_binary_message_fails() {
+async fn read_exact_skips_an_empty_binary_message() {
     let (mut server, mut client) = ws_pair().await;
     client.send(bin(&[])).await.unwrap();
+    client.send(bin(&[5])).await.unwrap();
     let mut buf = [0u8; 1];
-    let err = within(server.read_exact(&mut buf)).await.unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    within(server.read_exact(&mut buf)).await.unwrap();
+    assert_eq!(buf, [5]);
 }
 
 #[tokio::test]
@@ -251,33 +250,9 @@ async fn peer_drop_is_a_read_error() {
     assert!(within(server.read(&mut buf)).await.is_err());
 }
 
-// Pinned (finding 14): after a text, ping or pong message `poll_read` returns
-// `Pending` without having registered a wakeup, although more data is already
-// waiting. It only makes progress if something else polls it again. Here the
-// second poll finds the data. Should flip (first poll returns the data) when
-// the adapter loops past non-binary messages.
+// Finding 14: skip non-binary messages and return the next binary data in the
+// same poll.
 #[tokio::test]
-async fn non_binary_messages_stall_read_until_repolled() {
-    for (name, skipped) in control_messages() {
-        let (mut server, mut client) = ws_pair().await;
-        client.send(skipped).await.unwrap();
-        client.send(bin(&[7])).await.unwrap();
-        let mut buf = [0u8; 4];
-        assert!(
-            poll_read_once(&mut server, &mut buf).is_pending(),
-            "{name}: first poll should be Pending today"
-        );
-        match poll_read_once(&mut server, &mut buf) {
-            Poll::Ready(Ok(n)) => assert_eq!(&buf[..n], &[7], "{name}"),
-            other => panic!("{name}: second poll should find the data, got {other:?}"),
-        }
-    }
-}
-
-// Wanted behaviour for finding 14: skip non-binary messages and return the
-// next binary data in the same poll (or at least register a wakeup).
-#[tokio::test]
-#[ignore = "known issue (finding 14): poll_read returns Pending without a wakeup after a text/ping/pong message"]
 async fn non_binary_messages_should_not_stall_read() {
     for (name, skipped) in control_messages() {
         let (mut server, mut client) = ws_pair().await;

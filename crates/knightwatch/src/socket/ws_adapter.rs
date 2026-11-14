@@ -41,24 +41,33 @@ where
             }
             return Poll::Ready(Ok(()));
         }
-        match futures::Stream::poll_next(Pin::new(&mut self.inner), cx) {
-            Poll::Ready(Some(Ok(Message::Binary(data)))) => {
-                let to_read = buf.remaining().min(data.len());
-                let (head, tail) = data.split_at(to_read);
-                buf.put_slice(head);
-                self.read_buffer.extend(tail.iter().copied());
-                Poll::Ready(Ok(()))
+        // loop past messages that carry no bytes (empty binary, text, ping, pong):
+        // returning for them would read as EOF (0 bytes) or stall without a wakeup
+        loop {
+            match futures::Stream::poll_next(Pin::new(&mut self.inner), cx) {
+                Poll::Ready(Some(Ok(Message::Binary(data)))) if !data.is_empty() => {
+                    let to_read = buf.remaining().min(data.len());
+                    let (head, tail) = data.split_at(to_read);
+                    buf.put_slice(head);
+                    self.read_buffer.extend(tail.iter().copied());
+                    return Poll::Ready(Ok(()));
+                }
+                Poll::Ready(Some(Ok(Message::Close(_)))) => {
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::ConnectionAborted,
+                        "WebSocket closed",
+                    )));
+                }
+                Poll::Ready(Some(Err(e))) => return Poll::Ready(Err(Error::other(e))),
+                Poll::Ready(None) => {
+                    return Poll::Ready(Err(Error::new(
+                        ErrorKind::UnexpectedEof,
+                        "WebSocket stream ended",
+                    )));
+                }
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(Ok(_))) => {}
             }
-            Poll::Ready(Some(Ok(Message::Close(_)))) => Poll::Ready(Err(Error::new(
-                ErrorKind::ConnectionAborted,
-                "WebSocket closed",
-            ))),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(Error::other(e))),
-            Poll::Ready(None) => Poll::Ready(Err(Error::new(
-                ErrorKind::UnexpectedEof,
-                "WebSocket stream ended",
-            ))),
-            Poll::Pending | Poll::Ready(_) => Poll::Pending,
         }
     }
 }
