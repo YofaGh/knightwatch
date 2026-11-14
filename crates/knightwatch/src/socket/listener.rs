@@ -1,8 +1,6 @@
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use kw_types::socket::SocketMessage;
-
 use super::{
     framing::{receive_message, send_message},
     transport::Transport,
@@ -53,14 +51,12 @@ pub fn init_ws_server(cancel_token: CancellationToken) -> Option<JoinHandle<()>>
 }
 
 async fn handle_client(connection: &mut Transport) -> Result<()> {
-    send_message(connection, &SocketMessage::Handshake).await?;
-    match receive_message(connection).await? {
-        SocketMessage::HandshakeResponse => {}
-        invalid => {
-            return Err(Error::Other(format!(
-                "Expected HandshakeResponse, Received {invalid:?}"
-            )));
-        }
+    use kw_types::socket::{Frame, SocketMessage};
+
+    send_message(connection, &Frame::push(SocketMessage::Handshake)).await?;
+    let frame: Frame = receive_message(connection).await?;
+    if !matches!(frame.message, SocketMessage::HandshakeResponse) {
+        return Err(Error::Other("Expected HandshakeResponse".into()));
     }
     Ok(())
 }
@@ -111,3 +107,7 @@ fn spawn_server(
     info!(%protocol, %host, port, "Socket listener started");
     Ok(server)
 }
+
+#[cfg(test)]
+#[path = "listener_tests.rs"]
+mod tests;

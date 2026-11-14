@@ -10,6 +10,26 @@ use crate::{
     event,
 };
 
+/// Wire envelope: `id` correlates a reply with the request that asked for it;
+/// pushes like events carry `None`.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Frame {
+    pub id: Option<u64>,
+    pub message: SocketMessage,
+}
+
+impl Frame {
+    #[must_use]
+    pub const fn push(message: SocketMessage) -> Self {
+        Self { id: None, message }
+    }
+
+    #[must_use]
+    pub const fn reply(id: Option<u64>, message: SocketMessage) -> Self {
+        Self { id, message }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SocketMessage {
     Handshake,
@@ -45,6 +65,7 @@ pub enum SocketMessage {
     AlreadyAuthenticated,
     ShuttingDown,
     SetEventPreferences,
+    InvalidMessage,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

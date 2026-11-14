@@ -430,7 +430,7 @@ async fn framing_large_message_both_directions() {
 async fn framing_receive_after_close_is_socket_error() {
     let (mut server, mut client) = ws_pair().await;
     client.send(Message::Close(None)).await.unwrap();
-    match within(framing::receive_message(&mut server)).await {
+    match within(framing::receive_message::<_, SocketMessage>(&mut server)).await {
         Err(Error::Socket(text)) => assert!(text.contains("Connection error"), "{text}"),
         other => panic!("expected Error::Socket, got {other:?}"),
     }
@@ -494,7 +494,7 @@ async fn tcp_peer_drop_is_socket_error() {
     let (server, peer) = tcp_pair().await;
     let mut transport = Transport::new_tcp(server);
     drop(peer);
-    match within(framing::receive_message(&mut transport)).await {
+    match within(framing::receive_message::<_, SocketMessage>(&mut transport)).await {
         Err(Error::Socket(text)) => assert!(text.contains("Connection error"), "{text}"),
         other => panic!("expected Error::Socket, got {other:?}"),
     }
@@ -575,7 +575,7 @@ async fn ws_transport_handshake_exchange() {
 async fn ws_transport_client_close_is_socket_error() {
     let (mut transport, mut client) = ws_over_tcp().await;
     client.send(Message::Close(None)).await.unwrap();
-    match within(framing::receive_message(&mut transport)).await {
+    match within(framing::receive_message::<_, SocketMessage>(&mut transport)).await {
         Err(Error::Socket(text)) => assert!(text.contains("Connection error"), "{text}"),
         other => panic!("expected Error::Socket, got {other:?}"),
     }

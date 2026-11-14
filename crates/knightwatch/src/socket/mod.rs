@@ -9,9 +9,13 @@ mod transport;
 mod ws_adapter;
 
 #[cfg(test)]
+mod client_manager_tests;
+#[cfg(test)]
 mod client_tests;
 #[cfg(test)]
 mod framing_tests;
+#[cfg(test)]
+mod reader_tests;
 #[cfg(test)]
 mod ws_adapter_tests;
 

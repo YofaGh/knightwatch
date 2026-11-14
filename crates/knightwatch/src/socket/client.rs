@@ -4,19 +4,20 @@ use tokio::{
     task::JoinHandle,
 };
 
-use kw_types::socket::{SocketCommandResponse, SocketMessage, SocketQueryResponse};
+use kw_types::socket::{Frame, SocketCommandResponse, SocketMessage};
 
 use super::{message::CorrelatedSocketMessage, transport::Transport};
 use crate::prelude::*;
 
 pub type ClientId = uuid::Uuid;
+pub type ClientWriter = mpsc::Sender<CorrelatedSocketMessage>;
 
 pub struct ClientConnection {
     pub reader_shutdown_tx: oneshot::Sender<()>,
     pub writer_shutdown_tx: oneshot::Sender<()>,
     pub reader_handle: JoinHandle<ReadHalf<Transport>>,
     pub writer_handle: JoinHandle<WriteHalf<Transport>>,
-    pub message_writer_tx: mpsc::Sender<CorrelatedSocketMessage>,
+    pub message_writer_tx: ClientWriter,
 }
 
 pub struct Client {
@@ -78,47 +79,51 @@ impl Client {
         self.ticks_enabled = enabled;
     }
 
-    pub async fn send_message(&self, message: SocketMessage) -> Result<()> {
-        send_message_to_client(
+    pub fn writer(&self) -> Option<ClientWriter> {
+        self.connection
+            .as_ref()
+            .map(|c| c.message_writer_tx.clone())
+    }
+
+    pub async fn send_frame(&self, id: Option<u64>, message: SocketMessage) -> Result<()> {
+        send_frame(
             self.connection
                 .as_ref()
                 .map(|c| &c.message_writer_tx)
                 .ok_or_else(|| Error::Socket("Client message_writer_tx is None".into()))?,
-            message,
+            Frame::reply(id, message),
         )
         .await
     }
 
-    pub async fn respond_to_query(&self, response: SocketQueryResponse) -> Result<()> {
-        self.send_message(SocketMessage::QueryResponse { response })
-            .await
-    }
-
-    pub async fn respond_to_command(
-        &self,
-        result: Result<()>,
-        response: SocketCommandResponse,
-    ) -> Result<()> {
-        self.send_message(SocketMessage::CommandResponse {
-            success: result.is_ok(),
-            err: result.err().map(|err| err.to_string()),
-            response,
+    /// Queues an event without waiting. False when the queue is full or there is no connection.
+    pub fn try_send_event(&self, message: SocketMessage) -> bool {
+        self.connection.as_ref().is_some_and(|c| {
+            c.message_writer_tx
+                .try_send(CorrelatedSocketMessage {
+                    frame: Frame::push(message),
+                    response_tx: None,
+                })
+                .is_ok()
         })
-        .await
     }
 }
 
-pub async fn send_message_to_client(
-    sender: &mpsc::Sender<CorrelatedSocketMessage>,
-    message: SocketMessage,
-) -> Result<()> {
+pub fn command_reply(result: Result<()>, response: SocketCommandResponse) -> SocketMessage {
+    SocketMessage::CommandResponse {
+        success: result.is_ok(),
+        err: result.err().map(|err| err.to_string()),
+        response,
+    }
+}
+
+pub async fn send_frame(sender: &ClientWriter, frame: Frame) -> Result<()> {
     let (response_tx, response_rx) = oneshot::channel();
-    let correlated_message = CorrelatedSocketMessage {
-        message,
-        response_tx,
-    };
     sender
-        .send(correlated_message)
+        .send(CorrelatedSocketMessage {
+            frame,
+            response_tx: Some(response_tx),
+        })
         .await
         .map_err(|_| Error::Socket("Failed to send message to client".to_string()))?;
     response_rx.await.unwrap_or_else(|_| {

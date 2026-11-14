@@ -1,3 +1,12 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp,
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing
+)]
+
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, from_value, json};
 use std::collections::BTreeSet;
@@ -759,7 +768,8 @@ fn message_exhaustive(m: &SocketMessage) {
         | M::NotLoggedIn
         | M::AlreadyAuthenticated
         | M::ShuttingDown
-        | M::SetEventPreferences => {}
+        | M::SetEventPreferences
+        | M::InvalidMessage => {}
         M::Action { .. }
         | M::Query { .. }
         | M::QueryResponse { .. }
@@ -770,7 +780,7 @@ fn message_exhaustive(m: &SocketMessage) {
     }
 }
 
-const MESSAGE_COUNT: usize = 15;
+const MESSAGE_COUNT: usize = 16;
 
 fn unit_messages() -> Vec<(SocketMessage, &'static str)> {
     use SocketMessage as M;
@@ -783,6 +793,7 @@ fn unit_messages() -> Vec<(SocketMessage, &'static str)> {
         (M::AlreadyAuthenticated, "AlreadyAuthenticated"),
         (M::ShuttingDown, "ShuttingDown"),
         (M::SetEventPreferences, "SetEventPreferences"),
+        (M::InvalidMessage, "InvalidMessage"),
     ]
 }
 
@@ -815,6 +826,28 @@ fn messages() -> Vec<SocketMessage> {
         },
     ]);
     all
+}
+
+// ---------------------------------------------------------------------------
+// Frame
+// ---------------------------------------------------------------------------
+
+#[test]
+fn frame_roundtrips_with_and_without_id() {
+    assert_roundtrip(&Frame::reply(Some(7), SocketMessage::Unauthorized));
+    assert_roundtrip(&Frame::push(SocketMessage::Handshake));
+}
+
+#[test]
+fn frame_json_shape() {
+    assert_eq!(
+        serde_json::to_value(Frame::reply(Some(7), SocketMessage::LoggedOut)).unwrap(),
+        json!({ "id": 7, "message": "LoggedOut" })
+    );
+    assert_eq!(
+        serde_json::to_value(Frame::push(SocketMessage::Handshake)).unwrap(),
+        json!({ "id": null, "message": "Handshake" })
+    );
 }
 
 // ---------------------------------------------------------------------------

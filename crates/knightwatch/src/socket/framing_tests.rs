@@ -10,12 +10,12 @@
 use std::time::Duration;
 
 use kw_types::socket::{
-    AuthFailedReason, SocketAction, SocketCommand, SocketCommandResponse, SocketMessage,
+    AuthFailedReason, Frame, SocketAction, SocketCommand, SocketCommandResponse, SocketMessage,
     SocketQuery, SocketQueryResponse,
 };
 use tokio::io::AsyncWriteExt;
 
-use super::framing::{receive_message, send_message};
+use super::framing::{MAX_FRAME_LEN, receive_message, send_message};
 use crate::errors::Error;
 
 // ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ async fn encode(msg: &SocketMessage) -> Vec<u8> {
 
 async fn receive_from(bytes: &[u8]) -> Result<SocketMessage, Error> {
     let mut reader = bytes;
-    receive_message(&mut reader).await
+    receive_message::<_, SocketMessage>(&mut reader).await
 }
 
 fn is_socket_err<T>(res: &Result<T, Error>) -> bool {
@@ -276,7 +276,7 @@ async fn round_trip_through_duplex_stream() {
     let (mut a, mut b) = tokio::io::duplex(4096);
     for msg in sample_messages() {
         send_message(&mut a, &msg).await.unwrap();
-        let back = receive_message(&mut b).await.unwrap();
+        let back = receive_message::<_, SocketMessage>(&mut b).await.unwrap();
         assert_eq!(json(&back), json(&msg));
     }
 }
@@ -294,7 +294,7 @@ async fn round_trip_large_message_over_small_buffer() {
     let writer = tokio::spawn(async move {
         send_message(&mut a, &msg).await.unwrap();
     });
-    let back = receive_message(&mut b).await.unwrap();
+    let back = receive_message::<_, SocketMessage>(&mut b).await.unwrap();
     writer.await.unwrap();
     assert_eq!(json(&back), expected);
 }
@@ -324,12 +324,14 @@ async fn receive_reads_back_to_back_frames_in_order() {
     }
     let mut reader: &[u8] = &stream;
     for msg in &msgs {
-        let back = receive_message(&mut reader).await.unwrap();
+        let back = receive_message::<_, SocketMessage>(&mut reader)
+            .await
+            .unwrap();
         assert_eq!(json(&back), json(msg));
     }
     // stream is exhausted: next read is a connection error, not a hang or panic
     assert!(reader.is_empty());
-    let res = receive_message(&mut reader).await;
+    let res = receive_message::<_, SocketMessage>(&mut reader).await;
     assert!(is_socket_err(&res), "got {res:?}");
 }
 
@@ -338,7 +340,9 @@ async fn receive_leaves_following_bytes_untouched() {
     let mut stream = frame(b"\"Handshake\"");
     stream.extend_from_slice(b"tail");
     let mut reader: &[u8] = &stream;
-    receive_message(&mut reader).await.unwrap();
+    receive_message::<_, SocketMessage>(&mut reader)
+        .await
+        .unwrap();
     assert_eq!(reader, b"tail");
 }
 
@@ -357,11 +361,11 @@ async fn receive_works_when_bytes_arrive_one_at_a_time() {
         // `a` is dropped here, closing the stream
     });
     for msg in &msgs {
-        let back = receive_message(&mut b).await.unwrap();
+        let back = receive_message::<_, SocketMessage>(&mut b).await.unwrap();
         assert_eq!(json(&back), json(msg));
     }
     writer.await.unwrap();
-    let res = receive_message(&mut b).await;
+    let res = receive_message::<_, SocketMessage>(&mut b).await;
     assert!(is_socket_err(&res), "got {res:?}");
 }
 
@@ -376,7 +380,7 @@ async fn receive_works_when_prefix_and_body_are_written_separately() {
         tokio::task::yield_now().await;
         a.write_all(&body).await.unwrap();
     });
-    let back = receive_message(&mut b).await.unwrap();
+    let back = receive_message::<_, SocketMessage>(&mut b).await.unwrap();
     writer.await.unwrap();
     assert_eq!(json(&back), json(&SocketMessage::AuthenticationSucceed));
 }
@@ -422,7 +426,7 @@ async fn receive_peer_closing_mid_body_is_socket_error() {
         a.write_all(&[b'x'; 10]).await.unwrap();
         // dropped: peer sees EOF after 10 of 100 bytes
     });
-    let res = receive_message(&mut b).await;
+    let res = receive_message::<_, SocketMessage>(&mut b).await;
     writer.await.unwrap();
     assert!(is_socket_err(&res), "got {res:?}");
 }
@@ -496,14 +500,16 @@ async fn bad_body_does_not_poison_the_next_frame() {
     let mut stream = frame(b"garbage");
     stream.extend_from_slice(&frame(b"\"Unauthorized\""));
     let mut reader: &[u8] = &stream;
-    let first = receive_message(&mut reader).await;
+    let first = receive_message::<_, SocketMessage>(&mut reader).await;
     assert!(is_other_err(&first), "got {first:?}");
-    let second = receive_message(&mut reader).await.unwrap();
+    let second = receive_message::<_, SocketMessage>(&mut reader)
+        .await
+        .unwrap();
     assert_eq!(json(&second), json(&SocketMessage::Unauthorized));
 }
 
 // ---------------------------------------------------------------------------
-// known issues (ignored; they describe the wanted behaviour)
+// frame limits and error hygiene
 // ---------------------------------------------------------------------------
 
 /// `receive_message` allocates whatever the 4-byte prefix declares (up to
@@ -511,14 +517,13 @@ async fn bad_body_does_not_poison_the_next_frame() {
 /// Wanted: reject an oversized declared length with an error and without
 /// consuming the body. This assumes the chosen limit is below 256 MiB.
 #[tokio::test]
-#[ignore = "no maximum frame size: receive_message trusts the length prefix"]
 async fn receive_rejects_oversized_declared_length() {
     let declared: u32 = 0x1000_0000; // 256 MiB
     let mut stream = declared.to_be_bytes().to_vec();
     let extra = 1 << 20;
     stream.extend(vec![0u8; extra]);
     let mut reader: &[u8] = &stream;
-    let res = receive_message(&mut reader).await;
+    let res = receive_message::<_, SocketMessage>(&mut reader).await;
     assert!(res.is_err());
     assert_eq!(
         reader.len(),
@@ -532,7 +537,6 @@ async fn receive_rejects_oversized_declared_length() {
 /// frame therefore puts the password into the error, and likely the logs.
 /// Wanted: the error text must not contain frame contents.
 #[tokio::test]
-#[ignore = "deserialize error prints the raw frame bytes, which can include a password"]
 async fn bad_frame_error_does_not_leak_body_bytes() {
     // truncated Login frame with the password "hunter2"
     let body = br#"{"Action":{"action":{"Login":{"username":"u","password":"hunter2""#;
@@ -544,4 +548,29 @@ async fn bad_frame_error_does_not_leak_body_bytes() {
         "leaked: {text}"
     );
     assert!(!text.contains("hunter2"), "leaked: {text}");
+}
+
+#[tokio::test]
+async fn receive_accepts_frame_at_the_limit() {
+    // a JSON string literal of exactly MAX_FRAME_LEN bytes: quotes + filler
+    let mut body = vec![b'a'; MAX_FRAME_LEN];
+    body[0] = b'"';
+    body[MAX_FRAME_LEN - 1] = b'"';
+    let stream = frame(&body);
+    let mut reader: &[u8] = &stream;
+    let got = receive_message::<_, String>(&mut reader).await.unwrap();
+    assert_eq!(got.len(), MAX_FRAME_LEN - 2);
+}
+
+#[tokio::test]
+async fn frame_roundtrips_through_framing() {
+    let sent = Frame::reply(Some(3), SocketMessage::Unauthorized);
+    let mut buf: Vec<u8> = Vec::new();
+    send_message(&mut buf, &sent).await.unwrap();
+    let mut reader: &[u8] = &buf;
+    let back = receive_message::<_, Frame>(&mut reader).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&back).unwrap(),
+        serde_json::to_value(&sent).unwrap()
+    );
 }

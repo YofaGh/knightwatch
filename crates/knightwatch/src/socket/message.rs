@@ -3,24 +3,21 @@ use kw_types::socket;
 use super::client::ClientId;
 
 #[derive(Debug)]
-pub struct SocketQueryRequset {
-    pub client_id: ClientId,
-    pub query: socket::SocketQuery,
+pub enum RequestKind {
+    Action(socket::SocketAction),
+    Query(socket::SocketQuery),
+    Command(socket::SocketCommand),
 }
 
 #[derive(Debug)]
-pub struct SocketActionRequset {
+pub struct SocketRequest {
     pub client_id: ClientId,
-    pub action: socket::SocketAction,
-}
-
-#[derive(Debug)]
-pub struct SocketCommandRequset {
-    pub client_id: ClientId,
-    pub command: socket::SocketCommand,
+    pub id: Option<u64>,
+    pub kind: RequestKind,
 }
 
 pub struct CorrelatedSocketMessage {
-    pub message: socket::SocketMessage,
-    pub response_tx: tokio::sync::oneshot::Sender<Result<(), crate::errors::Error>>,
+    pub frame: socket::Frame,
+    /// `None` means fire-and-forget (events).
+    pub response_tx: Option<tokio::sync::oneshot::Sender<Result<(), crate::errors::Error>>>,
 }

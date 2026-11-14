@@ -1,5 +1,9 @@
 #[derive(Debug)]
 pub enum ClientManagerEvent {
-    AddClient { transport: super::transport::Transport },
-    ClientDisconnected { client_id: super::client::ClientId },
+    AddClient {
+        transport: super::transport::Transport,
+    },
+    ClientDisconnected {
+        client_id: super::client::ClientId,
+    },
 }

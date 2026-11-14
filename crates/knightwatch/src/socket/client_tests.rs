@@ -16,10 +16,10 @@ use tokio::{
     time::timeout,
 };
 
-use kw_types::socket::{SocketCommandResponse, SocketMessage, SocketQueryResponse};
+use kw_types::socket::{Frame, SocketCommandResponse, SocketMessage};
 
 use super::{
-    client::{Client, ClientConnection, ClientId, send_message_to_client},
+    client::{Client, ClientConnection, ClientId, command_reply, send_frame},
     message::CorrelatedSocketMessage,
     transport::Transport,
 };
@@ -70,12 +70,10 @@ async fn expect_message(
     rx: &mut mpsc::Receiver<CorrelatedSocketMessage>,
     reply: Result<(), Error>,
 ) -> SocketMessage {
-    let CorrelatedSocketMessage {
-        message,
-        response_tx,
-    } = rx.recv().await.expect("writer channel closed");
-    let _ = response_tx.send(reply);
-    message
+    let CorrelatedSocketMessage { frame, response_tx } =
+        rx.recv().await.expect("writer channel closed");
+    let _ = response_tx.expect("acked send has response_tx").send(reply);
+    frame.message
 }
 
 fn socket_error_text(result: Result<(), Error>) -> String {
@@ -142,7 +140,10 @@ async fn taken_connection_is_still_usable() {
     let taken = client.take_connection().unwrap();
     let (result, message) = within(async {
         tokio::join!(
-            send_message_to_client(&taken.message_writer_tx, SocketMessage::Handshake),
+            send_frame(
+                &taken.message_writer_tx,
+                Frame::push(SocketMessage::Handshake)
+            ),
             expect_message(&mut rx, Ok(())),
         )
     })
@@ -159,19 +160,19 @@ async fn taken_connection_is_still_usable() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn send_message_without_connection_is_socket_error() {
+async fn send_frame_without_connection_is_socket_error() {
     let (mut client, _rx) = new_client().await;
     drop(client.take_connection());
-    let text = socket_error_text(client.send_message(SocketMessage::Handshake).await);
+    let text = socket_error_text(client.send_frame(None, SocketMessage::Handshake).await);
     assert_eq!(text, "Client message_writer_tx is None");
 }
 
 #[tokio::test]
-async fn send_message_delivers_message_to_writer() {
+async fn send_frame_delivers_message_to_writer() {
     let (client, mut rx) = new_client().await;
     let (result, message) = within(async {
         tokio::join!(
-            client.send_message(SocketMessage::Unauthorized),
+            client.send_frame(None, SocketMessage::Unauthorized),
             expect_message(&mut rx, Ok(())),
         )
     })
@@ -181,12 +182,12 @@ async fn send_message_delivers_message_to_writer() {
 }
 
 #[tokio::test]
-async fn send_message_returns_the_writers_error() {
+async fn send_frame_returns_the_writers_error() {
     let (client, mut rx) = new_client().await;
     let reply = Err(Error::Socket("Connection error: broken pipe".into()));
     let (result, _) = within(async {
         tokio::join!(
-            client.send_message(SocketMessage::Handshake),
+            client.send_frame(None, SocketMessage::Handshake),
             expect_message(&mut rx, reply),
         )
     })
@@ -195,64 +196,25 @@ async fn send_message_returns_the_writers_error() {
 }
 
 #[tokio::test]
-async fn send_message_fails_when_writer_is_gone() {
+async fn send_frame_fails_when_writer_is_gone() {
     let (client, rx) = new_client().await;
     drop(rx);
-    let text = socket_error_text(within(client.send_message(SocketMessage::Handshake)).await);
+    let text = socket_error_text(within(client.send_frame(None, SocketMessage::Handshake)).await);
     assert_eq!(text, "Failed to send message to client");
 }
 
-#[tokio::test]
-async fn respond_to_query_wraps_response_in_query_response() {
-    let (client, mut rx) = new_client().await;
-    let response = SocketQueryResponse::Disks {
-        snapshots: Default::default(),
-    };
-    let (result, message) = within(async {
-        tokio::join!(
-            client.respond_to_query(response),
-            expect_message(&mut rx, Ok(())),
-        )
-    })
-    .await;
-    result.unwrap();
-    let value = json(&message);
-    assert!(
-        value["QueryResponse"]["response"]["Disks"].is_object(),
-        "unexpected shape: {value}"
-    );
-}
-
-#[tokio::test]
-async fn respond_to_command_ok_reports_success() {
-    let (client, mut rx) = new_client().await;
-    let (result, message) = within(async {
-        tokio::join!(
-            client.respond_to_command(Ok(()), SocketCommandResponse::TrackPid),
-            expect_message(&mut rx, Ok(())),
-        )
-    })
-    .await;
-    result.unwrap();
-    let value = json(&message);
+#[test]
+fn command_reply_ok_reports_success() {
+    let value = json(&command_reply(Ok(()), SocketCommandResponse::TrackPid));
     assert_eq!(value["CommandResponse"]["success"], true, "{value}");
     assert!(value["CommandResponse"]["err"].is_null(), "{value}");
     assert_eq!(value["CommandResponse"]["response"], "TrackPid", "{value}");
 }
 
-#[tokio::test]
-async fn respond_to_command_error_carries_the_error_text() {
-    let (client, mut rx) = new_client().await;
+#[test]
+fn command_reply_error_carries_the_error_text() {
     let failure = Err(Error::Other("boom".into()));
-    let (result, message) = within(async {
-        tokio::join!(
-            client.respond_to_command(failure, SocketCommandResponse::UntrackPid),
-            expect_message(&mut rx, Ok(())),
-        )
-    })
-    .await;
-    result.unwrap();
-    let value = json(&message);
+    let value = json(&command_reply(failure, SocketCommandResponse::UntrackPid));
     assert_eq!(value["CommandResponse"]["success"], false, "{value}");
     assert_eq!(value["CommandResponse"]["err"], "boom", "{value}");
     assert_eq!(
@@ -262,19 +224,50 @@ async fn respond_to_command_error_carries_the_error_text() {
 }
 
 #[tokio::test]
-async fn respond_to_command_without_connection_is_socket_error() {
+async fn send_frame_carries_the_id() {
+    let (client, mut rx) = new_client().await;
+    let (result, frame) = within(async {
+        tokio::join!(
+            client.send_frame(Some(9), SocketMessage::Unauthorized),
+            async {
+                let item = rx.recv().await.expect("writer channel closed");
+                let _ = item.response_tx.expect("acked").send(Ok(()));
+                item.frame
+            }
+        )
+    })
+    .await;
+    result.unwrap();
+    assert_eq!(frame.id, Some(9));
+    assert_eq!(json(&frame.message), json(&SocketMessage::Unauthorized));
+}
+
+#[tokio::test]
+async fn try_send_event_does_not_wait_for_the_writer() {
+    let (client, mut rx) = new_client().await;
+    within(async {
+        for _ in 0..8 {
+            assert!(client.try_send_event(SocketMessage::Handshake));
+        }
+        assert!(!client.try_send_event(SocketMessage::Handshake));
+    })
+    .await;
+    for _ in 0..8 {
+        let item = rx.recv().await.unwrap();
+        assert!(item.response_tx.is_none());
+        assert!(item.frame.id.is_none());
+    }
+}
+
+#[tokio::test]
+async fn try_send_event_without_connection_is_false() {
     let (mut client, _rx) = new_client().await;
     drop(client.take_connection());
-    let text = socket_error_text(
-        client
-            .respond_to_command(Ok(()), SocketCommandResponse::TrackPid)
-            .await,
-    );
-    assert_eq!(text, "Client message_writer_tx is None");
+    assert!(!client.try_send_event(SocketMessage::Handshake));
 }
 
 // ---------------------------------------------------------------------------
-// send_message_to_client
+// send_frame (free function)
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -282,7 +275,7 @@ async fn send_to_client_ok_when_writer_confirms() {
     let (tx, mut rx) = mpsc::channel(8);
     let (result, message) = within(async {
         tokio::join!(
-            send_message_to_client(&tx, SocketMessage::HandshakeResponse),
+            send_frame(&tx, Frame::push(SocketMessage::HandshakeResponse)),
             expect_message(&mut rx, Ok(())),
         )
     })
@@ -297,7 +290,7 @@ async fn send_to_client_passes_writer_error_through() {
     let reply = Err(Error::Other("serialize failed".into()));
     let (result, _) = within(async {
         tokio::join!(
-            send_message_to_client(&tx, SocketMessage::Handshake),
+            send_frame(&tx, Frame::push(SocketMessage::Handshake)),
             expect_message(&mut rx, reply),
         )
     })
@@ -313,7 +306,7 @@ async fn send_to_client_closed_channel_is_socket_error() {
     let (tx, rx) = mpsc::channel(8);
     drop(rx);
     let text =
-        socket_error_text(within(send_message_to_client(&tx, SocketMessage::Handshake)).await);
+        socket_error_text(within(send_frame(&tx, Frame::push(SocketMessage::Handshake))).await);
     assert_eq!(text, "Failed to send message to client");
 }
 
@@ -326,7 +319,7 @@ async fn send_to_client_dropped_reply_is_socket_error() {
     };
     let (result, ()) = within(async {
         tokio::join!(
-            send_message_to_client(&tx, SocketMessage::Handshake),
+            send_frame(&tx, Frame::push(SocketMessage::Handshake)),
             writer,
         )
     })
@@ -341,7 +334,7 @@ async fn send_to_client_dropped_reply_is_socket_error() {
 async fn send_to_client_waits_for_the_writers_reply() {
     let (tx, mut rx) = mpsc::channel(8);
     let sender =
-        tokio::spawn(async move { send_message_to_client(&tx, SocketMessage::Handshake).await });
+        tokio::spawn(async move { send_frame(&tx, Frame::push(SocketMessage::Handshake)).await });
     let correlated = within(rx.recv()).await.expect("no message");
     for _ in 0..5 {
         tokio::task::yield_now().await;
@@ -350,7 +343,7 @@ async fn send_to_client_waits_for_the_writers_reply() {
         !sender.is_finished(),
         "send returned before the writer replied"
     );
-    let _ = correlated.response_tx.send(Ok(()));
+    let _ = correlated.response_tx.unwrap().send(Ok(()));
     within(sender).await.unwrap().unwrap();
 }
 
@@ -366,9 +359,9 @@ async fn send_to_client_keeps_message_order() {
     };
     let (a, b, c, seen) = within(async {
         tokio::join!(
-            send_message_to_client(&tx, SocketMessage::Handshake),
-            send_message_to_client(&tx, SocketMessage::Unauthorized),
-            send_message_to_client(&tx, SocketMessage::HandshakeResponse),
+            send_frame(&tx, Frame::push(SocketMessage::Handshake)),
+            send_frame(&tx, Frame::push(SocketMessage::Unauthorized)),
+            send_frame(&tx, Frame::push(SocketMessage::HandshakeResponse)),
             writer,
         )
     })
