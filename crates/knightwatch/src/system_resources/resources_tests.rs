@@ -556,7 +556,6 @@ fn a_held_battery_alarm_repeats_after_the_cooldown() {
 }
 
 #[test]
-#[ignore = "finding 56: the battery alarm never clears, because 0.0 is not <= 1.0 - 5.0"]
 fn plugging_in_clears_the_battery_alarm() {
     let (mut t, mut rx) = on_battery(10.0);
 
@@ -566,8 +565,22 @@ fn plugging_in_clears_the_battery_alarm() {
     assert!(!t.alarms().battery_low.active);
 }
 
+// Finding 56: like the other alarms, the battery clears 5 points past the threshold,
+// so a reading that flickers around it does not alarm again.
 #[test]
-#[ignore = "finding 56: the second low within the cooldown is silent, as the alarm never cleared"]
+fn battery_alarm_clears_five_points_above_the_threshold() {
+    let (mut t, mut rx) = on_battery(15.0);
+    t.source.battery = Some((BatteryState::Discharging, 16.0));
+    tick(&mut t, &mut rx);
+    t.source.battery = Some((BatteryState::Discharging, 15.0));
+    assert!(tick(&mut t, &mut rx).is_empty());
+
+    t.source.battery = Some((BatteryState::Discharging, 20.0));
+    tick(&mut t, &mut rx);
+    assert!(!t.alarms().battery_low.active);
+}
+
+#[test]
 fn running_low_again_after_charging_alarms_again() {
     let (mut t, mut rx) = on_battery(10.0);
     t.source.battery = Some((BatteryState::Charging, 50.0));

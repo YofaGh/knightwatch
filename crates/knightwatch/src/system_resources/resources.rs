@@ -323,12 +323,17 @@ impl<S: ResourceSource> SystemResources<S> {
         }
         // Battery
         if let Some(ref bat) = snapshot.battery {
-            let is_low = bat.state == BatteryState::Discharging
-                && bat.charge_percent <= self.thresholds.battery_low;
+            // negated, since the alarm fires when a value rises: low charge is a high
+            // -charge, it clears 5 points above the threshold, and charging clears it
+            let low = if bat.state == BatteryState::Discharging {
+                -bat.charge_percent
+            } else {
+                f32::NEG_INFINITY
+            };
             if Self::should_emit(
                 &mut self.state.battery_low_alarm,
-                if is_low { 1.0 } else { 0.0 },
-                1.0,
+                low,
+                -self.thresholds.battery_low,
             ) {
                 self.emit_event(SystemResourcesEvent::BatteryLow {
                     charge_percent: bat.charge_percent,
