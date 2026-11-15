@@ -212,8 +212,9 @@ impl<S: ProcessSource> ProcessTracker<S> {
                 self.source.refresh_all();
                 let descendants = self.collect_descendants(root_pid);
                 let mut killed = Vec::new();
-                // Kill leaves first, then work up to the root.
-                for snap in &descendants {
+                // Descendants come parents-first, so reverse them: every child is killed
+                // before its parent, then the root.
+                for snap in descendants.iter().rev() {
                     if self.source.kill(snap.pid) {
                         killed.push(snap.pid);
                         self.emit_event(ProcessTrackerEvent::ProcessKilled {

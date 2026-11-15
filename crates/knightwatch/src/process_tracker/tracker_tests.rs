@@ -747,7 +747,6 @@ fn kill_tree_of_an_unknown_root_succeeds_with_nothing_killed() {
 }
 
 #[test]
-#[ignore = "finding 53: the code says leaves first, but parents are killed before children"]
 fn kill_tree_kills_leaves_before_their_parents() {
     let mut t = tracker(&[]);
     t.spawn(1, None);
