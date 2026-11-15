@@ -485,9 +485,40 @@ fn save_leaves_no_temp_file_and_replaces_the_old_one() {
     let path = dir.path().join("store.json");
     set_path(Some(path.clone()));
     std::fs::write(&path, "old").unwrap();
-    std::fs::write(path.with_extension("tmp"), "stale").unwrap();
     sample_store().save().unwrap();
     assert_eq!(TestStore::load().unwrap(), sample_store());
+    let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+    assert_eq!(names.len(), 1, "{names:?}");
+}
+
+// Finding 25: concurrent saves each use their own temp file. With a shared one,
+// a save deletes or renames another's half-written file and one of them fails.
+#[test]
+fn concurrent_saves_do_not_clash() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.json");
+    #[allow(clippy::needless_collect)] // spawn all before joining any, or they never overlap
+    let threads: Vec<_> = (0..8_u32)
+        .map(|count| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                set_path(Some(path));
+                let store = TestStore {
+                    name: "x".repeat(1 << 16),
+                    count,
+                };
+                (0..20).filter(|_| store.save().is_err()).count()
+            })
+        })
+        .collect();
+    let failed: usize = threads.into_iter().map(|t| t.join().unwrap()).sum();
+    // Windows can refuse a rename that races another one; that is an error, not a clash
+    if cfg!(unix) {
+        assert_eq!(failed, 0);
+    }
+    set_path(Some(path));
+    let loaded = TestStore::load().unwrap();
+    assert_eq!(loaded.name.len(), 1 << 16);
     let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
     assert_eq!(names.len(), 1, "{names:?}");
 }

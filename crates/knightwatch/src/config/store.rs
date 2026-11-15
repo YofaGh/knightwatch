@@ -1,5 +1,8 @@
 use crate::prelude::*;
 
+// numbers each save's temp file, so concurrent saves never share or delete each other's
+static SAVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 pub trait JsonStore: Sized + Default + serde::Serialize + for<'de> serde::Deserialize<'de> {
     const NAME: &'static str;
     fn path() -> Option<std::path::PathBuf>;
@@ -35,7 +38,10 @@ pub trait JsonStore: Sized + Default + serde::Serialize + for<'de> serde::Deseri
         // so a crash never leaves a half-written or world-readable file
         let write_err =
             |e: std::io::Error| Error::Config(format!("Failed to write {} file: {e}", Self::NAME));
-        let tmp = path.with_extension("tmp");
+        let n = SAVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut tmp = path.clone().into_os_string();
+        tmp.push(format!(".{}.{n}.tmp", std::process::id()));
+        let tmp = std::path::PathBuf::from(tmp);
         let _ = std::fs::remove_file(&tmp); // a stale one would keep its old mode
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
