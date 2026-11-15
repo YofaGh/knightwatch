@@ -356,7 +356,6 @@ fn work_completes_only_after_the_last_orphan_exits() {
 }
 
 #[test]
-#[ignore = "finding 51: RootExited repeats on every tick until the work is done"]
 fn root_exited_is_emitted_once_while_orphans_live() {
     let (mut t, mut rx) = running_root();
     t.spawn(2, Some(1));
@@ -371,7 +370,6 @@ fn root_exited_is_emitted_once_while_orphans_live() {
 }
 
 #[test]
-#[ignore = "finding 51: a bad pid emits RootExited on every tick, forever"]
 fn root_exited_is_emitted_once_for_a_root_that_never_appeared() {
     let mut t = tracker(&[1]);
     let mut rx = t.channels.event_tx.subscribe();

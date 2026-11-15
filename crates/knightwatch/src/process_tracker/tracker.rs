@@ -333,7 +333,11 @@ impl<S: ProcessSource> ProcessTracker<S> {
         if root_snap.is_some() {
             self.get_root_process_mut(root_pid)?.root_appeared = true;
         } else {
-            self.emit_event(ProcessTrackerEvent::RootExited { pid: root_pid });
+            // only on the transition, not on every tick while orphans live
+            let first_exit = !self.get_root_process_mut(root_pid)?.root_exited;
+            if first_exit {
+                self.emit_event(ProcessTrackerEvent::RootExited { pid: root_pid });
+            }
             let root_process = self.get_root_process_mut(root_pid)?;
             root_process.root_exited = true;
             if root_process.first_tick {
@@ -341,7 +345,7 @@ impl<S: ProcessSource> ProcessTracker<S> {
                     root_pid,
                     "root process not found on first tick — bad PID or extremely short-lived process"
                 );
-            } else {
+            } else if first_exit {
                 warn!(root_pid, "root process exited");
             }
             if let Some(ref mut snap) = root_process.last_root {
