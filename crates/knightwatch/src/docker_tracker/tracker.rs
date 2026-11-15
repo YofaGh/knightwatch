@@ -285,12 +285,7 @@ impl<S: DockerSource> DockerTracker<S> {
                 id_or_name,
                 response,
             } => {
-                let found = self
-                    .state
-                    .containers
-                    .values()
-                    .find(|c| c.id.starts_with(&id_or_name) || c.name == id_or_name)
-                    .cloned();
+                let found = self.find_container(&id_or_name).ok().flatten().cloned();
                 let _ = response.send(found);
             }
             DockerTrackerQuery::GetTopContainers {
@@ -334,7 +329,10 @@ impl<S: DockerSource> DockerTracker<S> {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self.source.stop(&target, timeout_secs).await;
+                let result = match target {
+                    Ok(target) => self.source.stop(&target, timeout_secs).await,
+                    Err(e) => Err(e),
+                };
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Stop {
@@ -355,7 +353,10 @@ impl<S: DockerSource> DockerTracker<S> {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self.source.kill(&target, signal.as_deref()).await;
+                let result = match target {
+                    Ok(target) => self.source.kill(&target, signal.as_deref()).await,
+                    Err(e) => Err(e),
+                };
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Kill {
@@ -375,7 +376,10 @@ impl<S: DockerSource> DockerTracker<S> {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self.source.start(&target).await;
+                let result = match target {
+                    Ok(target) => self.source.start(&target).await,
+                    Err(e) => Err(e),
+                };
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Start {
@@ -395,7 +399,10 @@ impl<S: DockerSource> DockerTracker<S> {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self.source.restart(&target, timeout_secs).await;
+                let result = match target {
+                    Ok(target) => self.source.restart(&target, timeout_secs).await,
+                    Err(e) => Err(e),
+                };
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Restart {
@@ -415,7 +422,10 @@ impl<S: DockerSource> DockerTracker<S> {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self.source.pause(&target).await;
+                let result = match target {
+                    Ok(target) => self.source.pause(&target).await,
+                    Err(e) => Err(e),
+                };
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Pause {
@@ -434,7 +444,10 @@ impl<S: DockerSource> DockerTracker<S> {
             } => {
                 let target = self.resolve_id(&id_or_name);
                 let container_name = self.lookup_container_name(&id_or_name);
-                let result = self.source.unpause(&target).await;
+                let result = match target {
+                    Ok(target) => self.source.unpause(&target).await,
+                    Err(e) => Err(e),
+                };
                 self.emit_command_event(
                     user,
                     DockerCommandAction::Unpause {
@@ -489,20 +502,40 @@ impl<S: DockerSource> DockerTracker<S> {
     // Helpers
     // -------------------------------------------------------------------------
 
-    fn resolve_id(&self, id_or_name: &str) -> String {
-        self.state
-            .containers
-            .values()
-            .find(|c| c.id.starts_with(id_or_name) || c.name == id_or_name)
-            .map_or_else(|| id_or_name.to_owned(), |c| c.id.clone())
+    /// An exact id or name wins; otherwise an id prefix must match exactly one
+    /// tracked container. `None` when nothing tracked matches.
+    fn find_container(&self, id_or_name: &str) -> Result<Option<&ContainerSnapshot>> {
+        if id_or_name.is_empty() {
+            return Err(Error::DockerTracker("container id or name is empty".into()));
+        }
+        let containers = self.state.containers.values();
+        if let Some(c) = containers
+            .clone()
+            .find(|c| c.id == id_or_name || c.name == id_or_name)
+        {
+            return Ok(Some(c));
+        }
+        let mut prefixed = containers.filter(|c| c.id.starts_with(id_or_name));
+        match (prefixed.next(), prefixed.next()) {
+            (Some(_), Some(_)) => Err(Error::DockerTracker(format!(
+                "container id prefix '{id_or_name}' matches more than one container"
+            ))),
+            (found, _) => Ok(found),
+        }
+    }
+
+    /// The tracked container's full id, or the input as given for Docker to resolve.
+    fn resolve_id(&self, id_or_name: &str) -> Result<String> {
+        Ok(self
+            .find_container(id_or_name)?
+            .map_or_else(|| id_or_name.to_owned(), |c| c.id.clone()))
     }
 
     /// Looks up the current name of a container by id or name, if tracked.
     fn lookup_container_name(&self, id_or_name: &str) -> Option<String> {
-        self.state
-            .containers
-            .values()
-            .find(|c| c.id.starts_with(id_or_name) || c.name == id_or_name)
+        self.find_container(id_or_name)
+            .ok()
+            .flatten()
             .map(|c| c.name.clone())
     }
 

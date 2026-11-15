@@ -523,8 +523,21 @@ async fn queries_before_the_first_tick_are_empty() {
     assert!(t.top(DockerSortKey::Cpu, 0).is_empty());
 }
 
+// Finding 60: an exact name beats another container's id that starts with it.
 #[tokio::test]
-#[ignore = "finding 60: an empty id matches every container, as every id starts with it"]
+async fn an_exact_name_beats_another_containers_id_prefix() {
+    let mut t = tracker();
+    t.with("abc");
+    t.with("web");
+    t.source.containers[0].id = "f00".into();
+    t.source.containers[1].id = "abc123".into();
+    t.handle_tick().await.unwrap();
+
+    assert_eq!(t.get("abc").unwrap().name, "abc");
+    assert_eq!(t.get("abc1").unwrap().name, "web");
+}
+
+#[tokio::test]
 async fn an_empty_id_matches_nothing() {
     let (t, _rx) = running().await;
 
@@ -647,7 +660,6 @@ async fn a_docker_error_is_returned_and_reported() {
 }
 
 #[tokio::test]
-#[ignore = "finding 60: an ambiguous id prefix acts on whichever container comes first"]
 async fn an_ambiguous_prefix_is_rejected() {
     let mut t = tracker();
     t.with("web-1");
@@ -663,7 +675,6 @@ async fn an_ambiguous_prefix_is_rejected() {
 }
 
 #[tokio::test]
-#[ignore = "finding 60: an empty id kills a tracked container"]
 async fn an_empty_id_kills_nothing() {
     let (mut t, _rx) = running().await;
     let before = t.calls().len();
