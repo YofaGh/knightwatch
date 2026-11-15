@@ -724,9 +724,8 @@ fn session_timeouts_use_the_given_values() {
     assert_eq!(ttl, Duration::from_secs(7200));
 }
 
-// Pinned: 0 disables expiry by returning `Duration::MAX`. Anything that adds
-// this to an `Instant` would overflow and panic (finding 26: check the session
-// code when it is covered).
+// 0 disables expiry by returning `Duration::MAX`. The session code only
+// compares it with elapsed time, never adds it to an `Instant`, so it is safe.
 #[test]
 fn session_timeouts_zero_means_unlimited() {
     let (idle, ttl) = parse(&[
@@ -747,12 +746,8 @@ fn session_timeouts_zero_applies_to_each_value_separately() {
     assert_eq!(ttl, Duration::from_secs(12 * 3600));
 }
 
-// Known issue (finding 26): `mins * 60` and `hours * 3600` are plain u64
-// multiplications, so a huge value panics in debug builds and wraps to a wrong
-// (small) duration in release builds. Wanted: saturate (for example to
-// `Duration::MAX`).
+// Finding 26: huge values saturate instead of overflowing.
 #[test]
-#[ignore = "known issue (finding 26): session timeout arithmetic overflows for huge values"]
 fn session_timeouts_huge_values_should_not_overflow() {
     let huge = u64::MAX.to_string();
     let (idle, ttl) = parse(&[

@@ -138,12 +138,12 @@ impl CliArgs {
         let idle = if self.session_idle_timeout_mins == 0 {
             Duration::MAX
         } else {
-            Duration::from_secs(self.session_idle_timeout_mins * 60)
+            Duration::from_secs(self.session_idle_timeout_mins.saturating_mul(60))
         };
         let ttl = if self.session_ttl_hours == 0 {
             Duration::MAX
         } else {
-            Duration::from_secs(self.session_ttl_hours * 3600)
+            Duration::from_secs(self.session_ttl_hours.saturating_mul(3600))
         };
         (idle, ttl)
     }
