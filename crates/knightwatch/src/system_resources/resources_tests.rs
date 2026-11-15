@@ -62,6 +62,9 @@ impl ResourceSource for Fake {
         if mask.temperatures {
             self.seen.temperatures.clone_from(&self.live.temperatures);
         }
+        if mask.gpus {
+            self.gpu_reads.set(self.gpu_reads.get() + 1);
+        }
     }
 
     fn cpu(&self) -> CpuSnapshot {
@@ -139,7 +142,6 @@ impl ResourceSource for Fake {
     }
 
     fn gpus(&self) -> Vec<GpuSnapshot> {
-        self.gpu_reads.set(self.gpu_reads.get() + 1);
         self.gpus
             .iter()
             .map(|name| GpuSnapshot {
@@ -656,7 +658,6 @@ fn a_fully_masked_tick_still_emits_a_tick() {
 }
 
 #[test]
-#[ignore = "finding 54: `RefreshMask.gpus` is never read, so gpus are queried every tick"]
 fn masking_gpus_stops_reading_them() {
     let (mut t, _rx) = running();
     t.refresh_mask = nothing();

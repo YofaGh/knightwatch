@@ -29,6 +29,8 @@ pub struct SysinfoSource {
     networks: Networks,
     components: Components,
     nvml: Option<Nvml>,
+    // NVML has no cache of its own, so a masked gpu keeps the last reading here
+    gpus: Vec<GpuSnapshot>,
     static_host_info: StaticHostInfo,
     uptime_baseline: u64,
     uptime_started: std::time::Instant,
@@ -36,6 +38,7 @@ pub struct SysinfoSource {
 
 impl SysinfoSource {
     pub fn new() -> Self {
+        let nvml = Nvml::init().ok();
         Self {
             sys: System::new_with_specifics(
                 sysinfo::RefreshKind::nothing()
@@ -46,12 +49,23 @@ impl SysinfoSource {
             disks: Disks::new_with_refreshed_list(),
             networks: Networks::new_with_refreshed_list(),
             components: Components::new_with_refreshed_list(),
-            nvml: Nvml::init().ok(),
+            gpus: read_gpus(nvml.as_ref()),
+            nvml,
             static_host_info: StaticHostInfo::new(),
             uptime_baseline: System::uptime(),
             uptime_started: std::time::Instant::now(),
         }
     }
+}
+
+fn read_gpus(nvml: Option<&Nvml>) -> Vec<GpuSnapshot> {
+    let Some(nvml) = nvml else {
+        return vec![];
+    };
+    let devices_count = nvml.device_count().unwrap_or(0);
+    (0..devices_count)
+        .filter_map(|i| nvml.device_by_index(i).ok().map(Into::into))
+        .collect()
 }
 
 impl ResourceSource for SysinfoSource {
@@ -71,6 +85,9 @@ impl ResourceSource for SysinfoSource {
         }
         if mask.temperatures {
             self.components.refresh(false);
+        }
+        if mask.gpus {
+            self.gpus = read_gpus(self.nvml.as_ref());
         }
     }
 
@@ -139,13 +156,7 @@ impl ResourceSource for SysinfoSource {
     }
 
     fn gpus(&self) -> Vec<GpuSnapshot> {
-        let Some(ref nvml) = self.nvml else {
-            return vec![];
-        };
-        let devices_count = nvml.device_count().unwrap_or(0);
-        (0..devices_count)
-            .filter_map(|i| nvml.device_by_index(i).ok().map(Into::into))
-            .collect()
+        self.gpus.clone()
     }
 
     fn battery(&self) -> Option<BatterySnapshot> {
