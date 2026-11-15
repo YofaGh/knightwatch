@@ -429,8 +429,8 @@ fn load_of_the_wrong_shape_is_a_config_error() {
     assert!(text.starts_with("Failed to parse test file"), "{text}");
 }
 
-// Pinned (finding 25): an empty file (for example left by a crash during a
-// non-atomic save) is a parse error, not a default, so startup would fail.
+// An empty file is a parse error, not a default (finding 25 made `save`
+// atomic, so a crash no longer leaves one).
 #[test]
 fn load_of_an_empty_file_is_a_parse_error() {
     let dir = tempfile::tempdir().unwrap();
@@ -465,12 +465,9 @@ fn load_ignores_unknown_fields() {
     );
 }
 
-// Known issue (finding 25): files are written with the default umask, so
-// `users.json` (password hashes, Telegram tokens) is normally world-readable
-// (0644). Wanted: owner-only (0600). Passes only under a restrictive umask.
+// Finding 25: `users.json` (password hashes, Telegram tokens) is owner-only (0600).
 #[cfg(unix)]
 #[test]
-#[ignore = "known issue (finding 25): saved files are not restricted to the owner"]
 fn saved_file_is_private_to_the_owner() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();
@@ -479,6 +476,20 @@ fn saved_file_is_private_to_the_owner() {
     sample_store().save().unwrap();
     let mode = std::fs::metadata(&path).unwrap().permissions().mode();
     assert_eq!(mode & 0o077, 0, "mode is {mode:o}");
+}
+
+// Finding 25: save goes through a temp file that is renamed over the target.
+#[test]
+fn save_leaves_no_temp_file_and_replaces_the_old_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("store.json");
+    set_path(Some(path.clone()));
+    std::fs::write(&path, "old").unwrap();
+    std::fs::write(path.with_extension("tmp"), "stale").unwrap();
+    sample_store().save().unwrap();
+    assert_eq!(TestStore::load().unwrap(), sample_store());
+    let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().collect();
+    assert_eq!(names.len(), 1, "{names:?}");
 }
 
 // ---------------------------------------------------------------------------

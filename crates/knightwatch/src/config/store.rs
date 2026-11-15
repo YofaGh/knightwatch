@@ -31,7 +31,23 @@ pub trait JsonStore: Sized + Default + serde::Serialize + for<'de> serde::Deseri
         }
         let contents = serde_json::to_string_pretty(self)
             .map_err(|e| Error::Config(format!("Failed to serialize {}: {e}", Self::NAME)))?;
-        std::fs::write(path, contents)
-            .map_err(|e| Error::Config(format!("Failed to write {} file: {e}", Self::NAME)))
+        // write a private temp file next to the target, then rename it into place,
+        // so a crash never leaves a half-written or world-readable file
+        let write_err =
+            |e: std::io::Error| Error::Config(format!("Failed to write {} file: {e}", Self::NAME));
+        let tmp = path.with_extension("tmp");
+        let _ = std::fs::remove_file(&tmp); // a stale one would keep its old mode
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options.open(&tmp).map_err(write_err)?;
+        let written = std::io::Write::write_all(&mut file, contents.as_bytes())
+            .and_then(|()| file.sync_all())
+            .and_then(|()| std::fs::rename(&tmp, &path));
+        if written.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        written.map_err(write_err)
     }
 }
