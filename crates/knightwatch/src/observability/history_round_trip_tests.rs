@@ -239,24 +239,13 @@ fn tear(dir: &Path) {
     .unwrap();
 }
 
+// Finding 69: the next event starts its own line, so only the torn one is lost.
 #[tokio::test]
-async fn after_a_torn_line_the_next_logged_event_is_lost() {
-    // Pinned (finding 69): `log_event` appends straight after the torn bytes,
-    // so the new event joins the bad line and is skipped with it.
+async fn an_event_after_a_torn_line_is_kept() {
     let dir = tempfile::tempdir().unwrap();
     tear(dir.path());
     log(dir.path(), "next", "2024-05-01T01:00:00Z").await;
     log(dir.path(), "later", "2024-05-01T02:00:00Z").await;
     let got = run(dir.path(), HistoryQuery::default()).await;
-    assert_eq!(names(&got), ["later"]);
-}
-
-#[tokio::test]
-#[ignore = "finding 69: an event logged after a torn last line is lost with it"]
-async fn wanted_an_event_after_a_torn_line_is_kept() {
-    let dir = tempfile::tempdir().unwrap();
-    tear(dir.path());
-    log(dir.path(), "next", "2024-05-01T01:00:00Z").await;
-    let got = run(dir.path(), HistoryQuery::default()).await;
-    assert_eq!(names(&got), ["next"]);
+    assert_eq!(names(&got), ["next", "later"]);
 }

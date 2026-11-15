@@ -1,5 +1,8 @@
 use std::{io, path::Path, time::Duration};
-use tokio::{fs, io::AsyncWriteExt};
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
+};
 use tokio_util::sync::CancellationToken;
 
 use kw_types::event::{EventPayload, StoredEvent};
@@ -30,9 +33,20 @@ pub async fn log_event(dir: &Path, payload: &EventPayload) -> io::Result<()> {
 
     let mut file = fs::OpenOptions::new()
         .create(true)
+        .read(true)
         .append(true)
         .open(&path)
         .await?;
+
+    // a crash mid-write leaves a last line with no newline: start a fresh line,
+    // or this event is joined to the torn one and skipped with it
+    if file.seek(io::SeekFrom::End(-1)).await.is_ok() {
+        let mut last = [0u8];
+        file.read_exact(&mut last).await?;
+        if last[0] != b'\n' {
+            line.insert(0, '\n');
+        }
+    }
 
     file.write_all(line.as_bytes()).await?;
     // tokio writes in the background: without this, errors are lost and readers miss the line
