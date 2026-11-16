@@ -141,7 +141,11 @@ pub async fn query_history_in(
         let content = match fs::read_to_string(dir.join(name)).await {
             Ok(c) => c,
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(Error::Other(format!("Failed to read {name}: {e}"))),
+            Err(e) => {
+                // one bad file (for example not UTF-8) should not hide every other day
+                warn!("event history: skipping unreadable {name}: {e}");
+                continue;
+            }
         };
         let mut matches: Vec<StoredEvent> = content
             .lines()

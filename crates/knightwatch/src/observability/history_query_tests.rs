@@ -16,7 +16,6 @@ use kw_types::{
 };
 
 use super::history::query_history_in;
-use crate::errors::Error;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -769,17 +768,16 @@ async fn limit_still_reads_older_files_when_the_newest_are_short() {
     std::fs::write(dir.path().join(day_file(1)), [0xff_u8, 0xfe, b'\n']).unwrap();
 
     // 5 wanted, only 4 events are in the files before the bad one, so the bad
-    // file is reached (pinned together with finding 32).
-    let err = query_history_in(
+    // file is reached and skipped.
+    let got = run(
         dir.path(),
         HistoryQuery {
             limit: Some(5),
             ..q()
         },
     )
-    .await
-    .unwrap_err();
-    assert!(matches!(err, Error::Other(_)), "{err:?}");
+    .await;
+    assert_eq!(names(&got), ["d2h1", "d2h2", "d3h1", "d3h2"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -864,13 +862,12 @@ async fn limit_zero_with_until_returns_nothing() {
 
 #[tokio::test]
 async fn limit_with_until_reads_every_file_in_range() {
-    // No early stop on this path, so an unreadable file inside the range
-    // fails the query even though the limit could be met without it
-    // (pinned together with finding 32).
+    // No early stop on this path, so an unreadable file inside the range is
+    // reached; it is skipped.
     let dir = three_days();
     std::fs::write(dir.path().join(day_file(1)), [0xff_u8, 0xfe, b'\n']).unwrap();
 
-    let err = query_history_in(
+    let got = run(
         dir.path(),
         HistoryQuery {
             until: Some("2024-05-03T23:59:59Z".into()),
@@ -878,34 +875,16 @@ async fn limit_with_until_reads_every_file_in_range() {
             ..q()
         },
     )
-    .await
-    .unwrap_err();
-    assert!(matches!(err, Error::Other(_)), "{err:?}");
+    .await;
+    assert_eq!(names(&got), ["d3h1", "d3h2"]);
 }
 
 // ---------------------------------------------------------------------------
-// unreadable files (finding 32)
+// unreadable files
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn a_file_that_is_not_utf8_fails_the_whole_query() {
-    // Pinned (finding 32).
-    let dir = three_days();
-    std::fs::write(dir.path().join(day_file(2)), [0xff_u8, 0xfe, b'\n']).unwrap();
-
-    let err = query_history_in(dir.path(), q()).await.unwrap_err();
-    match err {
-        Error::Other(m) => assert!(
-            m.contains("Failed to read knightwatch-events-2024-05-02.log"),
-            "{m}"
-        ),
-        other => panic!("unexpected error: {other:?}"),
-    }
-}
-
-#[tokio::test]
-#[ignore = "finding 32: one unreadable (non-UTF-8) log file fails the whole history query; it should be skipped with a log line"]
-async fn wanted_a_non_utf8_file_is_skipped() {
+async fn a_non_utf8_file_is_skipped() {
     let dir = three_days();
     std::fs::write(dir.path().join(day_file(2)), [0xff_u8, 0xfe, b'\n']).unwrap();
 
@@ -930,13 +909,12 @@ async fn an_unreadable_file_outside_the_date_range_is_never_opened() {
 }
 
 #[tokio::test]
-async fn a_directory_named_like_a_log_file_fails_the_query() {
-    // Pinned: `read_to_string` on a directory is an error that is not
-    // NotFound, so it is reported rather than skipped.
+async fn a_directory_named_like_a_log_file_is_skipped() {
+    // Reading a directory fails like any unreadable file, so it is skipped.
     let dir = three_days();
     let fake = dir.path().join("knightwatch-events-2024-05-04.log");
     std::fs::create_dir(&fake).unwrap();
 
-    let err = query_history_in(dir.path(), q()).await.unwrap_err();
-    assert!(matches!(err, Error::Other(_)), "{err:?}");
+    let got = run(dir.path(), q()).await;
+    assert_eq!(got.len(), 6);
 }
