@@ -481,7 +481,6 @@ fn a_removed_disk_keeps_its_alarm() {
 }
 
 #[test]
-#[ignore = "finding 57: alarm disks come out in HashMap order, though the type says stable"]
 fn alarm_disks_are_in_a_stable_order() {
     let (mut t, mut rx) = running();
     t.source.live.disks = (0..16).map(|i| (format!("/{i:02}"), 10.0)).collect();

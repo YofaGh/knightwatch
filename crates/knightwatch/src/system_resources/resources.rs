@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     sync::{Mutex, OnceLock},
 };
 use tokio::{
@@ -36,7 +36,8 @@ struct SystemResourcesState {
     last_battery_state: Option<BatteryState>,
     cpu_alarm: ThresholdAlarm,
     memory_alarm: ThresholdAlarm,
-    disk_alarms: HashMap<String, ThresholdAlarm>,
+    // sorted by mount point, so `AlarmSnapshot.disks` comes out in a stable order
+    disk_alarms: BTreeMap<String, ThresholdAlarm>,
     battery_low_alarm: ThresholdAlarm,
 }
 
@@ -47,7 +48,7 @@ impl SystemResourcesState {
             last_battery_state: None,
             cpu_alarm: ThresholdAlarm::default(),
             memory_alarm: ThresholdAlarm::default(),
-            disk_alarms: HashMap::new(),
+            disk_alarms: BTreeMap::new(),
             battery_low_alarm: ThresholdAlarm::default(),
         }
     }
