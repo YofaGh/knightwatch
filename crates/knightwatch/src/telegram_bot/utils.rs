@@ -21,7 +21,7 @@ pub fn format_screen_capture_event(event: &ScreenCaptureEvent) -> String {
             success,
             error,
         } => {
-            let user_str = escape_mdv2(&format!("{user:?}"));
+            let user_str = escape_mdv2(&user.to_string());
             let action_str = escape_mdv2(&action.to_string());
 
             if *success {
@@ -98,7 +98,7 @@ pub fn format_process_tracker_event(event: &ProcessTrackerEvent) -> String {
             if *success {
                 format!("✅ *Successfully killed process*\nPID: `{pid}`")
             } else {
-                format!("✅ *Failed to killed process*\nPID: `{pid}`")
+                format!("❌ *Failed to kill process*\nPID: `{pid}`")
             }
         }
         ProcessTrackerEvent::CommandExecuted {
@@ -107,7 +107,7 @@ pub fn format_process_tracker_event(event: &ProcessTrackerEvent) -> String {
             success,
             error,
         } => {
-            let user_str = escape_mdv2(&format!("{user:?}"));
+            let user_str = escape_mdv2(&user.to_string());
             let action_str = escape_mdv2(&action.to_string());
 
             if *success {
@@ -133,7 +133,7 @@ pub fn format_system_resources_event(event: &SystemResourcesEvent) -> Option<Str
     match event {
         SystemResourcesEvent::InitialSnapshot { snapshot } => {
             let display = TelegramDisplay(snapshot);
-            Some(format!("🟢 *System Resouces Started*\n\n{display}"))
+            Some(format!("🟢 *System Resources Started*\n\n{display}"))
         }
         SystemResourcesEvent::Tick { .. } => None,
         SystemResourcesEvent::CpuThresholdExceeded {
@@ -188,7 +188,7 @@ pub fn format_system_resources_event(event: &SystemResourcesEvent) -> Option<Str
             success,
             error,
         } => {
-            let user_str = escape_mdv2(&format!("{user:?}"));
+            let user_str = escape_mdv2(&user.to_string());
             let action_str = escape_mdv2(&action.to_string());
 
             if *success {
@@ -248,7 +248,7 @@ pub fn format_systemd_event(event: &SystemdEvent) -> Option<String> {
             success,
             error,
         } => {
-            let user_str = escape_mdv2(&format!("{user:?}"));
+            let user_str = escape_mdv2(&user.to_string());
             let action_str = escape_mdv2(&action.to_string());
 
             if *success {
@@ -352,7 +352,7 @@ pub fn format_docker_tracker_event(event: &DockerTrackerEvent) -> String {
             success,
             error,
         } => {
-            let user_str = escape_mdv2(&format!("{user:?}"));
+            let user_str = escape_mdv2(&user.to_string());
             let action_str = escape_mdv2(&action.to_string());
 
             if *success {

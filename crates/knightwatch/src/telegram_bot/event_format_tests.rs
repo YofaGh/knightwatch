@@ -39,8 +39,8 @@ use crate::{
 
 const HOSTILE: &str = "x`y*z_w\\[a](b).c-d!";
 
-// What a command message shows for `user()` today (see finding 47).
-const USER: &str = "DisplayUser \\{ username: \"bob\", telegram\\_chat\\_id: Some\\(42\\) \\}";
+// What a command message shows for `user()`: the username only (finding 47).
+const USER: &str = "bob";
 
 // Telegram's limit for one message, counted after the markup is parsed.
 const TELEGRAM_LIMIT: usize = 4_096;
@@ -332,15 +332,7 @@ fn a_success_message_ignores_any_error_text() {
 }
 
 #[test]
-fn command_message_prints_the_user_with_debug_text() {
-    // Pinned (finding 47): the Rust struct text reaches every chat, chat id included.
-    let msg = process_command(json!("PausePoll"), true, None);
-    assert!(msg.contains("DisplayUser"));
-    assert!(msg.contains("Some\\(42\\)"));
-}
-
-#[test]
-fn command_message_for_a_user_with_no_chat_says_none() {
+fn command_message_escapes_the_username() {
     let msg = format_process_tracker_event(&ProcessTrackerEvent::CommandExecuted {
         user: DisplayUser {
             username: "a_b".to_string(),
@@ -350,12 +342,7 @@ fn command_message_for_a_user_with_no_chat_says_none() {
         success: true,
         error: None,
     });
-    assert!(
-        msg.contains(
-            "├ User: `DisplayUser \\{ username: \"a\\_b\", telegram\\_chat\\_id: None \\}`\n"
-        ),
-        "{msg}"
-    );
+    assert!(msg.contains("├ User: `a\\_b`\n"), "{msg}");
     assert_valid_mdv2(&msg);
 }
 
@@ -374,7 +361,6 @@ fn command_message_with_a_hostile_username_is_valid_markdown() {
 }
 
 #[test]
-#[ignore = "finding 47: command messages should name the user, without Debug text or the chat id"]
 fn command_message_should_only_name_the_user() {
     let msg = process_command(json!("PausePoll"), true, None);
     assert!(msg.contains("bob"));
@@ -410,20 +396,12 @@ fn process_command_action_text() {
 }
 
 #[test]
-fn process_kill_action_text_has_a_typo() {
-    // Pinned (finding 47): flips with the ignored test below when `singal` is fixed.
+fn process_kill_action_text_says_signal() {
     let value = json!({"KillProcess": {"pid": 5, "signal": "kill"}});
     assert_eq!(
         process_command(value, true, None),
-        executed("singal kill process 5")
+        executed("signal kill process 5")
     );
-}
-
-#[test]
-#[ignore = "finding 47: `singal` is misspelled in ProcessCommandAction's Display"]
-fn process_kill_action_text_should_say_signal() {
-    let value = json!({"KillProcess": {"pid": 5, "signal": "kill"}});
-    assert!(process_command(value, true, None).contains("signal kill process 5"));
 }
 
 #[test]
@@ -656,19 +634,8 @@ fn system_resources_initial_snapshot_wraps_the_display() {
     })
     .unwrap();
     let body = TelegramDisplay(&snap).to_string();
-    // Pinned (finding 45): flips with the ignored test below when `Resouces` is fixed.
-    assert_eq!(msg, format!("🟢 *System Resouces Started*\n\n{body}"));
+    assert_eq!(msg, format!("🟢 *System Resources Started*\n\n{body}"));
     assert_valid_mdv2(&msg);
-}
-
-#[test]
-#[ignore = "finding 45: `Resouces` is misspelled in the system resources initial snapshot"]
-fn system_resources_initial_snapshot_should_be_spelled_correctly() {
-    let msg = format_system_resources_event(&SystemResourcesEvent::InitialSnapshot {
-        snapshot: snapshot(),
-    })
-    .unwrap();
-    assert!(msg.starts_with("🟢 *System Resources Started*\n"), "{msg}");
 }
 
 #[test]

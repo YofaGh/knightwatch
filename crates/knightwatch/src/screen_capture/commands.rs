@@ -39,9 +39,7 @@ pub enum ScreenCaptureCommand {
 /// Describes which mutating command was executed, with its parameters.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ScreenCaptureAction {
-    SetPollInterval {
-        interval: std::time::Duration,
-    },
+    SetPollInterval { interval: std::time::Duration },
     PausePoll,
     ResumePoll,
 }

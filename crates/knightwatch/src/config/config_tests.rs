@@ -282,12 +282,13 @@ fn display_user_display_text() {
         username: "bob".into(),
         telegram_chat_id: None,
     };
-    assert_eq!(plain.to_string(), "username: bob");
+    assert_eq!(plain.to_string(), "bob");
+    // the chat id is never shown to users
     let linked = DisplayUser {
         username: "bob".into(),
         telegram_chat_id: Some(-100),
     };
-    assert_eq!(linked.to_string(), "username: bob, chat_id: -100");
+    assert_eq!(linked.to_string(), "bob");
 }
 
 // Nothing in this test binary loads the users, so the global is still empty.

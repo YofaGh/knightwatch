@@ -122,7 +122,7 @@ impl ProcessCommandAction {
 impl std::fmt::Display for ProcessCommandAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::KillProcess { pid, signal } => write!(f, "singal {signal} process {pid}"),
+            Self::KillProcess { pid, signal } => write!(f, "signal {signal} process {pid}"),
             Self::KillTree { root_pid } => write!(f, "kill tree with root pid {root_pid}"),
             Self::TrackPid { pid } => write!(f, "track process with pid {pid}"),
             Self::UntrackPid { pid } => write!(f, "untrack process with pid {pid}"),

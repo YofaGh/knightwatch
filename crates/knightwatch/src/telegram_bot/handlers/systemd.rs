@@ -67,7 +67,7 @@ pub async fn handle_systemd_callback(
     bot: Bot,
     chat_id: ChatId,
     action: SystemdCallbackAction,
-    user: DisplayUser
+    user: DisplayUser,
 ) -> Result<()> {
     match action {
         SystemdCallbackAction::Control { unit_name, action } => {

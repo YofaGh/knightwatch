@@ -33,13 +33,10 @@ impl From<User> for DisplayUser {
     }
 }
 
+/// What users see: the username only, never the chat id.
 impl std::fmt::Display for DisplayUser {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "username: {}", self.username)?;
-        if let Some(chat_id) = self.telegram_chat_id {
-            write!(f, ", chat_id: {chat_id}")?;
-        }
-        Ok(())
+        f.write_str(&self.username)
     }
 }
 

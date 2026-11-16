@@ -333,25 +333,13 @@ fn process_killed_success_message() {
 }
 
 #[test]
-fn process_killed_failure_message_today() {
-    // Pinned (finding 45): the failure text uses the success emoji and has a
-    // grammar slip ("Failed to killed process").
-    let msg = format_process_tracker_event(&ProcessTrackerEvent::ProcessKilled {
-        pid: 10,
-        success: false,
-    });
-    assert_eq!(msg, "✅ *Failed to killed process*\nPID: `10`");
-    assert_valid_mdv2(&msg);
-}
-
-#[test]
-#[ignore = "finding 45: a failed kill is reported with the success emoji and bad grammar"]
 fn process_killed_failure_message_looks_like_a_failure() {
     let msg = format_process_tracker_event(&ProcessTrackerEvent::ProcessKilled {
         pid: 10,
         success: false,
     });
-    assert!(msg.starts_with('❌'), "got {msg:?}");
+    assert_eq!(msg, "❌ *Failed to kill process*\nPID: `10`");
+    assert_valid_mdv2(&msg);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
