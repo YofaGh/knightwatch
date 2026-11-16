@@ -759,25 +759,31 @@ fn systemd_decode_accepts_an_empty_unit_name() {
 }
 
 #[test]
-fn systemd_unit_name_with_a_colon_cannot_be_decoded() {
-    // Pinned (finding 44): `splitn(3, ':')` puts "a:b.service:restart" apart
-    // wrongly, so the action becomes "b.service:restart" and parsing fails.
-    // Systemd allows ':' in unit names. Flip this if the format changes.
-    let a = SystemdCallbackAction::Control {
-        unit_name: "a:b.service".to_string(),
-        action: ServiceAction::Restart,
-    };
-    assert_eq!(SystemdCallbackAction::decode(&a.encode()), None);
-}
-
-#[test]
-#[ignore = "finding 44: unit names containing ':' do not survive the callback encoding"]
 fn systemd_unit_name_with_a_colon_round_trips() {
     let a = SystemdCallbackAction::Control {
         unit_name: "a:b.service".to_string(),
         action: ServiceAction::Restart,
     };
     assert_eq!(SystemdCallbackAction::decode(&a.encode()), Some(a));
+}
+
+#[test]
+fn systemd_long_unit_name_round_trips_by_reference() {
+    let a = SystemdCallbackAction::Control {
+        unit_name: format!("{}.device", "x".repeat(80)),
+        action: ServiceAction::Restart,
+    };
+    let encoded = a.encode();
+    assert!(encoded.len() <= 64, "{encoded}");
+    assert_eq!(SystemdCallbackAction::decode(&encoded), Some(a));
+}
+
+#[test]
+fn systemd_decode_rejects_an_unknown_reference() {
+    assert_eq!(
+        SystemdCallbackAction::decode("sd_control:#999999:restart"),
+        None
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -916,8 +922,7 @@ fn each_encoded_action_is_accepted_by_exactly_its_own_decoder() {
 
 #[test]
 fn the_noop_button_data_matches_no_decoder() {
-    // Pinned (finding 44): the "✅ Tracking" / "🚫 Untracked" buttons carry
-    // "noop", which no decoder knows, so `handle_callback_query` answers
-    // "Unknown action" when one is pressed.
+    // the "✅ Tracking" / "🚫 Untracked" buttons carry "noop";
+    // `handle_callback_query` ignores it before trying the decoders
     assert_eq!(accepting_decoders("noop"), [false; 4]);
 }

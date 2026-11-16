@@ -104,6 +104,10 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
         return Ok(());
     };
     let Some(data) = &q.data else { return Ok(()) };
+    // the "✅ Tracking" / "🚫 Untracked" buttons only show a state
+    if data == "noop" {
+        return Ok(());
+    }
     if let Some(action) = ProcessCallbackAction::decode(data) {
         return handle_process_callback(bot, q, chat_id, action, user).await;
     }

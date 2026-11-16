@@ -320,24 +320,54 @@ impl SystemdCallbackAction {
     pub fn encode(&self) -> String {
         match self {
             Self::Control { unit_name, action } => {
-                format!("sd_control:{}:{}", unit_name, action.as_str())
+                let data = format!("sd_control:{}:{}", unit_name, action.as_str());
+                if data.len() <= MAX_CALLBACK_DATA_BYTES {
+                    return data;
+                }
+                // too long for Telegram: send a reference instead ('#' can't appear in unit names)
+                format!(
+                    "sd_control:#{}:{}",
+                    long_unit_ref(unit_name),
+                    action.as_str()
+                )
             }
         }
     }
 
     pub fn decode(s: &str) -> Option<Self> {
-        let parts: Vec<&str> = s.splitn(3, ':').collect();
-        match parts.as_slice() {
-            ["sd_control", unit_name, action] => {
-                let action = ServiceAction::try_from(*action).ok()?;
-                Some(Self::Control {
-                    unit_name: unit_name.to_string(),
-                    action,
-                })
-            }
-            _ => None,
-        }
+        // the action is last and has no ':', so the unit name keeps any ':' it has
+        let (unit_name, action) = s.strip_prefix("sd_control:")?.rsplit_once(':')?;
+        let action = ServiceAction::try_from(action).ok()?;
+        let unit_name = match unit_name.strip_prefix('#') {
+            Some(n) => long_unit_name(n.parse().ok()?)?,
+            None => unit_name.to_string(),
+        };
+        Some(Self::Control { unit_name, action })
     }
+}
+
+/// Telegram rejects a message whose button callback data is longer than this.
+const MAX_CALLBACK_DATA_BYTES: usize = 64;
+
+// shortcut: unit names too long for callback data live here until restart, so
+// their buttons stop working after one; it only grows with distinct long names
+static LONG_UNIT_NAMES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn long_unit_ref(name: &str) -> usize {
+    let mut names = LONG_UNIT_NAMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    names.iter().position(|n| n == name).unwrap_or_else(|| {
+        names.push(name.to_string());
+        names.len() - 1
+    })
+}
+
+fn long_unit_name(n: usize) -> Option<String> {
+    let names = LONG_UNIT_NAMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    names.get(n).cloned()
 }
 
 /// Inline-button callback actions for docker container commands.

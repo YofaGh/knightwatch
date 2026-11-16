@@ -527,23 +527,19 @@ fn unit_control_keyboard_fits_for_a_typical_name() {
 }
 
 #[test]
-fn unit_control_keyboard_limit_is_a_unit_name_of_45_bytes() {
-    // Pinned (finding 44): "sd_control:" (11) + name + ":restart" (8) must be
-    // at most 64 bytes, so the longest usable name is 45 bytes; Telegram
-    // rejects the whole message when one button's data is longer.
-    let longest_ok = "a".repeat(45);
-    assert_inline_limits(&unit_control_keyboard(&longest_ok));
-    let too_long = "a".repeat(46);
-    let max = inline_data(&unit_control_keyboard(&too_long))
-        .iter()
-        .map(String::len)
-        .max()
-        .unwrap();
-    assert_eq!(max, 65);
+fn unit_control_keyboard_sends_a_45_byte_name_as_is() {
+    // "sd_control:" (11) + name + ":restart" (8) fits 64 bytes up to 45 bytes
+    let name = "a".repeat(45);
+    let data = inline_data(&unit_control_keyboard(&name));
+    assert!(data.iter().all(|d| d.contains(&name)), "{data:?}");
 }
 
 #[test]
-#[ignore = "finding 44: callback data for long unit names (for example escaped device units) exceeds Telegram's 64-byte limit"]
+fn unit_control_keyboard_fits_for_a_46_byte_name() {
+    assert_inline_limits(&unit_control_keyboard(&"a".repeat(46)));
+}
+
+#[test]
 fn unit_control_keyboard_fits_for_a_long_escaped_unit_name() {
     let name = r"dev-disk-by\x2duuid-0a1b2c3d\x2d4e5f\x2d6789\x2dabcd\x2d0123456789ab.device";
     assert_inline_limits(&unit_control_keyboard(name));
