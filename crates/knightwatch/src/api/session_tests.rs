@@ -437,10 +437,9 @@ async fn reaper_sweeps_ttl_expired_sessions_on_start() {
     get_sessions().write().unwrap().remove_by_token(&live);
 }
 
-// ───────────────────────── Known issue ─────────────────────────
+// ───────────────────────── Debug redaction (finding 28) ─────────────────────────
 
 #[test]
-#[ignore = "known issue (finding 28): Debug on Session and Sessions prints the bearer tokens"]
 fn debug_output_does_not_contain_the_token() {
     let secret = "secret-token-123";
     let one = format!("{:?}", fresh("alice", secret));

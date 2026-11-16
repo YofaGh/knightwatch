@@ -173,7 +173,12 @@ async fn many_tasks_can_block_at_the_same_time() {
         .collect();
     let mut results = Vec::new();
     for h in handles {
-        results.push(timeout(LONG, h).await.expect("timed out").expect("task failed"));
+        results.push(
+            timeout(LONG, h)
+                .await
+                .expect("timed out")
+                .expect("task failed"),
+        );
     }
     assert_eq!(results, vec![0, 2, 4, 6, 8, 10, 12, 14]);
     assert_eq!(finished.load(Ordering::SeqCst), 8);

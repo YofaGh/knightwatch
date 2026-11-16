@@ -9,7 +9,6 @@ pub fn get_sessions() -> &'static RwLock<Sessions> {
     SESSIONS.get_or_init(|| RwLock::new(Sessions::default()))
 }
 
-#[derive(Debug)]
 pub struct Session {
     pub username: String,
     pub token: String,
@@ -34,9 +33,28 @@ impl Session {
     }
 }
 
-#[derive(Debug, Default)]
+// hand-written so `{:?}` never prints the bearer token
+impl std::fmt::Debug for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("username", &self.username)
+            .field("token", &"[redacted]")
+            .field("created_at", &self.created_at)
+            .field("last_seen", &self.last_seen)
+            .finish()
+    }
+}
+
+#[derive(Default)]
 pub struct Sessions {
     inner: std::collections::HashMap<String, Session>,
+}
+
+// the map is keyed by token, so list only the (redacted) sessions
+impl std::fmt::Debug for Sessions {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_list().entries(self.inner.values()).finish()
+    }
 }
 
 impl Sessions {

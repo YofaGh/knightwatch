@@ -297,10 +297,8 @@ fn global_users_are_not_loaded_in_tests() {
     assert!(get_users().is_none());
 }
 
-// Known issue (finding 24): `User` derives `Debug` with the password hash and
-// the Telegram token in it, so any `{:?}` of a user or of `Users` logs them.
+// Finding 24: any `{:?}` of a user or of `Users` must not log the secrets.
 #[test]
-#[ignore = "known issue (finding 24): User's Debug output includes the password hash and Telegram token"]
 fn user_debug_must_not_print_secrets() {
     let secret = User {
         username: "bob".into(),
@@ -552,16 +550,16 @@ fn persistent_config_missing_token_is_none_and_round_trips() {
     assert_eq!(again.webhook_urls, vec!["http://a", "http://b"]);
 }
 
-// Known issue (finding 24): the bot token is part of the derived Debug output.
+// Finding 24: Debug must not print the bot token or the webhook urls.
 #[test]
-#[ignore = "known issue (finding 24): PersistentConfig's Debug output includes the Telegram bot token"]
 fn persistent_config_debug_must_not_print_the_bot_token() {
     let config = PersistentConfig {
         telegram_token: Some("123456:SECRET-BOT-TOKEN".into()),
-        webhook_urls: vec![],
+        webhook_urls: vec!["https://hooks.example/SECRET-HOOK".into()],
     };
     let text = format!("{config:?}");
     assert!(!text.contains("SECRET-BOT-TOKEN"), "{text}");
+    assert!(!text.contains("SECRET-HOOK"), "{text}");
 }
 
 // The directories depend on the machine, so only the file names and the app

@@ -4,12 +4,24 @@ use std::sync::OnceLock;
 use super::store::JsonStore;
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct User {
     pub username: String,
     pub password_hash: String,
     pub telegram_token: String,
     pub telegram_chat_id: Option<i64>,
+}
+
+// hand-written so `{:?}` (logs, panics) never prints the hash or the link token
+impl std::fmt::Debug for User {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("User")
+            .field("username", &self.username)
+            .field("password_hash", &"[redacted]")
+            .field("telegram_token", &"[redacted]")
+            .field("telegram_chat_id", &self.telegram_chat_id)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
