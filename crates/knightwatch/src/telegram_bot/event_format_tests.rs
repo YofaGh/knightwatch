@@ -17,8 +17,8 @@ use kw_types::{
 use super::{
     display::TelegramDisplay,
     utils::{
-        format_docker_tracker_event, format_process_tracker_event, format_screen_capture_event,
-        format_system_resources_event, format_systemd_event,
+        fit_telegram, format_docker_tracker_event, format_process_tracker_event,
+        format_screen_capture_event, format_system_resources_event, format_systemd_event,
     },
 };
 use crate::{
@@ -860,9 +860,8 @@ fn many_exited_children() -> ProcessTrackerEvent {
 }
 
 #[test]
-fn nothing_splits_or_truncates_long_messages() {
-    // Pinned (finding 43): `broadcast_message` sends these as they are, Telegram refuses them
-    // with MESSAGE_TOO_LONG, and the chat is then removed.
+fn the_long_samples_are_over_the_limit_before_fitting() {
+    // `broadcast_message` passes these through `fit_telegram` before sending
     for msg in [
         format_docker_tracker_event(&many_containers()),
         format_process_tracker_event(&many_children()),
@@ -875,18 +874,28 @@ fn nothing_splits_or_truncates_long_messages() {
 }
 
 #[test]
-#[ignore = "finding 43: event messages should be split or truncated to Telegram's limit"]
 fn long_messages_should_fit_the_limit() {
-    // Assumes truncation. If the fix splits messages instead, the formatters' return type
-    // changes and this test should check each part.
     for msg in [
         format_docker_tracker_event(&many_containers()),
         format_process_tracker_event(&many_children()),
         format_process_tracker_event(&many_exited_children()),
         format_systemd_event(&many_failed_units()).unwrap(),
     ] {
-        assert!(parsed_len(&msg) <= TELEGRAM_LIMIT, "{}", parsed_len(&msg));
+        let fitted = fit_telegram(&msg);
+        assert!(
+            fitted.encode_utf16().count() <= TELEGRAM_LIMIT,
+            "{}",
+            fitted.len()
+        );
+        assert!(fitted.ends_with("more lines"), "{fitted}");
+        assert!(msg.starts_with(fitted.lines().next().unwrap()));
+        assert_valid_mdv2(&fitted);
     }
+}
+
+#[test]
+fn fit_telegram_leaves_a_short_message_alone() {
+    assert_eq!(fit_telegram("*hi*\nthere"), "*hi*\nthere");
 }
 
 #[test]

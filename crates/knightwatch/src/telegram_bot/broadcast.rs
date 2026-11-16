@@ -63,16 +63,32 @@ pub async fn event_notifier(
 }
 
 async fn broadcast_message(bot: &Bot, state: &State, message: &str) {
+    use teloxide::{ApiError, RequestError};
+    let message = super::utils::fit_telegram(message);
     let mut dead = vec![];
     let chat_ids = state.get_relevant_chat_ids();
     for (i, &chat_id) in chat_ids.iter().enumerate() {
         if let Err(err) = bot
-            .send_message(chat_id, message)
+            .send_message(chat_id, &message)
             .parse_mode(teloxide::types::ParseMode::MarkdownV2)
             .await
         {
             warn!("Failed to send event to chat {chat_id}: {err}");
-            dead.push(i);
+            // drop the chat only when Telegram says it is gone, not on a network or format error
+            if matches!(
+                err,
+                RequestError::Api(
+                    ApiError::BotBlocked
+                        | ApiError::ChatNotFound
+                        | ApiError::GroupDeactivated
+                        | ApiError::BotKicked
+                        | ApiError::BotKickedFromSupergroup
+                        | ApiError::BotKickedFromChannel
+                        | ApiError::UserDeactivated
+                )
+            ) {
+                dead.push(i);
+            }
         }
     }
     for i in dead.into_iter().rev() {

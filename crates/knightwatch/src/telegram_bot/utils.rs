@@ -407,6 +407,32 @@ pub const fn container_health_emoji(health: &ContainerHealth) -> &'static str {
     }
 }
 
+/// Telegram refuses a message longer than this many UTF-16 units after parsing.
+const TELEGRAM_MAX_LEN: usize = 4096;
+
+/// Cuts a MarkdownV2 message at a line break so Telegram accepts it, and says how
+/// many lines were left out. The raw length is counted, which is never below the
+/// parsed one. Assumes no formatting spans a line break.
+pub fn fit_telegram(msg: &str) -> String {
+    if msg.encode_utf16().count() <= TELEGRAM_MAX_LEN {
+        return msg.to_string();
+    }
+    let lines: Vec<&str> = msg.lines().collect();
+    let (mut used, mut kept) = (0, 0);
+    for line in &lines {
+        let n = line.encode_utf16().count() + 1;
+        // keeps room for the "more lines" note
+        if used + n > TELEGRAM_MAX_LEN - 40 {
+            break;
+        }
+        used += n;
+        kept += 1;
+    }
+    let mut out = lines[..kept].join("\n");
+    let _ = write!(out, "\n… {} more lines", lines.len() - kept);
+    out
+}
+
 pub fn escape_mdv2(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
