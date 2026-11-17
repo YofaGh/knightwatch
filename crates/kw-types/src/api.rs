@@ -19,10 +19,20 @@ impl fmt::Display for HealthResponse {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+}
+
+// Written by hand so the password never reaches a log line.
+impl fmt::Debug for LoginRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("LoginRequest")
+            .field("username", &self.username)
+            .field("password", &"[redacted]")
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

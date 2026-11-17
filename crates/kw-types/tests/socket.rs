@@ -1084,13 +1084,13 @@ mod action {
     }
 
     #[test]
-    #[ignore = "known issue: derive(Debug) on SocketAction::Login prints the password"]
     fn login_debug_does_not_leak_password() {
         let a = SocketAction::Login {
             username: "admin".into(),
             password: "hunter2".into(),
         };
         assert!(!format!("{a:?}").contains("hunter2"));
+        assert!(format!("{a:?}").contains("admin"));
         // and therefore neither does the message that wraps it
         let m = SocketMessage::Action { action: a };
         assert!(!format!("{m:?}").contains("hunter2"));

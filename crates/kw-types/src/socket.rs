@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use crate::{
     docker::{self, ContainerSnapshot},
+    event,
     polling::PollStatus,
     process::{self, ProcessSnapshot, ProcessTree},
     resources,
     systemd::{self, UnitSnapshot},
-    event,
 };
 
 /// Wire envelope: `id` correlates a reply with the request that asked for it;
@@ -252,7 +252,7 @@ pub enum SocketQueryResponse {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 pub enum SocketAction {
     Login {
         username: String,
@@ -264,6 +264,29 @@ pub enum SocketAction {
         events_enabled: Option<bool>,
         ticks_enabled: Option<bool>,
     },
+}
+
+// Written by hand so the login password never reaches a log line.
+impl std::fmt::Debug for SocketAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Login { username, .. } => f
+                .debug_struct("Login")
+                .field("username", username)
+                .field("password", &"[redacted]")
+                .finish(),
+            Self::Logout => f.write_str("Logout"),
+            Self::Shutdown => f.write_str("Shutdown"),
+            Self::SetEventPreferences {
+                events_enabled,
+                ticks_enabled,
+            } => f
+                .debug_struct("SetEventPreferences")
+                .field("events_enabled", events_enabled)
+                .field("ticks_enabled", ticks_enabled)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]

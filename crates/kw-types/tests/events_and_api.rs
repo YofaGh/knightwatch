@@ -512,7 +512,6 @@ mod api {
     }
 
     #[test]
-    #[ignore = "known issue: derive(Debug) on LoginRequest prints the password"]
     fn login_request_debug_does_not_leak_password() {
         let r = LoginRequest {
             username: "admin".into(),
