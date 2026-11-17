@@ -2,7 +2,11 @@ use anyhow::Result;
 use clap::Parser;
 use futures::StreamExt;
 use std::{
-    ffi::CString, fs, os::unix::fs::PermissionsExt, path::PathBuf, sync::Arc, time::Duration,
+    fs,
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -37,14 +41,7 @@ pub struct Args {
 pub async fn run(args: Args) -> anyhow::Result<()> {
     let conn = Connection::system().await?;
 
-    if let Some(parent) = args.socket.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let _ = fs::remove_file(&args.socket);
-
-    let listener = UnixListener::bind(&args.socket)?;
-    fs::set_permissions(&args.socket, fs::Permissions::from_mode(0o600))?;
-    chown_to_uid(&args.socket, args.uid)?;
+    let listener = bind_socket(&args.socket, args.uid)?;
 
     tracing::info!(socket = %args.socket.display(), "kw-systemd-helper listening");
 
@@ -78,14 +75,47 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn chown_to_uid(path: &std::path::Path, uid: u32) -> Result<()> {
-    let c_path = CString::new(path.as_os_str().as_encoded_bytes())?;
-    // SAFETY: c_path is a valid, NUL-terminated path we just created;
-    // gid=u32::MAX leaves the group unchanged.
-    let rc = unsafe { libc::chown(c_path.as_ptr(), uid, u32::MAX) };
-    if rc != 0 {
-        return Err(std::io::Error::last_os_error().into());
-    }
+/// Binds the socket readable only by `uid`, without following any link another
+/// user could plant, since this runs as root.
+fn bind_socket(path: &Path, uid: u32) -> Result<UnixListener> {
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("socket path {} has no parent", path.display()))?;
+    fs::create_dir_all(dir)?;
+    check_socket_dir(dir, uid)?;
+    let _ = fs::remove_file(path);
+
+    // Create it as 0600 instead of chmod-ing the path afterwards.
+    // SAFETY: umask has no preconditions; nothing else creates files at this point.
+    let old_mask = unsafe { libc::umask(0o177) };
+    let bound = UnixListener::bind(path);
+    // SAFETY: as above.
+    unsafe { libc::umask(old_mask) };
+    let listener = bound?;
+    std::os::unix::fs::lchown(path, Some(uid), None)?;
+    Ok(listener)
+}
+
+/// The socket dir must be a real directory that only root or `uid` can change, so
+/// no other user can swap the socket for a link to a file root would then chown.
+fn check_socket_dir(dir: &Path, uid: u32) -> Result<()> {
+    let meta = fs::symlink_metadata(dir)?;
+    anyhow::ensure!(
+        meta.is_dir(),
+        "socket dir {} is not a directory",
+        dir.display()
+    );
+    anyhow::ensure!(
+        meta.uid() == uid || meta.uid() == 0,
+        "socket dir {} is owned by uid {}",
+        dir.display(),
+        meta.uid()
+    );
+    anyhow::ensure!(
+        meta.mode() & 0o022 == 0,
+        "socket dir {} can be written by other users",
+        dir.display()
+    );
     Ok(())
 }
 
@@ -229,3 +259,7 @@ async fn fetch_failure_reason(conn: &Connection, unit_name: &str) -> String {
     let sub = unit_proxy.sub_state().await.unwrap_or_default();
     format!(" (active_state={active}, sub_state={sub})")
 }
+
+#[cfg(test)]
+#[path = "imp_tests.rs"]
+mod tests;

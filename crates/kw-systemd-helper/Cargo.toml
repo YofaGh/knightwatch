@@ -27,3 +27,6 @@ kw-utils = { path = "../kw-utils" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
