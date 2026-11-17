@@ -50,11 +50,20 @@ pub fn init_ws_server(cancel_token: CancellationToken) -> Option<JoinHandle<()>>
     .ok()
 }
 
+/// How long a new client gets for the websocket upgrade and for the handshake,
+/// so silent connections don't pile up.
+const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 async fn handle_client(connection: &mut Transport) -> Result<()> {
     use kw_types::socket::{Frame, SocketMessage};
 
-    send_message(connection, &Frame::push(SocketMessage::Handshake)).await?;
-    let frame: Frame = receive_message(connection).await?;
+    let exchange = async {
+        send_message(connection, &Frame::push(SocketMessage::Handshake)).await?;
+        receive_message::<_, Frame>(connection).await
+    };
+    let frame = tokio::time::timeout(HANDSHAKE_TIMEOUT, exchange)
+        .await
+        .map_err(|_| Error::Other("client did not answer the handshake in time".into()))??;
     if !matches!(frame.message, SocketMessage::HandshakeResponse) {
         return Err(Error::Other("Expected HandshakeResponse".into()));
     }
@@ -80,10 +89,14 @@ fn spawn_server(
                         Ok((stream, addr)) => {
                             tokio::spawn(async move {
                                 let mut stream = match protocol {
-                                    ServerProtocol::WebSocket => match tokio_tungstenite::accept_async(stream).await {
-                                        Ok(ws) => Transport::new_websocket(ws),
-                                        Err(err) => {
+                                    ServerProtocol::WebSocket => match tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::accept_async(stream)).await {
+                                        Ok(Ok(ws)) => Transport::new_websocket(ws),
+                                        Ok(Err(err)) => {
                                             error!("WebSocket handshake failed for {addr}: {err}");
+                                            return;
+                                        }
+                                        Err(_) => {
+                                            error!("WebSocket upgrade from {addr} timed out");
                                             return;
                                         }
                                     },

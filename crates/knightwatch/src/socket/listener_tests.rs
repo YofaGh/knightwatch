@@ -124,7 +124,6 @@ async fn a_client_closing_before_replying_is_an_error() {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "known issue (finding 16): handle_client waits forever for the handshake response"]
 async fn a_silent_client_should_time_out() {
     let (task, _client) = handshake().await;
     // Paused time jumps ahead while the server waits.
