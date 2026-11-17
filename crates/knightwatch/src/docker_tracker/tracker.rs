@@ -3,7 +3,10 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
+
+/// How long one poll tick may wait on the daemon before it is skipped.
+const TICK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 use kw_types::{
     docker::{ContainerSnapshot, ContainerStatus, DockerSortKey},
@@ -65,7 +68,7 @@ impl DockerTracker {
     }
 }
 
-impl<S: DockerSource> DockerTracker<S> {
+impl<S: DockerSource + Clone + 'static> DockerTracker<S> {
     fn emit_event(&self, event: DockerTrackerEvent) {
         // Err means no subscribers — that's fine.
         let _ = self.channels.event_tx.send(event);
@@ -103,8 +106,11 @@ impl<S: DockerSource> DockerTracker<S> {
                     self.emit_event(DockerTrackerEvent::ContainerOomKilled { id, name });
                 }
                 _ = tick => {
-                    if let Err(e) = self.handle_tick().await {
-                        error!(?e, "docker tracker tick failed");
+                    // a tick changes no state before its last await, so a cut-off one loses nothing
+                    match tokio::time::timeout(TICK_TIMEOUT, self.handle_tick()).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => error!(?e, "docker tracker tick failed"),
+                        Err(_) => warn!("docker tracker tick timed out; the daemon is not answering"),
                     }
                 }
             }
@@ -328,21 +334,15 @@ impl<S: DockerSource> DockerTracker<S> {
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
-                let container_name = self.lookup_container_name(&id_or_name);
-                let result = match target {
-                    Ok(target) => self.source.stop(&target, timeout_secs).await,
-                    Err(e) => Err(e),
+                let source = self.source.clone();
+                let action = DockerCommandAction::Stop {
+                    container_name: self.lookup_container_name(&id_or_name),
+                    id_or_name,
+                    timeout_secs,
                 };
-                self.emit_command_event(
-                    user,
-                    DockerCommandAction::Stop {
-                        id_or_name,
-                        container_name,
-                        timeout_secs,
-                    },
-                    &result,
-                );
-                let _ = response.send(result);
+                self.spawn_command(user, action, response, async move {
+                    source.stop(&target?, timeout_secs).await
+                });
             }
 
             DockerTrackerCommand::KillContainer {
@@ -352,21 +352,16 @@ impl<S: DockerSource> DockerTracker<S> {
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
-                let container_name = self.lookup_container_name(&id_or_name);
-                let result = match target {
-                    Ok(target) => self.source.kill(&target, signal.as_deref()).await,
-                    Err(e) => Err(e),
+                let source = self.source.clone();
+                let sent = signal.clone();
+                let action = DockerCommandAction::Kill {
+                    container_name: self.lookup_container_name(&id_or_name),
+                    id_or_name,
+                    signal,
                 };
-                self.emit_command_event(
-                    user,
-                    DockerCommandAction::Kill {
-                        id_or_name,
-                        container_name,
-                        signal,
-                    },
-                    &result,
-                );
-                let _ = response.send(result);
+                self.spawn_command(user, action, response, async move {
+                    source.kill(&target?, sent.as_deref()).await
+                });
             }
 
             DockerTrackerCommand::StartContainer {
@@ -375,20 +370,14 @@ impl<S: DockerSource> DockerTracker<S> {
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
-                let container_name = self.lookup_container_name(&id_or_name);
-                let result = match target {
-                    Ok(target) => self.source.start(&target).await,
-                    Err(e) => Err(e),
+                let source = self.source.clone();
+                let action = DockerCommandAction::Start {
+                    container_name: self.lookup_container_name(&id_or_name),
+                    id_or_name,
                 };
-                self.emit_command_event(
-                    user,
-                    DockerCommandAction::Start {
-                        id_or_name,
-                        container_name,
-                    },
-                    &result,
-                );
-                let _ = response.send(result);
+                self.spawn_command(user, action, response, async move {
+                    source.start(&target?).await
+                });
             }
 
             DockerTrackerCommand::RestartContainer {
@@ -398,21 +387,15 @@ impl<S: DockerSource> DockerTracker<S> {
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
-                let container_name = self.lookup_container_name(&id_or_name);
-                let result = match target {
-                    Ok(target) => self.source.restart(&target, timeout_secs).await,
-                    Err(e) => Err(e),
+                let source = self.source.clone();
+                let action = DockerCommandAction::Restart {
+                    container_name: self.lookup_container_name(&id_or_name),
+                    id_or_name,
+                    timeout_secs,
                 };
-                self.emit_command_event(
-                    user,
-                    DockerCommandAction::Restart {
-                        id_or_name,
-                        container_name,
-                        timeout_secs,
-                    },
-                    &result,
-                );
-                let _ = response.send(result);
+                self.spawn_command(user, action, response, async move {
+                    source.restart(&target?, timeout_secs).await
+                });
             }
 
             DockerTrackerCommand::PauseContainer {
@@ -421,20 +404,14 @@ impl<S: DockerSource> DockerTracker<S> {
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
-                let container_name = self.lookup_container_name(&id_or_name);
-                let result = match target {
-                    Ok(target) => self.source.pause(&target).await,
-                    Err(e) => Err(e),
+                let source = self.source.clone();
+                let action = DockerCommandAction::Pause {
+                    container_name: self.lookup_container_name(&id_or_name),
+                    id_or_name,
                 };
-                self.emit_command_event(
-                    user,
-                    DockerCommandAction::Pause {
-                        id_or_name,
-                        container_name,
-                    },
-                    &result,
-                );
-                let _ = response.send(result);
+                self.spawn_command(user, action, response, async move {
+                    source.pause(&target?).await
+                });
             }
 
             DockerTrackerCommand::UnpauseContainer {
@@ -443,20 +420,14 @@ impl<S: DockerSource> DockerTracker<S> {
                 response,
             } => {
                 let target = self.resolve_id(&id_or_name);
-                let container_name = self.lookup_container_name(&id_or_name);
-                let result = match target {
-                    Ok(target) => self.source.unpause(&target).await,
-                    Err(e) => Err(e),
+                let source = self.source.clone();
+                let action = DockerCommandAction::Unpause {
+                    container_name: self.lookup_container_name(&id_or_name),
+                    id_or_name,
                 };
-                self.emit_command_event(
-                    user,
-                    DockerCommandAction::Unpause {
-                        id_or_name,
-                        container_name,
-                    },
-                    &result,
-                );
-                let _ = response.send(result);
+                self.spawn_command(user, action, response, async move {
+                    source.unpause(&target?).await
+                });
             }
 
             DockerTrackerCommand::SetPollInterval {
@@ -539,41 +510,68 @@ impl<S: DockerSource> DockerTracker<S> {
             .map(|c| c.name.clone())
     }
 
-    /// Emits a `CommandExecuted` event for any mutating command, container-scoped
-    /// or not — target info already lives on `action`.
+    /// Runs a container command in its own task, so a slow or hung daemon does
+    /// not hold up queries, ticks or other commands.
+    fn spawn_command(
+        &self,
+        user: DisplayUser,
+        action: DockerCommandAction,
+        response: oneshot::Sender<Result<()>>,
+        command: impl Future<Output = Result<()>> + Send + 'static,
+    ) {
+        let event_tx = self.channels.event_tx.clone();
+        tokio::spawn(async move {
+            let result = command.await;
+            emit_command_event(&event_tx, user, action, &result);
+            let _ = response.send(result);
+        });
+    }
+
     fn emit_command_event(
         &self,
         user: DisplayUser,
         action: DockerCommandAction,
         result: &Result<()>,
     ) {
-        let (success, error) = match result {
-            Ok(()) => (true, None),
-            Err(e) => (false, Some(e.to_string())),
-        };
-
-        if success {
-            info!(
-                %user,
-                action = %action,
-                "docker command executed"
-            );
-        } else {
-            warn!(
-                %user,
-                action = %action,
-                error,
-                "docker command failed"
-            );
-        }
-
-        self.emit_event(DockerTrackerEvent::CommandExecuted {
-            user,
-            action,
-            success,
-            error,
-        });
+        emit_command_event(&self.channels.event_tx, user, action, result);
     }
+}
+
+/// Emits a `CommandExecuted` event for any mutating command, container-scoped
+/// or not — target info already lives on `action`.
+fn emit_command_event(
+    event_tx: &broadcast::Sender<DockerTrackerEvent>,
+    user: DisplayUser,
+    action: DockerCommandAction,
+    result: &Result<()>,
+) {
+    let (success, error) = match result {
+        Ok(()) => (true, None),
+        Err(e) => (false, Some(e.to_string())),
+    };
+
+    if success {
+        info!(
+            %user,
+            action = %action,
+            "docker command executed"
+        );
+    } else {
+        warn!(
+            %user,
+            action = %action,
+            error,
+            "docker command failed"
+        );
+    }
+
+    // Err means no subscribers — that's fine.
+    let _ = event_tx.send(DockerTrackerEvent::CommandExecuted {
+        user,
+        action,
+        success,
+        error,
+    });
 }
 
 // ============================================================================

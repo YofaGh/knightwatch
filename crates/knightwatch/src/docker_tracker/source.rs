@@ -27,6 +27,7 @@ pub trait DockerSource: Send + Sync {
     fn oom_listener(&self, oom_tx: mpsc::Sender<(String, String)>) -> BoxFuture<'static, ()>;
 }
 
+#[derive(Clone)]
 pub struct BollardSource(pub Docker);
 
 impl DockerSource for BollardSource {

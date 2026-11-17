@@ -24,7 +24,7 @@ use super::{super::source::forward_oom_events, *};
 // helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Fake {
     containers: Vec<ContainerSnapshot>,
     /// Running containers missing from here fail their stats read.
@@ -33,7 +33,8 @@ struct Fake {
     fail_commands: bool,
     hang_commands: bool,
     oom: Vec<(String, String)>,
-    calls: Mutex<Vec<String>>,
+    // shared, so commands run on a clone still show up here
+    calls: std::sync::Arc<Mutex<Vec<String>>>,
 }
 
 impl Fake {
@@ -199,9 +200,10 @@ impl DockerTracker<Fake> {
         &mut self,
         make: impl FnOnce(DisplayUser, oneshot::Sender<Result<()>>) -> DockerTrackerCommand,
     ) -> Result<()> {
-        let (response, mut rx) = oneshot::channel();
+        let (response, rx) = oneshot::channel();
         self.handle_command(make(user(), response)).await;
-        rx.try_recv().unwrap()
+        // container commands answer from their own task
+        rx.await.unwrap()
     }
 
     async fn kill(&mut self, id_or_name: &str) -> Result<()> {
@@ -801,7 +803,6 @@ async fn the_loop_ticks_answers_queries_and_forwards_oom_events() {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "finding 59: commands run inside the loop, so a slow one blocks queries and ticks"]
 async fn queries_are_answered_while_a_command_is_running() {
     let mut t = tracker();
     t.source.hang_commands = true;
