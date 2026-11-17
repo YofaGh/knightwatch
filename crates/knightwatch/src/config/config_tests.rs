@@ -604,13 +604,13 @@ fn persistent_config_and_users_use_their_own_files() {
 // CliArgs: defaults and flags
 // ---------------------------------------------------------------------------
 
-// Pinned (finding 27): by default the API, TCP and WebSocket servers bind to
-// 0.0.0.0 and authentication is off. Dangerous commands are off by default.
+// By default the API, TCP and WebSocket servers listen on localhost only (finding 27),
+// authentication is off, and dangerous commands are off.
 #[test]
 fn defaults() {
     let args = parse(&[]);
     assert!(args.command.is_none());
-    assert_eq!(args.host, "0.0.0.0");
+    assert_eq!(args.host, "127.0.0.1");
     assert_eq!(args.port, 8083);
     assert!(!args.enable_auth);
     assert!(!args.enable_shutdown);
@@ -627,10 +627,10 @@ fn defaults() {
     assert!(!args.system_resources);
     assert!(!args.docker);
     assert!(!args.tcp_socket);
-    assert_eq!(args.tcp_host, "0.0.0.0");
+    assert_eq!(args.tcp_host, "127.0.0.1");
     assert_eq!(args.tcp_port, 8084);
     assert!(!args.ws_socket);
-    assert_eq!(args.ws_host, "0.0.0.0");
+    assert_eq!(args.ws_host, "127.0.0.1");
     assert_eq!(args.ws_port, 8085);
     assert!(!args.allow_process_commands);
     assert!(!args.allow_system_resources_commands);
@@ -714,12 +714,12 @@ fn server_address_joins_host_and_port() {
         args: parse(&[]),
         persistent: PersistentConfig::default(),
     };
-    assert_eq!(default.server_address(), "0.0.0.0:8083");
+    assert_eq!(default.server_address(), "127.0.0.1:8083");
     let custom = AppConfig {
-        args: parse(&["--host", "127.0.0.1", "--port", "9000"]),
+        args: parse(&["--host", "0.0.0.0", "--port", "9000"]),
         persistent: PersistentConfig::default(),
     };
-    assert_eq!(custom.server_address(), "127.0.0.1:9000");
+    assert_eq!(custom.server_address(), "0.0.0.0:9000");
 }
 
 // Documents why handler tests cannot run in-process: the config is a

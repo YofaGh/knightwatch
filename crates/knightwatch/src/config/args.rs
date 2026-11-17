@@ -10,8 +10,8 @@ pub struct CliArgs {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// Host address for the API server
-    #[arg(long, default_value = "0.0.0.0")]
+    /// Host address for the API server (use 0.0.0.0 to listen on every interface)
+    #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
     /// Port for the API server
@@ -91,7 +91,7 @@ pub struct CliArgs {
     pub tcp_socket: bool,
 
     /// Host address for the raw TCP socket server
-    #[arg(long, default_value = "0.0.0.0")]
+    #[arg(long, default_value = "127.0.0.1")]
     pub tcp_host: String,
 
     /// Port for the raw TCP socket server
@@ -103,7 +103,7 @@ pub struct CliArgs {
     pub ws_socket: bool,
 
     /// Host address for the WebSocket server
-    #[arg(long, default_value = "0.0.0.0")]
+    #[arg(long, default_value = "127.0.0.1")]
     pub ws_host: String,
 
     /// Port for the WebSocket server

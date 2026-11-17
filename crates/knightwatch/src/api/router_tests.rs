@@ -237,7 +237,7 @@ async fn shutdown_is_not_mounted_by_default() {
 
 #[tokio::test]
 async fn shutdown_without_auth_cancels_the_token_for_anyone() {
-    // Pinned: `--enable-shutdown` alone lets any client stop the server (see finding 27).
+    // Pinned: `--enable-shutdown` alone lets any client that can reach the server stop it.
     let (addr, token) = serve_flags(&["--enable-shutdown"]).await;
     let reply = send(addr, "POST", "/api/shutdown").await;
     assert_eq!(reply.status, 200);
