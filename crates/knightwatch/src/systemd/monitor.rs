@@ -232,12 +232,12 @@ impl<S: UnitSource> SystemdMonitor<S> {
             snapshot.units.iter().map(|u| u.unit_name.clone()).collect();
         let previous_names: HashSet<String> = self.state.active_states.keys().cloned().collect();
 
-        // Units that appeared since last tick
+        // Units that appeared since last tick; on the first tick InitialSnapshot already lists them all
         for name in current_names.difference(&previous_names) {
+            if self.first_tick {
+                break;
+            }
             if let Some(unit) = snapshot.units.iter().find(|u| &u.unit_name == name) {
-                // if !self.first_tick {
-                //     info!(unit_name = %name, "systemd unit appeared");
-                // }
                 info!(unit_name = %name, "systemd unit appeared");
                 self.emit_event(SystemdEvent::UnitAppeared { unit: unit.clone() });
             }

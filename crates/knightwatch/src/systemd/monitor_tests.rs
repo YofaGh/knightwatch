@@ -180,7 +180,6 @@ async fn the_first_tick_is_the_snapshot_and_later_ones_are_ticks() {
 }
 
 #[tokio::test]
-#[ignore = "finding 63: the first tick also emits UnitAppeared for every unit it finds"]
 async fn the_first_tick_does_not_announce_every_unit_as_new() {
     let mut m = monitor();
     let mut rx = m.channels.event_tx.subscribe();
