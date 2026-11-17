@@ -239,6 +239,7 @@ fn polling_subsystem_keyboard_layout() {
         v(&[
             &["⏱️ Process Tracker Polling", "⏱️ Screen Capture Polling"],
             &["⏱️ System Resources Polling", "⏱️ Systemd Polling"],
+            &["⏱️ Docker Tracker Polling"],
             &["❌ Cancel"],
         ])
     );
@@ -326,16 +327,6 @@ fn reply_keyboards_have_no_empty_buttons_and_no_row_over_eight() {
 }
 
 #[test]
-fn polling_menu_has_no_docker_button_today() {
-    // Pinned (finding 46): `handle_polling_menu` lists Docker Tracker and
-    // `dispatch_polling_menu` routes "⏱️ Docker Tracker Polling", but the
-    // keyboard never offers that button, so Docker polling cannot be reached.
-    let texts = flat(&polling_subsystem_keyboard());
-    assert!(!texts.iter().any(|t| t.contains("Docker")));
-}
-
-#[test]
-#[ignore = "finding 46: the polling submenu has no Docker Tracker button"]
 fn polling_menu_offers_every_subsystem() {
     let texts = flat(&polling_subsystem_keyboard());
     for s in &SUBSYSTEMS {

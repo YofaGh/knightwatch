@@ -84,6 +84,7 @@ pub fn polling_subsystem_keyboard() -> KeyboardMarkup {
             KeyboardButton::new("⏱️ System Resources Polling"),
             KeyboardButton::new("⏱️ Systemd Polling"),
         ],
+        vec![KeyboardButton::new("⏱️ Docker Tracker Polling")],
         vec![KeyboardButton::new("❌ Cancel")],
     ])
     .resize_keyboard()
