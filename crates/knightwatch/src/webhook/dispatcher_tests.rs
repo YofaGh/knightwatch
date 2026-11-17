@@ -20,7 +20,8 @@ use tokio_util::sync::CancellationToken;
 
 use kw_types::event::{EventPayload, EventSource};
 
-use super::{fire_with_retry, run_dispatcher};
+use super::{client, dispatch, fire_with_retry, run_dispatcher};
+use crate::webhook::WebhookTarget;
 
 // ───────────────────────── Helpers ─────────────────────────
 
@@ -109,6 +110,19 @@ fn drain(rx: &mut mpsc::UnboundedReceiver<Received>) -> Vec<Received> {
         all.push(r);
     }
     all
+}
+
+/// Accepts connections and never answers.
+async fn hung_server() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            held.push(stream);
+        }
+    });
+    addr
 }
 
 async fn fire(url: &str, cancel: &CancellationToken) {
@@ -220,6 +234,46 @@ async fn cancelling_during_backoff_returns_at_once() {
 
     assert!(Instant::now() - first.at < Duration::from_secs(2));
     assert!(drain(&mut rx).is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_target_that_never_answers_gives_up() {
+    let addr = hung_server().await;
+    tokio::time::timeout(
+        Duration::from_hours(1),
+        fire_with_retry(
+            &client(),
+            &format!("http://{addr}/"),
+            &payload(),
+            &CancellationToken::new(),
+        ),
+    )
+    .await
+    .expect("a hung target should time out");
+}
+
+// ───────────────────────── dispatch ─────────────────────────
+
+#[tokio::test]
+async fn a_hung_target_does_not_hold_back_the_others() {
+    let hung = hung_server().await;
+    let (good, mut rx) = server(&[200]).await;
+    let targets = [hung, good].map(|addr| WebhookTarget {
+        url: format!("http://{addr}/"),
+        include_ticks: false,
+    });
+
+    dispatch(
+        &Client::new(),
+        &targets,
+        &payload(),
+        &CancellationToken::new(),
+    );
+
+    tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("the good target should get the event while the hung one waits")
+        .unwrap();
 }
 
 // ───────────────────────── run_dispatcher ─────────────────────────
