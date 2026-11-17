@@ -342,8 +342,8 @@ fn relevant_chats_with_auth_on_are_only_the_authenticated_ones() {
 
 #[test]
 fn relevant_chats_with_auth_off_are_every_known_chat() {
-    // Pinned (finding 42): with auth off, any chat that registered
-    // (for example by sending /start) receives every event.
+    // Kept on purpose (the bot warns at startup): with auth off, any chat
+    // that registered (for example by sending /start) receives every event.
     let s = state(false);
     s.set_chat_auth(ChatId(1), AuthState::Authenticated);
     s.set_chat_auth(ChatId(2), AuthState::Unauthenticated);
@@ -361,8 +361,9 @@ fn is_authorized_with_auth_on_needs_authentication() {
 
 #[test]
 fn is_authorized_with_auth_off_is_true_for_everyone() {
-    // Pinned (finding 42): the bot is public on Telegram, so with
-    // `--enable-auth` off any user who finds it can use the read-only menus.
+    // Kept on purpose (the bot warns at startup): the bot is public
+    // on Telegram, so with `--enable-auth` off any user who finds it can use the
+    // read-only menus.
     let s = state(false);
     assert!(s.is_authorized(ChatId(1)));
     assert!(s.is_authorized(ChatId(-5)));

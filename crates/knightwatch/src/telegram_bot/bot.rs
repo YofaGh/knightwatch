@@ -24,6 +24,12 @@ pub fn init_bot(cancel_token: tokio_util::sync::CancellationToken) -> Option<Tel
         error!("No telegram token is provided");
         return None;
     };
+    if !config.args.enable_auth {
+        warn!(
+            "Telegram bot is running with auth off: anyone who finds the bot can read its menus, \
+             and /start subscribes them to every event. Use --enable-auth to require a login."
+        );
+    }
     let bot = Bot::new(token);
     let (sender, receiver) = tokio::sync::mpsc::channel(64);
     let sender = std::sync::Arc::new(sender);
