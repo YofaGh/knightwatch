@@ -116,9 +116,16 @@ fn extended_process() -> ProcessSnapshot {
 
 // The line the process display always adds on Linux, for a process with no open files.
 const NO_FDS: &str = if cfg!(target_os = "linux") {
-    "\n   ├ FDs: `0`"
+    "\n   └ FDs: `0`"
 } else {
     ""
+};
+
+// Disk ends the process list except on Linux, where FDs always follows it.
+const DISK: &str = if cfg!(target_os = "linux") {
+    "├"
+} else {
+    "└"
 };
 
 fn tree(root: Option<ProcessSnapshot>, children: Vec<ProcessSnapshot>) -> ProcessTree {
@@ -332,18 +339,19 @@ const fn stats() -> ContainerStats {
 fn process_exact_output() {
     let msg = TelegramDisplay(&process(5, "nginx")).to_string();
     let expected = format!(
-        "🔹 *nginx* `\\(PID 5\\)`\n   ├ State: `running`\n   ├ CPU: `12.5%`\n   └ Mem: `1\\.5 KB`\n   └ Disk: `0 B`{NO_FDS}"
+        "🔹 *nginx* `\\(PID 5\\)`\n   ├ State: `running`\n   ├ CPU: `12.5%`\n   ├ Mem: `1\\.5 KB`\n   {DISK} Disk: `0 B`{NO_FDS}"
     );
     assert_eq!(msg, expected);
     assert_valid_mdv2(&msg);
 }
 
 #[test]
-fn process_prints_two_closing_connectors() {
-    // Pinned (finding 45, cosmetic): Mem and Disk both start with the closing connector.
-    let msg = TelegramDisplay(&process(5, "nginx")).to_string();
-    assert!(msg.contains("   └ Mem: "));
-    assert!(msg.contains("   └ Disk: "));
+fn process_closes_its_list_only_on_the_last_line() {
+    for snap in [process(5, "nginx"), extended_process()] {
+        let msg = TelegramDisplay(&snap).to_string();
+        assert_eq!(msg.matches('└').count(), 1, "{msg}");
+        assert!(msg.lines().last().unwrap().starts_with("   └ "), "{msg}");
+    }
 }
 
 #[test]
@@ -384,20 +392,21 @@ fn process_rounds_cpu_to_one_decimal_and_formats_bytes() {
     };
     let msg = TelegramDisplay(&snap).to_string();
     assert!(msg.contains("├ CPU: `100.0%`\n"), "{msg}");
-    assert!(msg.contains("└ Mem: `1\\.0 MB`\n"), "{msg}");
-    assert!(msg.contains("└ Disk: `2\\.0 GB`"), "{msg}");
+    assert!(msg.contains("├ Mem: `1\\.0 MB`\n"), "{msg}");
+    assert!(msg.contains(&format!("{DISK} Disk: `2\\.0 GB`")), "{msg}");
 }
 
 #[test]
 fn process_extended_fields_only_show_on_linux() {
     let msg = TelegramDisplay(&extended_process()).to_string();
-    let base = "🔹 *nginx* `\\(PID 5\\)`\n   ├ State: `running`\n   ├ CPU: `12.5%`\n   └ Mem: `1\\.5 KB`\n   └ Disk: `0 B`";
+    let base =
+        "🔹 *nginx* `\\(PID 5\\)`\n   ├ State: `running`\n   ├ CPU: `12.5%`\n   ├ Mem: `1\\.5 KB`";
     let expected = if cfg!(target_os = "linux") {
         format!(
-            "{base}\n   ├ CWD: `/srv/my\\_app`\n   ├ FDs: `2`\n   ├ I/O Read: `4096` / Write: `1024`\n   └ CMD: `python3 app\\.py \\-\\-port\\=80`"
+            "{base}\n   ├ Disk: `0 B`\n   ├ CWD: `/srv/my\\_app`\n   ├ FDs: `2`\n   ├ I/O Read: `4096` / Write: `1024`\n   └ CMD: `python3 app\\.py \\-\\-port\\=80`"
         )
     } else {
-        base.to_string()
+        format!("{base}\n   └ Disk: `0 B`")
     };
     assert_eq!(msg, expected);
     assert_valid_mdv2(&msg);
@@ -424,7 +433,7 @@ fn tree_with_no_root_and_no_children() {
     assert_eq!(
         msg,
         format!(
-            "⏳ *Process Tree*\n🕐 `{TIMESTAMP}`\n\n*Root Process*\n_No root process_\n\n*Children:* _none_\n"
+            "⏳ *Process Tree*\n🕐 `{TIMESTAMP_ESCAPED}`\n\n*Root Process*\n_No root process_\n\n*Children:* _none_\n"
         )
     );
     assert_valid_mdv2(&msg);
@@ -461,7 +470,7 @@ fn tree_with_root_and_children_exact_output() {
     assert_eq!(
         msg,
         format!(
-            "⏳ *Process Tree*\n🕐 `{TIMESTAMP}`\n\n*Root Process*\n{root}\n\n*Children* \\(2\\):\n{first}\n\n{second}\n\n"
+            "⏳ *Process Tree*\n🕐 `{TIMESTAMP_ESCAPED}`\n\n*Root Process*\n{root}\n\n*Children* \\(2\\):\n{first}\n\n{second}\n\n"
         )
     );
     assert_valid_mdv2(&msg);
@@ -496,14 +505,12 @@ fn tree_header_trusts_child_count_over_the_list() {
 }
 
 #[test]
-fn tree_prints_the_timestamp_without_escaping() {
-    // Pinned (finding 47): safe for `now_rfc3339` values, because `-`, `+`, `:` and `.`
-    // need no escape inside a code span, but it is the only unescaped text in this file.
+fn tree_escapes_the_timestamp() {
     let t = ProcessTree {
         timestamp: "a.b".to_string(),
         ..tree(None, vec![])
     };
-    assert!(TelegramDisplay(&t).to_string().contains("🕐 `a.b`\n"));
+    assert!(TelegramDisplay(&t).to_string().contains("🕐 `a\\.b`\n"));
 }
 
 #[test]

@@ -458,10 +458,9 @@ fn docker_command_action_text() {
 #[test]
 fn systemd_command_action_text() {
     for (value, text) in [
-        // Pinned (finding 47): the unit comes first, so it reads "<unit> on <action>".
         (
             json!({"Control": {"unit_name": "nginx.service", "action": "restart"}}),
-            "nginx\\.service on restart",
+            "restart nginx\\.service",
         ),
         (
             json!({"SetPollInterval": {"interval": {"secs": 0, "nanos": 1_000_000}}}),

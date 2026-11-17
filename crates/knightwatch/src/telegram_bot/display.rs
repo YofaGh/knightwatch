@@ -8,34 +8,36 @@ pub struct TelegramDisplay<'a, T>(pub &'a T);
 impl std::fmt::Display for TelegramDisplay<'_, process_tracker::ProcessSnapshot> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = self.0;
-        write!(
-            f,
-            "🔹 *{name}* `\\(PID {pid}\\)`\n   ├ State: `{state}`\n   ├ CPU: `{cpu:.1}%`\n   └ Mem: `{mem}`\n   └ Disk: `{disk}`",
-            pid = s.pid,
-            name = escape_mdv2(&s.name),
-            state = escape_mdv2(&s.state.to_string()),
-            cpu = s.cpu_usage,
-            mem = escape_mdv2(&format_bytes(s.memory_bytes)),
-            disk = escape_mdv2(&format_bytes(s.disk_usage)),
-        )?;
+        #[allow(unused_mut)]
+        let mut lines = vec![
+            format!("State: `{}`", escape_mdv2(&s.state.to_string())),
+            format!("CPU: `{:.1}%`", s.cpu_usage),
+            format!("Mem: `{}`", escape_mdv2(&format_bytes(s.memory_bytes))),
+            format!("Disk: `{}`", escape_mdv2(&format_bytes(s.disk_usage))),
+        ];
         #[cfg(target_os = "linux")]
         {
             if let Some(cwd) = &s.cwd {
-                write!(f, "\n   ├ CWD: `{}`", escape_mdv2(cwd))?;
+                lines.push(format!("CWD: `{}`", escape_mdv2(cwd)));
             }
-            write!(f, "\n   ├ FDs: `{}`", s.open_files.len())?;
+            lines.push(format!("FDs: `{}`", s.open_files.len()));
             if let Some(io) = &s.io_stats {
-                write!(
-                    f,
-                    "\n   ├ I/O Read: `{}` / Write: `{}`",
+                lines.push(format!(
+                    "I/O Read: `{}` / Write: `{}`",
                     escape_mdv2(&io.read_bytes.to_string()),
                     escape_mdv2(&io.write_bytes.to_string()),
-                )?;
+                ));
             }
             if !s.cmdline.is_empty() {
-                let cmd = s.cmdline.join(" ");
-                write!(f, "\n   └ CMD: `{}`", escape_mdv2(&cmd))?;
+                lines.push(format!("CMD: `{}`", escape_mdv2(&s.cmdline.join(" "))));
             }
+        }
+        write!(f, "🔹 *{}* `\\(PID {}\\)`", escape_mdv2(&s.name), s.pid)?;
+        if let Some((last, rest)) = lines.split_last() {
+            for line in rest {
+                write!(f, "\n   ├ {line}")?;
+            }
+            write!(f, "\n   └ {last}")?;
         }
         Ok(())
     }
@@ -45,7 +47,11 @@ impl std::fmt::Display for TelegramDisplay<'_, process_tracker::ProcessTree> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let t = self.0; // Header
         let status_icon = if t.work_done { "✅" } else { "⏳" };
-        writeln!(f, "{status_icon} *Process Tree*\n🕐 `{}`\n", t.timestamp)?;
+        writeln!(
+            f,
+            "{status_icon} *Process Tree*\n🕐 `{}`\n",
+            escape_mdv2(&t.timestamp)
+        )?;
 
         // Root process
         writeln!(f, "*Root Process*")?;

@@ -43,7 +43,20 @@ pub async fn handle_auth_token(
         return Ok(());
     }
     state.set_chat_state_idle(msg.chat.id);
-    if crate::config::set_user_chat_id(&token_input, msg.chat.id.0)? {
+    let linked = match crate::config::set_user_chat_id(&token_input, msg.chat.id.0) {
+        Ok(linked) => linked,
+        Err(e) => {
+            bot.send_message(
+                msg.chat.id,
+                "⚠️ Could not save your login\\. Please try again later\\.",
+            )
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(ReplyMarkup::Keyboard(main_keyboard()))
+            .await?;
+            return Err(e);
+        }
+    };
+    if linked {
         state.set_chat_auth(msg.chat.id, AuthState::Authenticated);
         send_chat_state(&chat_state_tx, (msg.chat.id, AuthState::Authenticated)).await;
         bot.send_message(msg.chat.id, "✅ You are now *authenticated*\\!")

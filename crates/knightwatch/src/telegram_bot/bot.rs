@@ -120,6 +120,6 @@ async fn handle_callback_query(bot: Bot, q: CallbackQuery, state: State) -> Resu
     if let Some(action) = DockerCallbackAction::decode(data) {
         return handle_docker_callback(bot, chat_id, action, user).await;
     }
-    bot.send_message(chat_id, "❓ Unknown action\\.").await?;
+    bot.send_message(chat_id, "❓ Unknown action.").await?;
     Ok(())
 }

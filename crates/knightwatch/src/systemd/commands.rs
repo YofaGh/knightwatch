@@ -82,7 +82,7 @@ impl std::fmt::Display for SystemdCommandAction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Control { unit_name, action } => {
-                write!(f, "{} on {}", unit_name, action.as_str())
+                write!(f, "{} {}", action.as_str(), unit_name)
             }
             Self::SetPollInterval { interval } => {
                 write!(f, "set poll interval to {}ms", interval.as_millis())
