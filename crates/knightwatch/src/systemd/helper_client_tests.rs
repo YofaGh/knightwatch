@@ -135,7 +135,6 @@ async fn requests_are_answered_in_turn_on_one_connection() {
 }
 
 #[tokio::test(start_paused = true)]
-#[ignore = "finding 67: no timeout, so a hung helper hangs this and every later command"]
 async fn a_hung_helper_is_an_error() {
     let (client, _helper, _dir) = client();
 
@@ -146,6 +145,30 @@ async fn a_hung_helper_is_an_error() {
     .await;
 
     assert!(matches!(result, Ok(Err(_))));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_late_answer_is_not_taken_as_the_next_requests() {
+    let (client, mut helper, _dir) = client();
+    assert!(
+        client
+            .control("a.service", ServiceAction::Stop)
+            .await
+            .is_err()
+    );
+
+    // the helper finally answers the timed-out request
+    helper
+        .get_mut()
+        .write_all(b"{\"type\":\"Ok\"}\n")
+        .await
+        .unwrap();
+    let err = client
+        .control("b.service", ServiceAction::Start)
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("stopped answering"), "{err}");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

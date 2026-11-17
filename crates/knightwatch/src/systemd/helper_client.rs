@@ -1,5 +1,10 @@
 use libc::{STDIN_FILENO, TCSANOW, tcgetattr, tcsetattr, termios};
-use std::{mem::MaybeUninit, path::PathBuf, time::Duration};
+use std::{
+    mem::MaybeUninit,
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
@@ -14,11 +19,18 @@ use kw_types::{
 
 use crate::{observability::telemetry, prelude::*};
 
+/// How long one request may wait for the helper. A restart can wait out a
+/// unit's stop and start timeouts (90s each by default), so this is generous.
+const HELPER_TIMEOUT: Duration = Duration::from_mins(5);
+
 /// Client handle to the privileged `kw-systemd-helper` process.
 /// Lives for as long as the server does; owns the child process and cleans
 /// up its socket file on drop.
 pub struct SystemdHelperClient {
     stream: Mutex<BufReader<UnixStream>>,
+    /// Set when a request timed out; a late answer would be read as the next
+    /// request's, so the connection is not used again.
+    broken: AtomicBool,
     socket_path: PathBuf,
     _child: Child,
 }
@@ -111,6 +123,7 @@ impl SystemdHelperClient {
                     })?;
                     return Ok(Some(Self {
                         stream: Mutex::new(BufReader::new(stream)),
+                        broken: AtomicBool::new(false),
                         socket_path: socket_path.clone(),
                         _child: child,
                     }));
@@ -175,17 +188,29 @@ impl SystemdHelperClient {
         line.push('\n');
 
         let mut guard = self.stream.lock().await;
-        guard
-            .get_mut()
-            .write_all(line.as_bytes())
-            .await
-            .map_err(|e| Error::Systemd(format!("failed to write to helper: {e}")))?;
-
-        let mut response_line = String::new();
-        let n = guard
-            .read_line(&mut response_line)
-            .await
-            .map_err(|e| Error::Systemd(format!("failed to read from helper: {e}")))?;
+        if self.broken.load(Ordering::Relaxed) {
+            return Err(Error::Systemd(
+                "helper stopped answering; restart knightwatch to use systemd commands".into(),
+            ));
+        }
+        let exchange = async {
+            guard
+                .get_mut()
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|e| Error::Systemd(format!("failed to write to helper: {e}")))?;
+            let mut response_line = String::new();
+            let n = guard
+                .read_line(&mut response_line)
+                .await
+                .map_err(|e| Error::Systemd(format!("failed to read from helper: {e}")))?;
+            Ok::<_, Error>((n, response_line))
+        };
+        let Ok(answered) = tokio::time::timeout(HELPER_TIMEOUT, exchange).await else {
+            self.broken.store(true, Ordering::Relaxed);
+            return Err(Error::Systemd("helper did not answer in time".into()));
+        };
+        let (n, response_line) = answered?;
         drop(guard);
         if n == 0 {
             return Err(Error::Systemd("helper closed the connection".into()));
@@ -201,6 +226,7 @@ impl SystemdHelperClient {
     pub fn from_parts(stream: UnixStream, socket_path: PathBuf, child: Child) -> Self {
         Self {
             stream: Mutex::new(BufReader::new(stream)),
+            broken: AtomicBool::new(false),
             socket_path,
             _child: child,
         }
