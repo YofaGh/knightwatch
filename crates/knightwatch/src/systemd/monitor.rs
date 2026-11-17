@@ -203,8 +203,8 @@ impl<S: UnitSource> SystemdMonitor<S> {
 
     async fn handle_tick(&mut self) {
         match self.build_snapshot().await {
-            Ok(snapshot) => {
-                self.diff_and_emit_events(&snapshot);
+            Ok((snapshot, recovered_out_of_view)) => {
+                self.diff_and_emit_events(&snapshot, &recovered_out_of_view);
                 if self.first_tick {
                     info!(
                         "Systemd Monitor: initial snapshot ready ({} units)",
@@ -227,7 +227,13 @@ impl<S: UnitSource> SystemdMonitor<S> {
         }
     }
 
-    fn diff_and_emit_events(&mut self, snapshot: &SystemdSnapshot) {
+    /// `recovered_out_of_view`: units failed last tick that are still listed but
+    /// left the filter because they are no longer failed.
+    fn diff_and_emit_events(
+        &mut self,
+        snapshot: &SystemdSnapshot,
+        recovered_out_of_view: &HashSet<String>,
+    ) {
         let current_names: HashSet<String> =
             snapshot.units.iter().map(|u| u.unit_name.clone()).collect();
         let previous_names: HashSet<String> = self.state.active_states.keys().cloned().collect();
@@ -245,6 +251,13 @@ impl<S: UnitSource> SystemdMonitor<S> {
 
         // Units that disappeared
         for name in previous_names.difference(&current_names) {
+            if recovered_out_of_view.contains(name) {
+                info!(unit_name = %name, "systemd unit recovered from failed state");
+                self.emit_event(SystemdEvent::UnitRecovered {
+                    unit_name: name.clone(),
+                });
+                continue;
+            }
             info!(unit_name = %name, "systemd unit disappeared");
             self.emit_event(SystemdEvent::UnitDisappeared {
                 unit_name: name.clone(),
@@ -287,16 +300,21 @@ impl<S: UnitSource> SystemdMonitor<S> {
             .collect();
     }
 
-    async fn build_snapshot(&self) -> Result<SystemdSnapshot> {
+    /// The snapshot, and the failed units that left the filter by recovering.
+    async fn build_snapshot(&self) -> Result<(SystemdSnapshot, HashSet<String>)> {
         let raw_units = self.source.list_units().await?;
 
         let mut units: Vec<UnitSnapshot> = Vec::new();
+        let mut recovered_out_of_view = HashSet::new();
 
         for raw in raw_units {
             let unit_name = raw.0.clone();
             let unit_type = UnitType::from_name(&unit_name);
 
             if !self.filter.matches(&unit_type, &raw.3, &unit_name) {
+                if raw.3 != "failed" && self.state.failed_units.contains(&unit_name) {
+                    recovered_out_of_view.insert(unit_name);
+                }
                 continue;
             }
 
@@ -356,13 +374,14 @@ impl<S: UnitSource> SystemdMonitor<S> {
                 .count(),
         );
 
-        Ok(SystemdSnapshot {
+        let snapshot = SystemdSnapshot {
             timestamp: crate::utils::now_rfc3339(),
             units,
             failed_count,
             active_count,
             inactive_count,
-        })
+        };
+        Ok((snapshot, recovered_out_of_view))
     }
 
     // Sort: failed first, then active, then by name

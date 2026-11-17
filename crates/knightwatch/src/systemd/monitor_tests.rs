@@ -263,7 +263,6 @@ async fn other_state_changes_emit_nothing() {
 }
 
 #[tokio::test]
-#[ignore = "finding 64: a failed non-service unit leaves the filter on recovery, so it reads as gone"]
 async fn a_failed_socket_that_recovers_is_reported_as_recovered() {
     let mut m = monitor();
     m.unit("a.socket", "failed");
@@ -274,6 +273,19 @@ async fn a_failed_socket_that_recovers_is_reported_as_recovered() {
     m.handle_tick().await;
 
     assert_eq!(drain(&mut rx), ["recovered a.socket"]);
+}
+
+#[tokio::test]
+async fn a_failed_socket_that_is_removed_is_reported_as_gone() {
+    let mut m = monitor();
+    m.unit("a.socket", "failed");
+    m.handle_tick().await;
+    let mut rx = m.channels.event_tx.subscribe();
+
+    m.without("a.socket");
+    m.handle_tick().await;
+
+    assert_eq!(drain(&mut rx), ["disappeared a.socket"]);
 }
 
 #[tokio::test]
