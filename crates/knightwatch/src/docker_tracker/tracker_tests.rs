@@ -18,7 +18,10 @@ use kw_types::{
     polling::PollStatus,
 };
 
-use super::{super::source::forward_oom_events, *};
+use super::{
+    super::source::{forward_oom_events, listen_for_oom},
+    *,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // helpers
@@ -850,7 +853,8 @@ type StreamItem = std::result::Result<EventMessage, bollard::errors::Error>;
 
 async fn forwarded(items: Vec<StreamItem>) -> Vec<(String, String)> {
     let (tx, mut rx) = mpsc::channel(8);
-    forward_oom_events(futures::stream::iter(items), tx).await;
+    forward_oom_events(futures::stream::iter(items), &tx).await;
+    drop(tx);
     let mut out = Vec::new();
     while let Some(item) = rx.recv().await {
         out.push(item);
@@ -882,18 +886,54 @@ async fn an_oom_event_without_an_actor_is_forwarded_with_empty_fields() {
     assert_eq!(events, [(String::new(), String::new())]);
 }
 
-#[tokio::test(start_paused = true)]
-async fn the_oom_listener_stops_at_the_first_stream_error() {
-    // Pinned (finding 61): the log says "reconnecting", but the task just ends, so OOM
-    // events are lost until the server restarts. Ending the stream does the same.
+#[tokio::test]
+async fn a_stream_stops_being_read_at_its_first_error() {
+    // The listener reconnects after an error rather than reading on.
     let events = forwarded(vec![
         Ok(oom_event(Some("first"), Some("first"))),
         Err(bollard::errors::Error::RequestTimeoutError),
-        Ok(oom_event(Some("second"), Some("second"))),
+        Ok(oom_event(Some("lost"), Some("lost"))),
     ])
     .await;
 
     assert_eq!(events, [("first".to_string(), "first".to_string())]);
+}
+
+/// Each call hands out the next stream; after the last, empty streams.
+fn connections(
+    streams: Vec<Vec<StreamItem>>,
+) -> impl FnMut() -> futures::stream::Iter<std::vec::IntoIter<StreamItem>> {
+    let mut streams = streams.into_iter();
+    move || futures::stream::iter(streams.next().unwrap_or_default())
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_oom_listener_reconnects_after_an_error_and_after_the_stream_ends() {
+    let connect = connections(vec![
+        vec![
+            Ok(oom_event(Some("first"), Some("first"))),
+            Err(bollard::errors::Error::RequestTimeoutError),
+        ],
+        vec![Ok(oom_event(Some("second"), Some("second")))],
+        vec![Ok(oom_event(Some("third"), Some("third")))],
+    ]);
+    let (tx, mut rx) = mpsc::channel(8);
+    let start = tokio::time::Instant::now();
+    let task = tokio::spawn(listen_for_oom(connect, tx));
+
+    let mut names = Vec::new();
+    for _ in 0..3 {
+        names.push(rx.recv().await.unwrap().1);
+    }
+    let waited = start.elapsed();
+    drop(rx);
+
+    assert_eq!(names, ["first", "second", "third"]);
+    assert!(waited >= Duration::from_secs(10), "{waited:?}");
+    tokio::time::timeout(Duration::from_secs(60), task)
+        .await
+        .expect("the listener should stop once nobody listens")
+        .unwrap();
 }
 
 #[tokio::test]
@@ -901,8 +941,10 @@ async fn the_oom_listener_stops_when_nobody_is_listening() {
     let (tx, rx) = mpsc::channel(8);
     drop(rx);
 
-    let stream = futures::stream::iter(vec![Ok(oom_event(Some("a"), None))]);
-    forward_oom_events(stream, tx).await;
+    let connect = connections(vec![vec![Ok(oom_event(Some("a"), None))]]);
+    tokio::time::timeout(Duration::from_secs(5), listen_for_oom(connect, tx))
+        .await
+        .expect("the listener should not reconnect for nobody");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

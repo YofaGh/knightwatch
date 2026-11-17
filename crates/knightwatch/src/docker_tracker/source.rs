@@ -147,14 +147,36 @@ async fn docker_event_listener(docker: Docker, oom_tx: mpsc::Sender<(String, Str
         .filters(&filters)
         .build();
 
-    forward_oom_events(docker.events(Some(opts)), oom_tx).await;
+    listen_for_oom(|| docker.events(Some(opts.clone())), oom_tx).await;
 }
 
-pub async fn forward_oom_events(
-    stream: impl Stream<
-        Item = std::result::Result<bollard::models::EventMessage, bollard::errors::Error>,
-    >,
+const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+type EventItem = std::result::Result<bollard::models::EventMessage, bollard::errors::Error>;
+
+/// Forwards OOM events from `connect`'s stream, opening a new one `RECONNECT_DELAY`
+/// after each error or end, until nobody is listening.
+// shortcut: OOM events during the 5 s gap are missed, pass `since` to the new stream if that matters.
+pub async fn listen_for_oom<S: Stream<Item = EventItem>>(
+    mut connect: impl FnMut() -> S,
     oom_tx: mpsc::Sender<(String, String)>,
+) {
+    loop {
+        forward_oom_events(connect(), &oom_tx).await;
+        if oom_tx.is_closed() {
+            return;
+        }
+        tokio::select! {
+            () = oom_tx.closed() => return,
+            () = tokio::time::sleep(RECONNECT_DELAY) => {}
+        }
+    }
+}
+
+/// Forwards until the stream errors or ends, or nobody is listening.
+pub async fn forward_oom_events(
+    stream: impl Stream<Item = EventItem>,
+    oom_tx: &mpsc::Sender<(String, String)>,
 ) {
     let mut stream = pin!(stream);
 
@@ -175,14 +197,14 @@ pub async fn forward_oom_events(
                     .unwrap_or_else(|| id.chars().take(12).collect());
 
                 if oom_tx.send((id, name)).await.is_err() {
-                    break;
+                    return;
                 }
             }
             Err(e) => {
                 error!(?e, "docker event stream error; reconnecting in 5 s");
-                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                break;
+                return;
             }
         }
     }
+    warn!("docker event stream ended; reconnecting in 5 s");
 }
