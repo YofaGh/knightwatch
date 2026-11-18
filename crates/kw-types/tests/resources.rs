@@ -193,6 +193,7 @@ mod enums {
             (SystemHealth::Healthy, "healthy", "Healthy"),
             (SystemHealth::Warning, "warning", "Warning"),
             (SystemHealth::Critical, "critical", "Critical"),
+            (SystemHealth::Unknown, "unknown", "Unknown"),
         ];
         for (v, display, wire) in cases {
             assert_eq!(v.to_string(), display);

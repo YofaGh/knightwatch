@@ -547,6 +547,16 @@ fn battery_low_fires_at_the_threshold_only_while_discharging() {
 }
 
 #[test]
+fn battery_low_fires_when_the_state_is_unknown() {
+    let (mut t, mut rx) = running();
+    t.source.battery = Some((BatteryState::Unknown, 10.0));
+    assert_eq!(
+        tick(&mut t, &mut rx),
+        ["battery_low 10/15", "battery_state Unknown"]
+    );
+}
+
+#[test]
 fn a_held_battery_alarm_repeats_after_the_cooldown() {
     let (mut t, mut rx) = on_battery(10.0);
     assert!(tick(&mut t, &mut rx).is_empty());

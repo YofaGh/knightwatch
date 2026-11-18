@@ -644,6 +644,8 @@ pub enum SystemHealth {
     Warning,
     /// One or more subsystems are at critical levels.
     Critical,
+    /// A reading could not be read (NaN) and nothing else is elevated.
+    Unknown,
 }
 
 impl fmt::Display for SystemHealth {
@@ -652,6 +654,7 @@ impl fmt::Display for SystemHealth {
             Self::Healthy => write!(f, "healthy"),
             Self::Warning => write!(f, "warning"),
             Self::Critical => write!(f, "critical"),
+            Self::Unknown => write!(f, "unknown"),
         }
     }
 }
@@ -663,6 +666,14 @@ pub enum BatteryState {
     Full,
     /// Battery present but state cannot be determined.
     Unknown,
+}
+
+impl BatteryState {
+    /// Discharging, or the OS cannot tell, so a low charge should be reported.
+    #[must_use]
+    pub const fn may_run_down(&self) -> bool {
+        matches!(self, Self::Discharging | Self::Unknown)
+    }
 }
 
 impl fmt::Display for BatteryState {

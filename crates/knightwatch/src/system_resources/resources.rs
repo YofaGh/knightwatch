@@ -326,7 +326,7 @@ impl<S: ResourceSource> SystemResources<S> {
         if let Some(ref bat) = snapshot.battery {
             // negated, since the alarm fires when a value rises: low charge is a high
             // -charge, it clears 5 points above the threshold, and charging clears it
-            let low = if bat.state == BatteryState::Discharging {
+            let low = if bat.state.may_run_down() {
                 -bat.charge_percent
             } else {
                 f32::NEG_INFINITY

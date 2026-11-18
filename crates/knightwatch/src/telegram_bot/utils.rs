@@ -449,5 +449,6 @@ pub const fn health_emoji(health: &SystemHealth) -> &'static str {
         SystemHealth::Healthy => "✅",
         SystemHealth::Warning => "⚠️",
         SystemHealth::Critical => "🔴",
+        SystemHealth::Unknown => "❔",
     }
 }

@@ -14,7 +14,7 @@ use kw_types::resources::{
 
 use super::utils::derive_health;
 
-use SystemHealth::{Critical, Healthy, Warning};
+use SystemHealth::{Critical, Healthy, Unknown, Warning};
 
 /// A value that is healthy for every subsystem.
 const OK: f32 = 10.0;
@@ -208,12 +208,8 @@ fn disk_warning_starts_later_than_cpu_and_memory_warning() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn low_charge_only_matters_while_discharging() {
-    for state in [
-        BatteryState::Charging,
-        BatteryState::Full,
-        BatteryState::Unknown,
-    ] {
+fn low_charge_does_not_matter_while_charging_or_full() {
+    for state in [BatteryState::Charging, BatteryState::Full] {
         for charge in [0.0, 3.0, 15.0] {
             assert_eq!(
                 run(OK, OK, &[OK], Some((state.clone(), charge))),
@@ -225,12 +221,12 @@ fn low_charge_only_matters_while_discharging() {
 }
 
 #[test]
-fn unknown_battery_state_with_a_nearly_empty_battery_is_healthy() {
-    // Pinned: if the OS cannot tell the state, a 1% battery is not reported.
-    assert_eq!(
-        run(OK, OK, &[OK], Some((BatteryState::Unknown, 1.0))),
-        Healthy
-    );
+fn a_low_battery_in_an_unknown_state_counts_like_discharging() {
+    // If the OS cannot tell the state, a low battery is still reported.
+    let unknown = |charge| Some((BatteryState::Unknown, charge));
+    assert_eq!(run(OK, OK, &[OK], unknown(50.0)), Healthy);
+    assert_eq!(run(OK, OK, &[OK], unknown(15.0)), Warning);
+    assert_eq!(run(OK, OK, &[OK], unknown(1.0)), Critical);
 }
 
 #[test]
@@ -329,17 +325,23 @@ fn each_subsystem_alone_can_cause_critical() {
 }
 
 // ---------------------------------------------------------------------------
-// Odd numbers (pinned)
+// Odd numbers
 // ---------------------------------------------------------------------------
 
 #[test]
-fn nan_readings_count_as_healthy() {
-    // Pinned: NaN is false for every `>=` and `<=`, so a broken reading hides
-    // problems. It should flip if NaN is ever treated as "unknown" or worse.
-    assert_eq!(run(f32::NAN, OK, &[OK], None), Healthy);
-    assert_eq!(run(OK, f32::NAN, &[OK], None), Healthy);
-    assert_eq!(run(OK, OK, &[f32::NAN], None), Healthy);
-    assert_eq!(run(OK, OK, &[OK], on_battery(f32::NAN)), Healthy);
+fn a_nan_reading_makes_health_unknown() {
+    assert_eq!(run(f32::NAN, OK, &[OK], None), Unknown);
+    assert_eq!(run(OK, f32::NAN, &[OK], None), Unknown);
+    assert_eq!(run(OK, OK, &[f32::NAN], None), Unknown);
+    assert_eq!(run(OK, OK, &[OK], on_battery(f32::NAN)), Unknown);
+}
+
+#[test]
+fn a_nan_charge_does_not_matter_while_charging() {
+    assert_eq!(
+        run(OK, OK, &[OK], Some((BatteryState::Charging, f32::NAN))),
+        Healthy
+    );
 }
 
 #[test]
