@@ -372,7 +372,8 @@ impl<S: ResourceSource> SystemResources<S> {
         let memory = self.source.memory();
         let disks = self.source.disks();
         let battery = self.source.battery();
-        let health = super::utils::derive_health(&cpu, &memory, &disks, battery.as_ref());
+        let health =
+            super::utils::derive_health(&cpu, &memory, &disks, battery.as_ref(), &self.thresholds);
         SystemSnapshot {
             timestamp: crate::utils::now_rfc3339(),
             cpu,

@@ -70,13 +70,31 @@ fn mk_battery(state: BatteryState, charge_percent: f32) -> BatterySnapshot {
     }
 }
 
-/// Runs `derive_health` from plain numbers.
+/// The warning levels most tests here use: 80 cpu and memory, 90 disk, 20 battery.
+const LIMITS: Thresholds = Thresholds {
+    cpu_warn: 80.0,
+    memory_warn: 80.0,
+    disk_warn: 90.0,
+    battery_low: 20.0,
+};
+
+/// Runs `derive_health` from plain numbers with `LIMITS`.
 fn run(cpu: f32, memory: f32, disks: &[f32], battery: Option<(BatteryState, f32)>) -> SystemHealth {
+    run_with(&LIMITS, cpu, memory, disks, battery)
+}
+
+fn run_with(
+    limits: &Thresholds,
+    cpu: f32,
+    memory: f32,
+    disks: &[f32],
+    battery: Option<(BatteryState, f32)>,
+) -> SystemHealth {
     let cpu = mk_cpu(cpu);
     let memory = mk_memory(memory);
     let disks: Vec<DiskSnapshot> = disks.iter().map(|p| mk_disk(*p)).collect();
     let battery = battery.map(|(s, c)| mk_battery(s, c));
-    derive_health(&cpu, &memory, &disks, battery.as_ref())
+    derive_health(&cpu, &memory, &disks, battery.as_ref(), limits)
 }
 
 fn on_battery(charge: f32) -> Option<(BatteryState, f32)> {
@@ -237,7 +255,10 @@ fn other_battery_fields_do_not_matter() {
     battery.health_percent = Some(1.0);
     battery.cycle_count = Some(100_000);
     battery.power_draw_watts = Some(500.0);
-    assert_eq!(derive_health(&cpu, &memory, &[], Some(&battery)), Healthy);
+    assert_eq!(
+        derive_health(&cpu, &memory, &[], Some(&battery), &LIMITS),
+        Healthy
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -337,19 +358,34 @@ fn infinities_and_negative_values() {
 }
 
 // ---------------------------------------------------------------------------
-// Thresholds type is not used (pinned)
+// The configured thresholds set the warning levels
 // ---------------------------------------------------------------------------
 
 #[test]
-fn health_ignores_the_configurable_thresholds() {
-    // Pinned (finding 37): `derive_health` has fixed limits (80/80/90/20 for
-    // warnings), while `Thresholds::default()` says cpu_warn 90 and battery_low 15.
-    // These two cases flip if the configured thresholds are wired in.
+fn warnings_follow_the_configured_thresholds() {
+    // The defaults are 90 for cpu, memory and disk, and 15 for battery.
     let t = Thresholds::default();
-    assert!(85.0 < t.cpu_warn);
-    assert_eq!(run(85.0, OK, &[OK], None), Warning);
-    assert!(18.0 > t.battery_low);
-    assert_eq!(run(OK, OK, &[OK], on_battery(18.0)), Warning);
+    assert_eq!(run_with(&t, 85.0, OK, &[OK], None), Healthy);
+    assert_eq!(run_with(&t, 90.0, OK, &[OK], None), Warning);
+    assert_eq!(run_with(&t, OK, 90.0, &[OK], None), Warning);
+    assert_eq!(run_with(&t, OK, OK, &[90.0], None), Warning);
+    assert_eq!(run_with(&t, OK, OK, &[OK], on_battery(18.0)), Healthy);
+    assert_eq!(run_with(&t, OK, OK, &[OK], on_battery(15.0)), Warning);
+}
+
+#[test]
+fn a_warning_level_above_95_is_not_beaten_by_critical() {
+    // Critical starts at 95 (5 for battery), but never before the warning level.
+    let t = Thresholds {
+        cpu_warn: 98.0,
+        memory_warn: 98.0,
+        disk_warn: 98.0,
+        battery_low: 3.0,
+    };
+    assert_eq!(run_with(&t, 96.0, 96.0, &[96.0], None), Healthy);
+    assert_eq!(run_with(&t, 98.0, OK, &[OK], None), Critical);
+    assert_eq!(run_with(&t, OK, OK, &[OK], on_battery(4.0)), Healthy);
+    assert_eq!(run_with(&t, OK, OK, &[OK], on_battery(3.0)), Critical);
 }
 
 // ---------------------------------------------------------------------------
@@ -362,8 +398,8 @@ fn same_input_gives_the_same_result() {
     let memory = mk_memory(OK);
     let disks = vec![mk_disk(OK)];
     let battery = mk_battery(BatteryState::Discharging, 50.0);
-    let first = derive_health(&cpu, &memory, &disks, Some(&battery));
-    let second = derive_health(&cpu, &memory, &disks, Some(&battery));
+    let first = derive_health(&cpu, &memory, &disks, Some(&battery), &LIMITS);
+    let second = derive_health(&cpu, &memory, &disks, Some(&battery), &LIMITS);
     assert_eq!(first, second);
     assert_eq!(first, Warning);
 }
@@ -380,7 +416,7 @@ fn inputs_are_not_changed() {
         serde_json::to_string(&disks).unwrap(),
         serde_json::to_string(&battery).unwrap(),
     );
-    let _ = derive_health(&cpu, &memory, &disks, Some(&battery));
+    let _ = derive_health(&cpu, &memory, &disks, Some(&battery), &LIMITS);
     let after = (
         serde_json::to_string(&cpu).unwrap(),
         serde_json::to_string(&memory).unwrap(),

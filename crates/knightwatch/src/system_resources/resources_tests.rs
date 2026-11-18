@@ -448,6 +448,7 @@ fn new_thresholds_apply_from_the_next_tick() {
 
     assert_eq!(drain(&mut rx), ["command set_thresholds true"]);
     assert_eq!(tick(&mut t, &mut rx), ["cpu 10/5"]);
+    assert_eq!(t.snapshot().health, SystemHealth::Warning);
 }
 
 #[test]
