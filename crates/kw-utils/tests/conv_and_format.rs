@@ -375,18 +375,8 @@ mod float_to_int_tests {
     }
 
     #[test]
-    fn f32_percent_to_u32_out_of_range_is_zero() {
-        // Pinned: the doc comment says out-of-range saturates, but the value
-        // becomes 0, not u32::MAX. See the ignored test below. Flip this one
-        // if the function is changed.
-        assert_eq!(conv::f32_percent_to_u32(4_294_967_296.0), 0);
-        assert_eq!(conv::f32_percent_to_u32(1e20), 0);
-        assert_eq!(conv::f32_percent_to_u32(f32::INFINITY), 0);
-    }
-
-    #[test]
-    #[ignore = "doc says out-of-range saturates, but f32_percent_to_u32(1e20) returns 0"]
-    fn f32_percent_to_u32_out_of_range_should_saturate() {
+    fn f32_percent_to_u32_out_of_range_saturates() {
+        assert_eq!(conv::f32_percent_to_u32(4_294_967_296.0), u32::MAX);
         assert_eq!(conv::f32_percent_to_u32(1e20), u32::MAX);
         assert_eq!(conv::f32_percent_to_u32(f32::INFINITY), u32::MAX);
     }
@@ -408,11 +398,10 @@ mod float_to_int_tests {
     }
 
     #[test]
-    fn f32_to_u64_saturating_out_of_range_is_zero() {
-        // Pinned: the name says "saturating" but values too large for u64
-        // become 0, not u64::MAX. Flip if the function is changed.
-        assert_eq!(conv::f32_to_u64_saturating(1e30), 0);
-        assert_eq!(conv::f32_to_u64_saturating(f32::INFINITY), 0);
+    fn f32_to_u64_saturating_out_of_range_saturates() {
+        assert_eq!(conv::f32_to_u64_saturating(1e30), u64::MAX);
+        assert_eq!(conv::f32_to_u64_saturating(f32::INFINITY), u64::MAX);
+        assert_eq!(conv::f32_to_u64_saturating(f32::NEG_INFINITY), 0);
     }
 
     #[test]
@@ -429,10 +418,10 @@ mod float_to_int_tests {
     }
 
     #[test]
-    fn f64_to_usize_saturating_out_of_range_is_zero() {
-        // Pinned, same as the u64 version above.
-        assert_eq!(conv::f64_to_usize_saturating(1e30), 0);
-        assert_eq!(conv::f64_to_usize_saturating(f64::INFINITY), 0);
+    fn f64_to_usize_saturating_out_of_range_saturates() {
+        assert_eq!(conv::f64_to_usize_saturating(1e30), usize::MAX);
+        assert_eq!(conv::f64_to_usize_saturating(f64::INFINITY), usize::MAX);
+        assert_eq!(conv::f64_to_usize_saturating(f64::NEG_INFINITY), 0);
     }
 }
 
@@ -552,15 +541,17 @@ mod int_width_tests {
     }
 
     #[test]
-    fn char_to_usize_returns_the_unicode_scalar_not_the_digit() {
-        // Pinned: '1' maps to 49, not 1. The doc comment says this is "used
-        // for turning digit keys ('1'..'9') into indices", so any caller
-        // that uses the result directly as an index is off by 48 and has to
-        // subtract '0' itself. Check the callers in the TUI.
-        assert_eq!(conv::char_to_usize_saturating('0'), 48);
-        assert_eq!(conv::char_to_usize_saturating('1'), 49);
-        assert_eq!(conv::char_to_usize_saturating('9'), 57);
-        assert_eq!(conv::char_to_usize_saturating('A'), 65);
-        assert_eq!(conv::char_to_usize_saturating('\u{10FFFF}'), 0x10_FFFF);
+    fn char_to_usize_returns_the_digit() {
+        assert_eq!(conv::char_to_usize_saturating('0'), 0);
+        assert_eq!(conv::char_to_usize_saturating('1'), 1);
+        assert_eq!(conv::char_to_usize_saturating('9'), 9);
+    }
+
+    #[test]
+    fn char_to_usize_of_a_non_digit_saturates() {
+        // usize::MAX is never a valid index, so `get` on it finds nothing.
+        assert_eq!(conv::char_to_usize_saturating('A'), usize::MAX);
+        assert_eq!(conv::char_to_usize_saturating(' '), usize::MAX);
+        assert_eq!(conv::char_to_usize_saturating('\u{0661}'), usize::MAX);
     }
 }

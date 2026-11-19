@@ -41,17 +41,23 @@ pub fn u32_to_f32(v: u32) -> f32 {
     v.to_f32().unwrap_or(0.0)
 }
 
-/// Percentage-ish `f32` -> `u32`, saturating on negative/NaN/out-of-range
-/// instead of the undefined-ish behavior of `as`.
+/// Percentage-ish `f32` -> `u32`, truncated. Negative and NaN give 0, too
+/// large gives `u32::MAX`.
 #[must_use]
 pub fn f32_percent_to_u32(v: f32) -> u32 {
-    v.to_u32().unwrap_or(0)
+    if v.is_nan() || v <= 0.0 {
+        return 0;
+    }
+    v.to_u32().unwrap_or(u32::MAX)
 }
 
-/// `f32 -> u64`, saturating on negative/NaN instead of the UB-ish `as` cast.
+/// `f32 -> u64`, truncated. Negative and NaN give 0, too large gives `u64::MAX`.
 #[must_use]
 pub fn f32_to_u64_saturating(v: f32) -> u64 {
-    v.to_u64().unwrap_or(0)
+    if v.is_nan() || v <= 0.0 {
+        return 0;
+    }
+    v.to_u64().unwrap_or(u64::MAX)
 }
 
 /// `usize -> f64`. Exact for any width we'd realistically render in a terminal.
@@ -67,10 +73,14 @@ pub fn u32_to_usize(v: u32) -> usize {
     usize::try_from(v).unwrap_or(usize::MAX)
 }
 
-/// `f64 -> usize`, saturating on negative/NaN instead of the UB-ish `as` cast.
+/// `f64 -> usize`, truncated. Negative and NaN give 0, too large gives
+/// `usize::MAX`.
 #[must_use]
 pub fn f64_to_usize_saturating(v: f64) -> usize {
-    v.to_usize().unwrap_or(0)
+    if v.is_nan() || v <= 0.0 {
+        return 0;
+    }
+    v.to_usize().unwrap_or(usize::MAX)
 }
 
 #[must_use]
@@ -99,11 +109,11 @@ pub fn usize_to_u16_saturating(v: usize) -> u16 {
     u16::try_from(v).unwrap_or(u16::MAX)
 }
 
-/// `char -> usize` via its Unicode scalar value, saturating instead of using
-/// a silent `as` cast. Used for turning digit keys ('1'..'9') into indices.
+/// The value of an ASCII digit key ('0'..'9'). Anything else gives
+/// `usize::MAX`, which is never a valid index.
 #[must_use]
 pub fn char_to_usize_saturating(c: char) -> usize {
-    usize::try_from(u32::from(c)).unwrap_or(usize::MAX)
+    c.to_digit(10).map_or(usize::MAX, u32_to_usize)
 }
 
 /// `usize -> u32`, saturating to `u32::MAX` instead of a silent/UB-ish `as`
