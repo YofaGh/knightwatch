@@ -439,13 +439,9 @@ mod history {
         });
     }
 
-    // ---- known limitation: timestamps are compared as strings ---------------
-    // These describe the behaviour you'd probably want. They fail today, so they
-    // are #[ignore]d. Run them with `-- --ignored`; remove the attribute once
-    // you either parse timestamps or guarantee a single format.
+    // ---- timestamps are compared as instants, not as text ------------------
 
     #[test]
-    #[ignore = "known limitation: filter compares timestamps lexicographically"]
     fn mixed_utc_offsets_compare_chronologically() {
         // 10:00+03:30 is 06:30Z, which is BEFORE 07:00Z.
         let q = HistoryQuery {
@@ -456,7 +452,6 @@ mod history {
     }
 
     #[test]
-    #[ignore = "known limitation: filter compares timestamps lexicographically"]
     fn fractional_seconds_compare_chronologically() {
         // 00:00:00.500Z is AFTER 00:00:00Z.
         let q = HistoryQuery {
@@ -464,6 +459,50 @@ mod history {
             ..Default::default()
         };
         assert!(q.filter(&ev("e", "2026-01-01T00:00:00.500Z", EventSource::Systemd)));
+    }
+
+    #[test]
+    fn until_in_another_offset_compares_as_an_instant() {
+        // 23:30-05:00 is 04:30Z the next day, so it is AFTER 00:00Z.
+        let q = HistoryQuery {
+            until: Some("2026-01-02T00:00:00Z".into()),
+            ..Default::default()
+        };
+        assert!(!q.filter(&ev("e", "2026-01-01T23:30:00-05:00", EventSource::Systemd)));
+    }
+
+    #[test]
+    fn a_bare_date_since_starts_at_utc_midnight() {
+        let q = HistoryQuery {
+            since: Some("2026-01-02".into()),
+            ..Default::default()
+        };
+        assert!(q.filter(&ev("e", "2026-01-02T00:00:00Z", EventSource::Systemd)));
+        assert!(!q.filter(&ev("e", "2026-01-01T23:59:59Z", EventSource::Systemd)));
+        // 23:30-05:00 is 04:30Z on the 2nd.
+        assert!(q.filter(&ev("e", "2026-01-01T23:30:00-05:00", EventSource::Systemd)));
+    }
+
+    #[test]
+    fn a_bare_date_until_takes_in_the_whole_utc_day() {
+        let q = HistoryQuery {
+            until: Some("2026-01-02".into()),
+            ..Default::default()
+        };
+        assert!(q.filter(&ev("e", "2026-01-02T23:59:59.999Z", EventSource::Systemd)));
+        assert!(!q.filter(&ev("e", "2026-01-03T00:00:00Z", EventSource::Systemd)));
+        // 01:00+03:00 on the 3rd is 22:00Z on the 2nd.
+        assert!(q.filter(&ev("e", "2026-01-03T01:00:00+03:00", EventSource::Systemd)));
+    }
+
+    #[test]
+    fn a_bound_that_is_not_a_date_falls_back_to_text_order() {
+        let q = HistoryQuery {
+            since: Some("2026-01".into()),
+            ..Default::default()
+        };
+        assert!(q.filter(&ev("e", "2026-01-01T00:00:00Z", EventSource::Systemd)));
+        assert!(!q.filter(&ev("e", "2025-12-31T23:59:59Z", EventSource::Systemd)));
     }
 }
 

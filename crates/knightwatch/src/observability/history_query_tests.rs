@@ -392,9 +392,7 @@ async fn since_after_until_gives_nothing() {
 
 #[tokio::test]
 async fn date_only_bounds_work_on_the_file_level() {
-    // A bare date as `since` skips earlier files; inside the kept file the
-    // string compare "2024-05-02T01:00:00Z" >= "2024-05-02" holds for every
-    // event of that day.
+    // A bare date as `since` starts at UTC midnight of that day.
     let dir = three_days();
     let got = run(
         dir.path(),
@@ -408,10 +406,7 @@ async fn date_only_bounds_work_on_the_file_level() {
 }
 
 #[tokio::test]
-async fn date_only_until_drops_the_events_of_that_day() {
-    // Pinned: "2024-05-02T01:00:00Z" <= "2024-05-02" is false (the longer
-    // string sorts after), so a bare-date `until` keeps the file for that day
-    // but none of its events. Callers must send a full timestamp.
+async fn date_only_until_keeps_the_events_of_that_day() {
     let dir = three_days();
     let got = run(
         dir.path(),
@@ -421,7 +416,7 @@ async fn date_only_until_drops_the_events_of_that_day() {
         },
     )
     .await;
-    assert_eq!(names(&got), ["d1h1", "d1h2"]);
+    assert_eq!(names(&got), ["d1h1", "d1h2", "d2h1", "d2h2"]);
 }
 
 #[tokio::test]
