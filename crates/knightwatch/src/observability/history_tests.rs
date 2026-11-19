@@ -56,9 +56,11 @@ fn log_name(date: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn date_part_takes_first_ten_chars_of_rfc3339() {
+fn date_part_of_rfc3339_is_the_utc_date() {
     assert_eq!(date_part("2024-05-17T10:20:30Z"), "2024-05-17");
     assert_eq!(date_part("2024-05-17T10:20:30.123456+03:30"), "2024-05-17");
+    assert_eq!(date_part("2024-05-17T23:30:00-05:00"), "2024-05-18");
+    assert_eq!(date_part("2024-05-17T01:00:00+03:00"), "2024-05-16");
 }
 
 #[test]
@@ -86,8 +88,7 @@ fn date_part_does_not_panic_inside_a_multibyte_char() {
 }
 
 #[test]
-fn date_part_does_not_validate_that_it_is_a_date() {
-    // Pinned: any 10 leading chars are taken as the "date".
+fn date_part_of_text_that_is_not_rfc3339_takes_the_first_ten_chars() {
     assert_eq!(date_part("not-a-date-at-all"), "not-a-date");
 }
 
@@ -314,10 +315,8 @@ async fn log_event_puts_different_days_in_different_files() {
 }
 
 #[tokio::test]
-async fn log_event_names_the_file_after_the_timestamps_own_offset() {
-    // Pinned (finding 33): the date is the first 10 chars as written, not the
-    // UTC date. 23:30 at -05:00 is already the next day in UTC, but the event
-    // goes in the file for the local date.
+async fn log_event_names_the_file_after_the_utc_date() {
+    // 23:30 at -05:00 is already the next day in UTC.
     let dir = tempfile::tempdir().unwrap();
     log_event(
         dir.path(),
@@ -326,8 +325,8 @@ async fn log_event_names_the_file_after_the_timestamps_own_offset() {
     .await
     .unwrap();
 
-    assert!(dir.path().join(log_name("2024-05-17")).is_file());
-    assert!(!dir.path().join(log_name("2024-05-18")).exists());
+    assert!(dir.path().join(log_name("2024-05-18")).is_file());
+    assert!(!dir.path().join(log_name("2024-05-17")).exists());
 }
 
 #[tokio::test]

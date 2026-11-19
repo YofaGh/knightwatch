@@ -12,10 +12,23 @@ use crate::{config::log_dir, prelude::*, utils::recv_or_pending};
 const RETENTION_DAYS: i64 = 30;
 const PRUNE_INTERVAL: Duration = Duration::from_hours(24);
 
-/// First 10 chars of an RFC3339 timestamp, i.e. "YYYY-MM-DD".
-/// Falls back to the whole string if it's shorter than expected.
-pub fn date_part(timestamp: &str) -> &str {
-    timestamp.get(0..10).unwrap_or(timestamp)
+/// The UTC date ("YYYY-MM-DD") of an RFC 3339 timestamp. Anything else gives
+/// its first 10 chars, or the whole string if it's shorter.
+pub fn date_part(timestamp: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(timestamp).map_or_else(
+        |_| timestamp.get(0..10).unwrap_or(timestamp).to_owned(),
+        |t| t.with_timezone(&chrono::Utc).format("%Y-%m-%d").to_string(),
+    )
+}
+
+/// The date of `timestamp` moved by `days`. Files written before dates were
+/// UTC are named after the event's own date, up to a day off from UTC.
+fn file_date_bound(timestamp: &str, days: i64) -> String {
+    let date = date_part(timestamp);
+    chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+        .ok()
+        .and_then(|d| d.checked_add_signed(chrono::Duration::days(days)))
+        .map_or(date, |d| d.format("%Y-%m-%d").to_string())
 }
 
 pub fn log_file_name(date: &str) -> String {
@@ -29,7 +42,7 @@ pub async fn log_event(dir: &Path, payload: &EventPayload) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     line.push('\n');
 
-    let path = dir.join(log_file_name(date_part(&stored.timestamp)));
+    let path = dir.join(log_file_name(&date_part(&stored.timestamp)));
 
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -122,12 +135,12 @@ pub async fn query_history_in(
             )));
         }
     };
-    let since_date = query.since.as_deref().map(date_part);
-    let until_date = query.until.as_deref().map(date_part);
+    let since_date = query.since.as_deref().map(|s| file_date_bound(s, -1));
+    let until_date = query.until.as_deref().map(|u| file_date_bound(u, 1));
     // Keep only files whose date could overlap [since_date, until_date].
     files.retain(|(_, date)| {
-        since_date.is_none_or(|s| date.as_str() >= s)
-            && until_date.is_none_or(|u| date.as_str() <= u)
+        since_date.as_ref().is_none_or(|s| date >= s)
+            && until_date.as_ref().is_none_or(|u| date <= u)
     });
     // Newest-first if we have a limit and no upper bound narrowing us to
     // an older window — lets us stop reading files early.

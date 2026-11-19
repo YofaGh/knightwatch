@@ -443,11 +443,10 @@ async fn an_event_dated_after_its_file_is_still_filtered_by_its_own_timestamp() 
 }
 
 #[tokio::test]
-async fn bounds_in_another_utc_offset_can_drop_a_whole_file() {
-    // Pinned (finding 33). The event below is 2024-05-02T04:30:00Z in UTC, so
-    // it is after `since`, but its own text starts with 2024-05-01, so it is
-    // in the 05-01 file, and the file selection (date part of `since` is
-    // 05-02) drops that file before the event is looked at.
+async fn an_event_in_another_utc_offset_is_found_in_the_day_before() {
+    // The event below is 2024-05-02T04:30:00Z, so it is after `since`. Files
+    // written before the UTC change name it after its own date (05-01), so the
+    // file a day before `since` must still be read.
     let dir = tempfile::tempdir().unwrap();
     let mut e = ev(1, 1);
     e.event = "late-in-new-york".into();
@@ -462,7 +461,28 @@ async fn bounds_in_another_utc_offset_can_drop_a_whole_file() {
         },
     )
     .await;
-    assert!(got.is_empty());
+    assert_eq!(names(&got), ["late-in-new-york"]);
+}
+
+#[tokio::test]
+async fn an_event_in_another_utc_offset_is_found_in_the_day_after() {
+    // 2024-05-03T01:00:00+03:00 is 2024-05-02T22:00:00Z, before `until`, but a
+    // file written before the UTC change has it under 05-03.
+    let dir = tempfile::tempdir().unwrap();
+    let mut e = ev(3, 1);
+    e.event = "early-in-moscow".into();
+    e.timestamp = "2024-05-03T01:00:00+03:00".into();
+    put(dir.path(), 3, &[e]);
+
+    let got = run(
+        dir.path(),
+        HistoryQuery {
+            until: Some("2024-05-02T23:00:00Z".into()),
+            ..q()
+        },
+    )
+    .await;
+    assert_eq!(names(&got), ["early-in-moscow"]);
 }
 
 // ---------------------------------------------------------------------------
