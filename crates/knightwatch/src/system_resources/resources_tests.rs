@@ -466,19 +466,29 @@ fn the_alarm_query_reports_when_an_active_alarm_started() {
 }
 
 #[test]
-fn a_removed_disk_keeps_its_alarm() {
-    // Pinned (finding 58): `disk_alarms` entries are never removed, so an unmounted
-    // disk that was full reads as an active alarm until the server restarts.
+fn a_removed_disk_drops_its_alarm() {
     let (mut t, mut rx) = running();
-    t.source.live.disks = vec![("/usb".into(), 95.0)];
+    t.source.live.disks = vec![("/".into(), 10.0), ("/usb".into(), 95.0)];
     tick(&mut t, &mut rx);
 
+    t.source.live.disks = vec![("/".into(), 10.0)];
+    tick(&mut t, &mut rx);
+
+    let mounts: Vec<_> = t.alarms().disks.into_iter().map(|(m, _)| m).collect();
+    assert_eq!(mounts, ["/"]);
+}
+
+#[test]
+fn a_disk_that_comes_back_full_alarms_again() {
+    let (mut t, mut rx) = running();
+    t.source.live.disks = vec![("/usb".into(), 95.0)];
+    assert_eq!(tick(&mut t, &mut rx), ["disk /usb 95/90"]);
     t.source.live.disks.clear();
     tick(&mut t, &mut rx);
 
-    let disks = t.alarms().disks;
-    let usb = disks.iter().find(|(mount, _)| mount == "/usb").unwrap();
-    assert!(usb.1.active);
+    t.source.live.disks = vec![("/usb".into(), 95.0)];
+
+    assert_eq!(tick(&mut t, &mut rx), ["disk /usb 95/90"]);
 }
 
 #[test]

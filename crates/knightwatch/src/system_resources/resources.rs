@@ -307,7 +307,10 @@ impl<S: ResourceSource> SystemResources<S> {
                 threshold: self.thresholds.memory_warn,
             });
         }
-        // Disks
+        // Disks (a disk that is no longer listed takes its alarm with it)
+        self.state
+            .disk_alarms
+            .retain(|mount, _| snapshot.disks.iter().any(|d| &d.mount_point == mount));
         for disk in &snapshot.disks {
             let alarm = self
                 .state
