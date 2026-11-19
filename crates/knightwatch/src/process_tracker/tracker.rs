@@ -362,7 +362,10 @@ impl<S: ProcessSource> ProcessTracker<S> {
 
         let root_process = self.get_root_process_mut(root_pid)?;
 
-        root_process.last_root.clone_from(&root_snap);
+        // an exited root keeps its last snapshot, marked Gone above
+        if root_snap.is_some() {
+            root_process.last_root.clone_from(&root_snap);
+        }
         // ----------------------------------------------------------------
         // Diff against previous tick.
         // ----------------------------------------------------------------

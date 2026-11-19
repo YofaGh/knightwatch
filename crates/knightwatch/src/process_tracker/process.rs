@@ -48,7 +48,10 @@ impl From<&RootProcess> for kw_types::process::ProcessTree {
 impl From<&RootProcess> for kw_types::process::ProcessStatus {
     fn from(root_process: &RootProcess) -> Self {
         Self {
-            root_alive: root_process.last_root.is_some(),
+            root_alive: root_process
+                .last_root
+                .as_ref()
+                .is_some_and(|p| p.state != kw_types::process::ProcessState::Gone),
             root_pid: root_process.last_root.as_ref().map(|p| p.pid),
             root_name: root_process.last_root.as_ref().map(|p| p.name.clone()),
             child_count: root_process.last_children.len(),

@@ -511,20 +511,19 @@ fn queries_about_an_untracked_pid_are_empty() {
 }
 
 #[test]
-fn an_exited_root_reads_as_none_not_as_gone() {
-    // Pinned: the `ProcessState::Gone` write in `update_root_pid_state` is overwritten
-    // a few lines later, so `Gone` is never visible (finding 52).
+fn an_exited_root_keeps_its_last_snapshot_as_gone() {
     let (mut t, _rx) = running_root();
     t.exit(1);
     t.handle_tick();
 
-    assert!(
-        t.ask(|response| ProcessTrackerQuery::GetRoot {
+    let root = t
+        .ask(|response| ProcessTrackerQuery::GetRoot {
             root_pid: 1,
-            response
+            response,
         })
-        .is_none()
-    );
+        .unwrap();
+    assert_eq!(root.pid, 1);
+    assert_eq!(root.state, ProcessState::Gone);
     let status = t
         .ask(|response| ProcessTrackerQuery::GetProcessStatus {
             root_pid: 1,
@@ -532,8 +531,8 @@ fn an_exited_root_reads_as_none_not_as_gone() {
         })
         .unwrap();
     assert!(!status.root_alive);
-    assert_eq!(status.root_pid, None);
-    assert_eq!(status.root_name, None);
+    assert_eq!(status.root_pid, Some(1));
+    assert!(status.root_name.is_some());
     assert!(status.work_done);
 }
 
