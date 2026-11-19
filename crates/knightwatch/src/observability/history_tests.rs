@@ -106,7 +106,7 @@ fn log_file_name_has_prefix_date_and_suffix() {
 
 #[test]
 fn log_file_name_with_empty_date_has_no_date() {
-    // Pinned (finding 34).
+    // log_event never passes "" (a bad timestamp goes in today's file).
     assert_eq!(log_file_name(""), "knightwatch-events-.log");
 }
 
@@ -383,27 +383,33 @@ async fn log_event_fails_when_the_directory_is_missing() {
     assert_eq!(err.kind(), io::ErrorKind::NotFound);
 }
 
-#[tokio::test]
-async fn log_event_with_short_timestamp_uses_it_whole_as_the_date() {
-    // Pinned (finding 34).
+/// Logs one event with `timestamp` and returns the names of the files it made.
+async fn files_after_logging(timestamp: &str) -> Vec<String> {
     let dir = tempfile::tempdir().unwrap();
-    log_event(dir.path(), &payload("a", "x", EventSource::ScreenCapture))
-        .await
-        .unwrap();
-
-    assert!(dir.path().join("knightwatch-events-x.log").is_file());
+    log_event(
+        dir.path(),
+        &payload("a", timestamp, EventSource::ScreenCapture),
+    )
+    .await
+    .unwrap();
+    std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect()
 }
 
 #[tokio::test]
-async fn log_event_with_empty_timestamp_writes_a_file_with_no_date() {
-    // Pinned (finding 34): the file is `knightwatch-events-.log`, which
-    // `prune_old_event_logs` will delete (see below).
-    let dir = tempfile::tempdir().unwrap();
-    log_event(dir.path(), &payload("a", "", EventSource::ScreenCapture))
-        .await
-        .unwrap();
-
-    assert!(dir.path().join("knightwatch-events-.log").is_file());
+async fn log_event_puts_a_bad_timestamp_in_todays_file() {
+    for timestamp in ["", "x", "not-a-date-at-all", "2024-05-17"] {
+        let before = days_ago(0);
+        let files = files_after_logging(timestamp).await;
+        let after = days_ago(0);
+        assert_eq!(files.len(), 1, "{timestamp:?}");
+        assert!(
+            files[0] == log_name(&before) || files[0] == log_name(&after),
+            "{timestamp:?} went to {files:?}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -549,27 +555,25 @@ async fn prune_survives_an_old_named_directory_and_still_prunes_the_rest() {
 }
 
 #[tokio::test]
-async fn prune_deletes_the_file_with_an_empty_date() {
-    // Pinned (finding 34): "" sorts before any cutoff, so a log written for an
-    // event with an empty timestamp is removed on the next prune.
+async fn prune_skips_files_whose_name_has_no_valid_date() {
+    // A bad name is left alone (with a warning) rather than judged by text order.
     let dir = tempfile::tempdir().unwrap();
-    touch(dir.path(), "knightwatch-events-.log");
+    let bad = [
+        "knightwatch-events-.log",
+        "knightwatch-events-garbage.log",
+        "knightwatch-events-0000-13-45.log",
+    ];
+    for name in bad {
+        touch(dir.path(), name);
+    }
+    touch(dir.path(), &log_name(&days_ago(90)));
 
     prune_old_event_logs(dir.path()).await;
 
-    assert!(!dir.path().join("knightwatch-events-.log").exists());
-}
-
-#[tokio::test]
-async fn prune_keeps_a_file_whose_date_text_sorts_after_the_cutoff() {
-    // Pinned: dates are compared as plain strings with no validation, so
-    // "garbage" ('g' > '2') is never pruned.
-    let dir = tempfile::tempdir().unwrap();
-    touch(dir.path(), "knightwatch-events-garbage.log");
-
-    prune_old_event_logs(dir.path()).await;
-
-    assert!(dir.path().join("knightwatch-events-garbage.log").exists());
+    for name in bad {
+        assert!(dir.path().join(name).exists(), "{name}");
+    }
+    assert!(!dir.path().join(log_name(&days_ago(90))).exists());
 }
 
 #[tokio::test]

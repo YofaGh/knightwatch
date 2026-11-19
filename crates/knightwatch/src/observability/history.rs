@@ -42,7 +42,16 @@ pub async fn log_event(dir: &Path, payload: &EventPayload) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     line.push('\n');
 
-    let path = dir.join(log_file_name(&date_part(&stored.timestamp)));
+    let date = if chrono::DateTime::parse_from_rfc3339(&stored.timestamp).is_ok() {
+        date_part(&stored.timestamp)
+    } else {
+        warn!(
+            "event tracer: {:?} has a bad timestamp {:?}; logging it under today",
+            stored.event, stored.timestamp
+        );
+        chrono::Utc::now().format("%Y-%m-%d").to_string()
+    };
+    let path = dir.join(log_file_name(&date));
 
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -84,13 +93,32 @@ pub async fn prune_old_event_logs(dir: &Path) {
         }
     };
 
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    let mut entry_errors: u8 = 0;
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            // a directory that keeps failing would otherwise loop forever
+            Err(e) if entry_errors < 16 => {
+                entry_errors = entry_errors.saturating_add(1);
+                warn!("event tracer: skipping an unreadable log directory entry: {e}");
+                continue;
+            }
+            Err(e) => {
+                error!("event tracer: giving up on pruning after repeated errors: {e}");
+                break;
+            }
+        };
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
         };
         let Some(date) = extract_log_date(&name) else {
             continue;
         };
+        if chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").is_err() {
+            warn!("event tracer: not pruning {name}: its name has no valid date");
+            continue;
+        }
         if date.as_str() < cutoff.as_str()
             && let Err(e) = fs::remove_file(entry.path()).await
         {
