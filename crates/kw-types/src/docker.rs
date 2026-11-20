@@ -317,15 +317,19 @@ pub fn compute_cpu_percent(stats: &bollard::config::ContainerStatsResponse) -> f
         return 0.0;
     }
 
+    // a count of 0 would read as 0% CPU, so treat it as unknown
     let num_cpus = cpu
         .as_ref()
         .and_then(|cpu| cpu.online_cpus)
-        .unwrap_or_else(|| {
+        .filter(|&n| n > 0)
+        .or_else(|| {
             cpu.as_ref()
                 .and_then(|cpu| cpu.cpu_usage.as_ref())
                 .and_then(|cpu_usage| cpu_usage.percpu_usage.as_ref())
-                .map_or(1, |v| u32::try_from(v.len()).unwrap_or(u32::MAX))
-        });
+                .map(|v| u32::try_from(v.len()).unwrap_or(u32::MAX))
+                .filter(|&n| n > 0)
+        })
+        .unwrap_or(1);
 
     conv::u64_ratio_percent_f64(cpu_delta, system_delta) * f64::from(num_cpus)
 }

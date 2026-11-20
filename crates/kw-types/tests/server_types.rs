@@ -362,13 +362,42 @@ mod docker_cpu {
     }
 
     #[test]
-    fn online_cpus_of_zero_is_used_as_is_and_gives_zero_percent() {
-        // Some(0) is NOT replaced by the percpu fallback. If a Docker host ever
-        // reports online_cpus = 0, CPU % will read 0 for that container.
+    fn online_cpus_of_zero_assumes_one_cpu() {
         approx(
             compute_cpu_percent(&stats(cpu_payload(1_050, 1_000, 11_000, 10_000, Some(0)))),
-            0.0,
+            5.0,
         );
+    }
+
+    #[test]
+    fn online_cpus_of_zero_falls_back_to_percpu_usage_length() {
+        let s = stats(json!({
+            "cpu_stats": {
+                "cpu_usage": { "total_usage": 1_050, "percpu_usage": [600, 450] },
+                "system_cpu_usage": 11_000,
+                "online_cpus": 0
+            },
+            "precpu_stats": {
+                "cpu_usage": { "total_usage": 1_000 },
+                "system_cpu_usage": 10_000
+            }
+        }));
+        approx(compute_cpu_percent(&s), 10.0);
+    }
+
+    #[test]
+    fn an_empty_percpu_usage_assumes_one_cpu() {
+        let s = stats(json!({
+            "cpu_stats": {
+                "cpu_usage": { "total_usage": 1_050, "percpu_usage": [] },
+                "system_cpu_usage": 11_000
+            },
+            "precpu_stats": {
+                "cpu_usage": { "total_usage": 1_000 },
+                "system_cpu_usage": 10_000
+            }
+        }));
+        approx(compute_cpu_percent(&s), 5.0);
     }
 }
 
