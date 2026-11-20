@@ -382,6 +382,8 @@ pub const fn unit_state_emoji(state: &UnitActiveState) -> &'static str {
         UnitActiveState::Failed => "🔴",
         UnitActiveState::Activating => "🟡",
         UnitActiveState::Deactivating => "🟠",
+        UnitActiveState::Maintenance => "🔧",
+        UnitActiveState::Refreshing => "🔃",
     }
 }
 

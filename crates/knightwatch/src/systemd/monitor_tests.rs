@@ -409,16 +409,26 @@ async fn the_raw_unit_and_its_details_land_in_the_snapshot() {
 }
 
 #[tokio::test]
-async fn systemds_maintenance_state_reads_as_inactive() {
-    // Pinned (finding 66): `UnitActiveState` has no `maintenance` or `refreshing`.
+async fn systemds_maintenance_and_refreshing_states_are_kept() {
     let mut m = monitor();
     m.unit("a.service", "maintenance");
+    m.unit("b.service", "refreshing");
 
     m.handle_tick().await;
 
     let snapshot = m.snapshot().unwrap();
-    assert_eq!(snapshot.units[0].active_state, UnitActiveState::Inactive);
-    assert_eq!(snapshot.inactive_count, 1);
+    let state = |name: &str| {
+        snapshot
+            .units
+            .iter()
+            .find(|u| u.unit_name == name)
+            .unwrap()
+            .active_state
+            .clone()
+    };
+    assert_eq!(state("a.service"), UnitActiveState::Maintenance);
+    assert_eq!(state("b.service"), UnitActiveState::Refreshing);
+    assert_eq!(snapshot.inactive_count, 0);
 }
 
 #[test]

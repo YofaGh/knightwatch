@@ -1093,6 +1093,8 @@ fn unit_emoji_follows_the_active_state() {
         (UnitActiveState::Failed, "🔴"),
         (UnitActiveState::Activating, "🟡"),
         (UnitActiveState::Deactivating, "🟠"),
+        (UnitActiveState::Maintenance, "🔧"),
+        (UnitActiveState::Refreshing, "🔃"),
     ] {
         let msg = TelegramDisplay(&unit("a", state)).to_string();
         assert!(msg.starts_with(&format!("{emoji} *a*")), "{msg}");

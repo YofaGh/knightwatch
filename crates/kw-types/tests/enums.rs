@@ -456,7 +456,7 @@ mod systemd {
 
     // ---- UnitActiveState ---------------------------------------------------
 
-    fn active_states() -> [(UnitActiveState, &'static str); 6] {
+    fn active_states() -> [(UnitActiveState, &'static str); 8] {
         [
             (UnitActiveState::Active, "active"),
             (UnitActiveState::Reloading, "reloading"),
@@ -464,6 +464,8 @@ mod systemd {
             (UnitActiveState::Failed, "failed"),
             (UnitActiveState::Activating, "activating"),
             (UnitActiveState::Deactivating, "deactivating"),
+            (UnitActiveState::Maintenance, "maintenance"),
+            (UnitActiveState::Refreshing, "refreshing"),
         ]
     }
 
@@ -484,11 +486,6 @@ mod systemd {
 
     #[test]
     fn active_state_from_str_unknown_becomes_inactive() {
-        // systemd can also report e.g. "maintenance"; it collapses to Inactive today.
-        assert_eq!(
-            UnitActiveState::from("maintenance"),
-            UnitActiveState::Inactive
-        );
         assert_eq!(UnitActiveState::from(""), UnitActiveState::Inactive);
         assert_eq!(UnitActiveState::from("ACTIVE"), UnitActiveState::Inactive);
     }

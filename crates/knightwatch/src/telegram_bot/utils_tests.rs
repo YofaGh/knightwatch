@@ -205,6 +205,8 @@ fn unit_state_emojis() {
     assert_eq!(unit_state_emoji(&UnitActiveState::Failed), "🔴");
     assert_eq!(unit_state_emoji(&UnitActiveState::Activating), "🟡");
     assert_eq!(unit_state_emoji(&UnitActiveState::Deactivating), "🟠");
+    assert_eq!(unit_state_emoji(&UnitActiveState::Maintenance), "🔧");
+    assert_eq!(unit_state_emoji(&UnitActiveState::Refreshing), "🔃");
 }
 
 #[test]

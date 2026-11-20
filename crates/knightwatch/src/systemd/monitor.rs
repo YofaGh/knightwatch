@@ -326,7 +326,9 @@ impl<S: UnitSource> SystemdMonitor<S> {
                 if matches!(unit_type, UnitType::Service)
                     && matches!(
                         active_state,
-                        UnitActiveState::Active | UnitActiveState::Reloading
+                        UnitActiveState::Active
+                            | UnitActiveState::Reloading
+                            | UnitActiveState::Refreshing
                     )
                 {
                     self.source.service_details(&unit_name, &raw.6)
@@ -389,9 +391,9 @@ impl<S: UnitSource> SystemdMonitor<S> {
         match u.active_state {
             UnitActiveState::Failed => 0,
             UnitActiveState::Active => 1,
-            UnitActiveState::Reloading => 2,
+            UnitActiveState::Reloading | UnitActiveState::Refreshing => 2,
             UnitActiveState::Activating => 3,
-            UnitActiveState::Deactivating => 4,
+            UnitActiveState::Deactivating | UnitActiveState::Maintenance => 4,
             UnitActiveState::Inactive => 5,
         }
     }

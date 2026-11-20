@@ -107,6 +107,10 @@ pub enum UnitActiveState {
     Failed,
     Activating,
     Deactivating,
+    /// Running a clean or similar job while stopped.
+    Maintenance,
+    /// Active, and refreshing its mounts or namespaces.
+    Refreshing,
 }
 
 impl UnitActiveState {
@@ -119,6 +123,8 @@ impl UnitActiveState {
             Self::Failed => "failed",
             Self::Activating => "activating",
             Self::Deactivating => "deactivating",
+            Self::Maintenance => "maintenance",
+            Self::Refreshing => "refreshing",
         }
     }
 }
@@ -131,6 +137,8 @@ impl From<&str> for UnitActiveState {
             "failed" => Self::Failed,
             "activating" => Self::Activating,
             "deactivating" => Self::Deactivating,
+            "maintenance" => Self::Maintenance,
+            "refreshing" => Self::Refreshing,
             _ => Self::Inactive,
         }
     }
