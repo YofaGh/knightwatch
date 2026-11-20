@@ -19,7 +19,6 @@ pub fn start_dev_server() -> Option<std::process::Child> {
     if std::net::TcpStream::connect("localhost:5173").is_ok() {
         return None;
     }
-    println!("1");
     info!("Starting vite server...");
     let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
     match std::process::Command::new(npm)
@@ -71,19 +70,23 @@ pub const fn get_version() -> &'static str {
 }
 
 pub async fn recv_or_pending<T: Clone>(rx: &mut Option<broadcast::Receiver<T>>, name: &str) -> T {
-    match rx {
-        Some(rx) => loop {
-            match rx.recv().await {
+    if let Some(receiver) = rx {
+        loop {
+            match receiver.recv().await {
                 Ok(val) => return val,
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    warn!("{name} fell behind and skipped {skipped} events");
+                }
                 Err(broadcast::error::RecvError::Closed) => {
                     error!("{name} channel closed");
-                    return std::future::pending().await;
+                    // later calls take the silent path below instead of logging again
+                    *rx = None;
+                    break;
                 }
             }
-        },
-        None => std::future::pending().await,
+        }
     }
+    std::future::pending().await
 }
 
 pub async fn get_info() -> Info {

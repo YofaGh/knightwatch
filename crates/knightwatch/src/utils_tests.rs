@@ -386,8 +386,16 @@ async fn recv_or_pending_pends_forever_once_the_channel_is_closed() {
     drop(tx);
     assert!(stays_pending(&mut rx).await);
     // And again: it never turns into an error or a value.
-    // (Pinned: each call logs "channel closed" again, see finding 36.)
     assert!(stays_pending(&mut rx).await);
+}
+
+#[tokio::test]
+async fn recv_or_pending_drops_a_closed_receiver_so_the_close_is_logged_once() {
+    let (tx, rx) = broadcast::channel::<i32>(4);
+    let mut rx = Some(rx);
+    drop(tx);
+    assert!(stays_pending(&mut rx).await);
+    assert!(rx.is_none(), "later calls must take the silent None path");
 }
 
 #[tokio::test]
