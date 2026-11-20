@@ -14,6 +14,12 @@ pub struct WebSocketAdapter<S> {
     read_buffer: VecDeque<u8>,
 }
 
+impl WebSocketAdapter<tokio::net::TcpStream> {
+    pub fn get_ref(&self) -> &tokio::net::TcpStream {
+        self.inner.get_ref()
+    }
+}
+
 impl<S> WebSocketAdapter<S> {
     pub const fn new(ws: WebSocketStream<S>) -> Self {
         Self {

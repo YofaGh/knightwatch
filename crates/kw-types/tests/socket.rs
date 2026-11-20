@@ -1016,6 +1016,7 @@ mod message {
         for (r, name) in [
             (AuthFailedReason::WrongCredentials, "WrongCredentials"),
             (AuthFailedReason::InternalServerError, "InternalServerError"),
+            (AuthFailedReason::TooManyAttempts, "TooManyAttempts"),
         ] {
             assert_eq!(serde_json::to_value(&r).unwrap(), json!(name));
             assert_roundtrip(&r);

@@ -119,11 +119,14 @@ pub fn init_api_server(cancel_token: tokio_util::sync::CancellationToken) -> Res
     let app = with_security_headers(app);
     let api_listener = crate::utils::get_listener(&config.server_address())?;
     tokio::spawn(async move {
-        if let Err(err) = axum::serve(api_listener, app)
-            .with_graceful_shutdown(async move {
-                cancel_token.cancelled().await;
-            })
-            .await
+        if let Err(err) = axum::serve(
+            api_listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            cancel_token.cancelled().await;
+        })
+        .await
         {
             error!(?err, "API server error");
         } else {

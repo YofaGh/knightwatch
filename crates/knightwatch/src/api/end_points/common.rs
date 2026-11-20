@@ -1,5 +1,6 @@
 use axum::{
-    extract::{Query, State},
+    Extension,
+    extract::{ConnectInfo, Query, State},
     http::StatusCode,
     response::Json,
 };
@@ -8,7 +9,7 @@ use axum_extra::{TypedHeader, headers};
 use kw_types::api::{HealthResponse, LoginRequest, LoginResponse};
 
 use super::super::{session, utils::internal_server_error};
-use crate::observability::history;
+use crate::{config::LoginOutcome, observability::history};
 
 pub async fn shutdown(
     State(cancel_token): State<tokio_util::sync::CancellationToken>,
@@ -33,13 +34,18 @@ pub async fn info() -> Json<kw_types::Info> {
     Json(crate::utils::get_info().await)
 }
 
-pub async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>, StatusCode> {
-    let Some(users) = crate::config::get_users().filter(|u| !u.users.is_empty()) else {
-        return Err(StatusCode::NOT_FOUND);
-    };
-    match users.verify_password(&body.username, &body.password) {
-        Ok(true) => {}
-        _ => return Err(StatusCode::UNAUTHORIZED),
+/// The peer address is absent when the server runs without connect info
+/// (tests); such logins are not rate-limited.
+pub async fn login(
+    connect_info: Option<Extension<ConnectInfo<std::net::SocketAddr>>>,
+    Json(body): Json<LoginRequest>,
+) -> Result<Json<LoginResponse>, StatusCode> {
+    let ip = connect_info.map(|Extension(ConnectInfo(addr))| addr.ip());
+    match crate::config::login(&body.username, body.password, ip).await {
+        None => return Err(StatusCode::NOT_FOUND),
+        Some(LoginOutcome::Success(_)) => {}
+        Some(LoginOutcome::WrongCredentials) => return Err(StatusCode::UNAUTHORIZED),
+        Some(LoginOutcome::TooManyAttempts) => return Err(StatusCode::TOO_MANY_REQUESTS),
     }
     let token = uuid::Uuid::new_v4().to_string();
     let user_session = session::Session::new(body.username, token.clone());

@@ -408,4 +408,6 @@ pub enum SocketCommandResponse {
 pub enum AuthFailedReason {
     WrongCredentials,
     InternalServerError,
+    /// Too many failed logins from this address; wait and try again.
+    TooManyAttempts,
 }

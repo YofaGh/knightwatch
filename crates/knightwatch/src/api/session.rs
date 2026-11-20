@@ -3,6 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Sessions one user may hold; a new login past this drops their oldest.
+pub const MAX_SESSIONS_PER_USER: usize = 10;
+
 static SESSIONS: OnceLock<RwLock<Sessions>> = OnceLock::new();
 
 pub fn get_sessions() -> &'static RwLock<Sessions> {
@@ -59,6 +62,24 @@ impl std::fmt::Debug for Sessions {
 
 impl Sessions {
     pub fn insert(&mut self, session: Session) {
+        while self
+            .inner
+            .values()
+            .filter(|s| s.username == session.username)
+            .count()
+            >= MAX_SESSIONS_PER_USER
+        {
+            let Some(oldest) = self
+                .inner
+                .values()
+                .filter(|s| s.username == session.username)
+                .min_by_key(|s| s.created_at)
+                .map(|s| s.token.clone())
+            else {
+                break;
+            };
+            self.inner.remove(&oldest);
+        }
         self.inner.insert(session.token.clone(), session);
     }
 

@@ -447,3 +447,32 @@ fn debug_output_does_not_contain_the_token() {
     let all = format!("{:?}", sessions_with(vec![fresh("alice", secret)]));
     assert!(!all.contains(secret), "Sessions Debug leaks the token");
 }
+
+// ───────────────────────── Per-user cap ─────────────────────────
+
+#[test]
+fn a_user_keeps_at_most_the_capped_number_of_sessions_dropping_the_oldest() {
+    let mut sessions = Sessions::default();
+    let extra = 3;
+    for i in 0..MAX_SESSIONS_PER_USER + extra {
+        // older first: the first `extra` must be the ones dropped
+        let age = u64::try_from(MAX_SESSIONS_PER_USER + extra - i).unwrap();
+        sessions.insert(aged("alice", &format!("t{i}"), age, age));
+    }
+    sessions.insert(fresh("bob", "bob-token"));
+
+    let alice = sessions
+        .inner
+        .values()
+        .filter(|s| s.username == "alice")
+        .count();
+    assert_eq!(alice, MAX_SESSIONS_PER_USER);
+    for i in 0..extra {
+        assert!(!is_present(&sessions, &format!("t{i}")), "t{i}");
+    }
+    assert!(is_present(
+        &sessions,
+        &format!("t{}", MAX_SESSIONS_PER_USER + extra - 1)
+    ));
+    assert!(is_present(&sessions, "bob-token"));
+}

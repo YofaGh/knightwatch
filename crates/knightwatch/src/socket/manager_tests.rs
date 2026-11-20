@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{ChannelReceivers, ClientManager};
 use crate::{
-    config::DisplayUser,
+    config::{DisplayUser, LoginOutcome},
     socket::{
         client::ClientId,
         event::ClientManagerEvent,
@@ -133,6 +133,16 @@ async fn a_new_client_starts_logged_out_with_events_on_and_ticks_off() {
     assert!(c.get_display_user().is_none());
     assert!(c.events_enabled());
     assert!(!c.ticks_enabled());
+}
+
+#[tokio::test]
+async fn a_new_client_remembers_the_peer_ip_for_the_login_limit() {
+    let mut rig = Rig::new();
+    let (id, _peer) = rig.connect().await;
+    assert_eq!(
+        rig.client(id).peer_ip(),
+        Some(std::net::IpAddr::from([127, 0, 0, 1]))
+    );
 }
 
 #[tokio::test]
@@ -255,6 +265,82 @@ async fn the_reply_goes_only_to_the_client_that_asked() {
     assert!(other.is_err(), "the other client should get nothing");
 }
 
+fn alice() -> crate::config::User {
+    crate::config::User {
+        username: "alice".into(),
+        password_hash: String::new(),
+        telegram_token: String::new(),
+        telegram_chat_id: Some(7),
+    }
+}
+
+async fn finish_login(rig: &mut Rig, id: ClientId, outcome: LoginOutcome) {
+    rig.manager
+        .handle_event(ClientManagerEvent::LoginFinished {
+            client_id: id,
+            id: Some(1),
+            outcome,
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn a_successful_login_result_logs_the_client_in() {
+    let mut rig = Rig::new();
+    let (id, mut peer) = rig.connect().await;
+    finish_login(&mut rig, id, LoginOutcome::Success(alice())).await;
+
+    assert_eq!(
+        recv(&mut peer).await,
+        reply(1, SocketMessage::AuthenticationSucceed)
+    );
+    let c = rig.client(id);
+    assert!(c.is_authenticated());
+    assert_eq!(c.get_display_user().unwrap().username, "alice");
+}
+
+#[tokio::test]
+async fn a_failed_login_result_leaves_the_client_logged_out() {
+    let mut rig = Rig::new();
+    let (id, mut peer) = rig.connect().await;
+    finish_login(&mut rig, id, LoginOutcome::WrongCredentials).await;
+
+    assert_eq!(
+        recv(&mut peer).await,
+        reply(
+            1,
+            SocketMessage::AuthenticationFailed {
+                reason: AuthFailedReason::WrongCredentials,
+            }
+        )
+    );
+    assert!(!rig.client(id).is_authenticated());
+}
+
+#[tokio::test]
+async fn a_locked_out_login_result_says_too_many_attempts() {
+    let mut rig = Rig::new();
+    let (id, mut peer) = rig.connect().await;
+    finish_login(&mut rig, id, LoginOutcome::TooManyAttempts).await;
+
+    assert_eq!(
+        recv(&mut peer).await,
+        reply(
+            1,
+            SocketMessage::AuthenticationFailed {
+                reason: AuthFailedReason::TooManyAttempts,
+            }
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_login_result_for_a_client_that_left_is_dropped() {
+    let mut rig = Rig::new();
+    finish_login(&mut rig, ClientId::new_v4(), LoginOutcome::Success(alice())).await;
+    assert!(rig.manager.clients.is_empty());
+}
+
 #[tokio::test]
 async fn login_with_no_users_loaded_is_wrong_credentials() {
     // Nothing in the test process calls `load_users()`.
@@ -262,6 +348,7 @@ async fn login_with_no_users_loaded_is_wrong_credentials() {
     let (id, mut peer) = rig.connect().await;
     send(&mut peer, &action(1, login())).await;
     rig.pump_request().await;
+    rig.pump_event().await; // the LoginFinished from the login task
     assert_eq!(
         recv(&mut peer).await,
         reply(

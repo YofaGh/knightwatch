@@ -20,6 +20,15 @@ impl Transport {
         Self::Tcp(Box::new(stream))
     }
 
+    /// The remote address, used to rate-limit logins.
+    pub fn peer_ip(&self) -> Option<std::net::IpAddr> {
+        let stream = match self {
+            Self::Tcp(stream) => stream.as_ref(),
+            Self::WebSocket(adapter) => adapter.get_ref(),
+        };
+        stream.peer_addr().ok().map(|a| a.ip())
+    }
+
     pub fn new_websocket(ws: tokio_tungstenite::WebSocketStream<TcpStream>) -> Self {
         Self::WebSocket(Box::new(WebSocketAdapter::new(ws)))
     }

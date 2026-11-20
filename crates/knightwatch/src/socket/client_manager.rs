@@ -22,8 +22,8 @@ use super::{
     transport::Transport,
 };
 use crate::{
-    docker_tracker, observability::history, prelude::*, process_tracker, screen_capture,
-    system_resources, systemd,
+    config::LoginOutcome, docker_tracker, observability::history, prelude::*, process_tracker,
+    screen_capture, system_resources, systemd,
 };
 
 #[derive(Clone)]
@@ -78,8 +78,10 @@ impl ClientManager {
 
     pub fn add_client(&mut self, transport: Transport) {
         let client_id = ClientId::new_v4();
+        let peer_ip = transport.peer_ip();
         let connection = self.setup_client_connection(transport, client_id);
-        let client = Client::new(client_id, connection);
+        let mut client = Client::new(client_id, connection);
+        client.set_peer_ip(peer_ip);
         self.clients.insert(client_id, client);
     }
 
@@ -129,8 +131,12 @@ impl ClientManager {
             id,
             kind,
         } = req;
+        if let RequestKind::Action(SocketAction::Login { username, password }) = kind {
+            self.start_login(client_id, id, username, password).await;
+            return;
+        }
         if let RequestKind::Action(action) = kind {
-            let Some(reply) = self.handle_action(client_id, action) else {
+            let Some(reply) = self.handle_action(client_id, &action) else {
                 return;
             };
             let Some(client) = self.get_client(client_id) else {
@@ -181,6 +187,65 @@ impl ClientManager {
         });
     }
 
+    /// bcrypt is slow on purpose, so the check runs in a task and the result
+    /// comes back as `LoginFinished`; other clients are served meanwhile.
+    async fn start_login(
+        &self,
+        client_id: ClientId,
+        id: Option<u64>,
+        username: String,
+        password: String,
+    ) {
+        let Some(client) = self.get_client(client_id) else {
+            return;
+        };
+        if client.is_authenticated() {
+            if let Err(err) = client
+                .send_frame(id, SocketMessage::AlreadyAuthenticated)
+                .await
+            {
+                debug!("Failed to handle request err: {err}");
+            }
+            return;
+        }
+        let ip = client.peer_ip();
+        let events = self.senders.event.clone();
+        tokio::spawn(async move {
+            let outcome = crate::config::login(&username, password, ip)
+                .await
+                .unwrap_or(LoginOutcome::WrongCredentials);
+            let finished = ClientManagerEvent::LoginFinished {
+                client_id,
+                id,
+                outcome,
+            };
+            if events.send(finished).await.is_err() {
+                debug!("Login finished after the manager stopped");
+            }
+        });
+    }
+
+    async fn finish_login(&mut self, client_id: ClientId, id: Option<u64>, outcome: LoginOutcome) {
+        let Some(client) = self.get_client_mut(client_id) else {
+            return;
+        };
+        let reason = match outcome {
+            LoginOutcome::Success(user) => {
+                client.set_authentication(true);
+                client.set_display_user(user.into());
+                None
+            }
+            LoginOutcome::WrongCredentials => Some(AuthFailedReason::WrongCredentials),
+            LoginOutcome::TooManyAttempts => Some(AuthFailedReason::TooManyAttempts),
+        };
+        let reply = reason.map_or(SocketMessage::AuthenticationSucceed, |reason| {
+            SocketMessage::AuthenticationFailed { reason }
+        });
+        if let Err(err) = client.send_frame(id, reply).await {
+            debug!("Failed to handle request err: {err}");
+        }
+    }
+
     pub async fn handle_event(&mut self, event_req: ClientManagerEvent) {
         match event_req {
             ClientManagerEvent::AddClient { transport } => {
@@ -189,6 +254,11 @@ impl ClientManager {
             ClientManagerEvent::ClientDisconnected { client_id } => {
                 self.close_client_connection(client_id).await;
             }
+            ClientManagerEvent::LoginFinished {
+                client_id,
+                id,
+                outcome,
+            } => self.finish_login(client_id, id, outcome).await,
         }
     }
 
@@ -196,30 +266,12 @@ impl ClientManager {
     fn handle_action(
         &mut self,
         client_id: ClientId,
-        action: SocketAction,
+        action: &SocketAction,
     ) -> Option<SocketMessage> {
         let client = self.get_client_mut(client_id)?;
-        let wrong_credentials = SocketMessage::AuthenticationFailed {
-            reason: AuthFailedReason::WrongCredentials,
-        };
         let reply = match action {
-            SocketAction::Login { username, password } => {
-                if client.is_authenticated() {
-                    return Some(SocketMessage::AlreadyAuthenticated);
-                }
-                let Some(users) = get_users().filter(|u| !u.users.is_empty()) else {
-                    return Some(wrong_credentials);
-                };
-                let Some(user) = users.find(&username).cloned() else {
-                    return Some(wrong_credentials);
-                };
-                if !matches!(users.verify_password(&username, &password), Ok(true)) {
-                    return Some(wrong_credentials);
-                }
-                client.set_authentication(true);
-                client.set_display_user(user.into());
-                SocketMessage::AuthenticationSucceed
-            }
+            // handle_request sends logins to start_login
+            SocketAction::Login { .. } => return None,
             SocketAction::Logout => {
                 if client.is_authenticated() {
                     client.clear_display_user();
@@ -243,10 +295,10 @@ impl ClientManager {
                 events_enabled,
                 ticks_enabled,
             } => {
-                if let Some(v) = events_enabled {
+                if let Some(v) = *events_enabled {
                     client.set_events_enabled(v);
                 }
-                if let Some(v) = ticks_enabled {
+                if let Some(v) = *ticks_enabled {
                     client.set_ticks_enabled(v);
                 }
                 SocketMessage::SetEventPreferences

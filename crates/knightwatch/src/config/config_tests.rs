@@ -159,40 +159,8 @@ fn remove_unknown_user_is_a_config_error() {
 }
 
 // ---------------------------------------------------------------------------
-// Users: password check
+// Users: password hashing
 // ---------------------------------------------------------------------------
-
-#[test]
-fn verify_password_accepts_the_right_password() {
-    let list = users(vec![user_with_password("bob", "correct horse")]);
-    assert!(list.verify_password("bob", "correct horse").unwrap());
-}
-
-#[test]
-fn verify_password_rejects_a_wrong_or_empty_password() {
-    let list = users(vec![user_with_password("bob", "correct horse")]);
-    assert!(!list.verify_password("bob", "wrong").unwrap());
-    assert!(!list.verify_password("bob", "").unwrap());
-    assert!(!list.verify_password("bob", "Correct Horse").unwrap());
-}
-
-// Unknown user is an error, wrong password is `Ok(false)`. The socket login
-// treats both as WrongCredentials, so the difference is not visible to clients.
-#[test]
-fn verify_password_unknown_user_is_a_config_error() {
-    let list = users(vec![user_with_password("bob", "pw")]);
-    assert_eq!(
-        config_err(list.verify_password("alice", "pw")),
-        "User 'alice' not found"
-    );
-}
-
-#[test]
-fn verify_password_with_a_broken_hash_is_a_config_error() {
-    let list = users(vec![user("bob")]);
-    let text = config_err(list.verify_password("bob", "pw"));
-    assert!(text.starts_with("Failed to verify password"), "{text}");
-}
 
 #[test]
 fn hash_password_makes_verifiable_salted_bcrypt_hashes() {

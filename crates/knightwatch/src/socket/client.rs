@@ -27,6 +27,7 @@ pub struct Client {
     events_enabled: bool,
     ticks_enabled: bool,
     display_user: Option<DisplayUser>,
+    peer_ip: Option<std::net::IpAddr>,
     connection: Option<ClientConnection>,
 }
 
@@ -38,6 +39,7 @@ impl Client {
             events_enabled: true,
             ticks_enabled: false,
             display_user: None,
+            peer_ip: None,
             connection: Some(connection),
         }
     }
@@ -60,6 +62,14 @@ impl Client {
 
     pub fn get_display_user(&self) -> Option<DisplayUser> {
         self.display_user.clone()
+    }
+
+    pub const fn peer_ip(&self) -> Option<std::net::IpAddr> {
+        self.peer_ip
+    }
+
+    pub const fn set_peer_ip(&mut self, ip: Option<std::net::IpAddr>) {
+        self.peer_ip = ip;
     }
 
     pub const fn take_connection(&mut self) -> Option<ClientConnection> {

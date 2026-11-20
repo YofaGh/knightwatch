@@ -104,14 +104,6 @@ impl Users {
         self.users.retain(|u| u.username != username);
         Ok(())
     }
-
-    pub fn verify_password(&self, username: &str, password: &str) -> Result<bool> {
-        let user = self
-            .find(username)
-            .ok_or_else(|| Error::Config(format!("User '{username}' not found")))?;
-        bcrypt::verify(password, &user.password_hash)
-            .map_err(|e| Error::Config(format!("Failed to verify password: {e}")))
-    }
 }
 
 pub fn generate_telegram_token() -> String {
