@@ -483,27 +483,35 @@ pub fn start_systemd_monitor() {
         return;
     };
     if get_config().args.allow_systemd_commands {
-        let helper_slot = monitor.helper_handle();
-        let command_tx = monitor.channels.command_tx.clone();
-        tokio::spawn(async move {
-            match SystemdHelperClient::spawn().await {
-                Ok(Some(helper)) => {
-                    if helper_slot.set(helper).is_ok() {
-                        let _ = SYSTEMD_COMMAND_SENDER.set(command_tx);
-                        info!("Systemd command helper ready");
-                    }
-                }
-                Ok(None) => {
-                    warn!("Systemd command helper was not authorized — commands stay disabled");
-                }
-                Err(e) => error!(?e, "failed to start systemd command helper"),
-            }
-        });
+        enable_commands(&monitor, SystemdHelperClient::spawn());
     }
     tokio::spawn(async move {
         info!("Systemd Monitor started");
         if let Err(e) = monitor.start_monitor_loop().await {
             error!(?e, "systemd monitor loop exited with error");
+        }
+    });
+}
+
+/// Publishes the command channel at once, so poll control works even if the
+/// helper is refused; unit control answers "helper is not ready" until it is up.
+fn enable_commands<S: UnitSource>(
+    monitor: &SystemdMonitor<S>,
+    helper: impl Future<Output = Result<Option<SystemdHelperClient>>> + Send + 'static,
+) {
+    let _ = SYSTEMD_COMMAND_SENDER.set(monitor.channels.command_tx.clone());
+    let helper_slot = monitor.helper_handle();
+    tokio::spawn(async move {
+        match helper.await {
+            Ok(Some(helper)) => {
+                if helper_slot.set(helper).is_ok() {
+                    info!("Systemd command helper ready");
+                }
+            }
+            Ok(None) => {
+                warn!("Systemd command helper was not authorized — unit control stays disabled");
+            }
+            Err(e) => error!(?e, "failed to start systemd command helper"),
         }
     });
 }

@@ -587,6 +587,25 @@ async fn control_without_a_helper_fails_and_is_reported() {
 }
 
 #[tokio::test]
+async fn a_refused_helper_still_leaves_poll_control_on() {
+    // The only test that sets the global SYSTEMD_COMMAND_SENDER.
+    let mut m = monitor();
+    let mut commands = m.channels.command_rx.take().unwrap();
+    enable_commands(&m, async { Ok(None) });
+    tokio::spawn(async move {
+        while let Some(command) = commands.recv().await {
+            m.handle_command(command);
+        }
+    });
+
+    crate::systemd::pause_poll(user()).await.unwrap();
+    let err = crate::systemd::control_unit(user(), "a.service".into(), ServiceAction::Restart)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("helper is not ready"), "{err}");
+}
+
+#[tokio::test]
 async fn control_goes_through_the_helper_and_is_reported() {
     let (mut m, mut rx) = running().await;
     let (ours, theirs) = UnixStream::pair().unwrap();
